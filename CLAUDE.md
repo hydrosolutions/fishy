@@ -2,7 +2,34 @@
 
 ## Project Overview
 
-    TODO: FILL WITH PROJECT SPECIFIC OVERVIEW
+**Fishy** is the official e-flows (environmental flows) intelligence layer for [taqsim](https://github.com/hydrosolutions/taqsim) — a water system simulation engine. Fishy provides tools for:
+
+1. **Naturalization** (`fishy.naturalize`) — Transform water systems with human infrastructure into their natural state for IHA (Indicators of Hydrological Alteration) baseline calculation
+2. **IHA Indices** (planned) — Calculate hydrological alteration indicators comparing natural vs. altered flow regimes
+
+### Architecture
+
+```
+taqsim (simulation engine)
+    ↓
+fishy (intelligence layer)
+    ├── naturalize/     # Transform systems to natural state
+    └── iha/            # (planned) IHA indices calculation
+```
+
+### Key Concepts
+
+- **NATURAL_TAG**: Edge tag (`"natural"`) marking edges on the natural flow path
+- **NaturalRiverSplitter**: Split rule for natural river bifurcations (deltas, distributaries)
+- **NaturalizeResult**: Immutable result with naturalized system + audit trail
+
+### taqsim Reference
+
+The `taqsim_docs/` directory contains API documentation for taqsim. Key types:
+- **Nodes**: `Source`, `Sink`, `Storage`, `Demand`, `Splitter`, `PassThrough`
+- **Edges**: `Edge` with `tags` for marking natural vs. infrastructure
+- **System**: `WaterSystem` orchestrates simulation
+- **Protocols**: `SplitRule`, `ReleaseRule`, `LossRule`
 
 ## Quick Reference
 

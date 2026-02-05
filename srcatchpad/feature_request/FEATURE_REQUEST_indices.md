@@ -11,9 +11,8 @@
 This feature request outlines indices to be implemented in a **new standalone package** for ecological river assessment. The package will:
 
 1. Calculate hydrological and water quality indices according to **multiple regulatory frameworks**
-2. Be integrated into **Taqsim** (river basin management & optimization tool)
-3. Support assessment of **individual river stretches** (e.g., rapid multi-framework impact assessment for hydropower projects)
-4. Provide comparable outputs across different national/regional standards
+2. Support assessment of **individual river stretches** (e.g., rapid multi-framework impact assessment for hydropower projects)
+3. Provide comparable outputs across different national/regional standards
 
 **Note:** Taqsim API specification will be defined separately by the Taqsim development team.
 
@@ -42,6 +41,7 @@ The foundational framework from [The Nature Conservancy](https://www.conservatio
 Maps IHA metrics to WFD-compatible 5-class system. [Black et al. (2005)](https://onlinelibrary.wiley.com/doi/abs/10.1002/aqc.707)
 
 **Method:**
+
 1. Calculate mean and CV for each of 5 IHA groups → 10 categories
 2. Compute % deviation from reference conditions
 3. Assign impact points (0-3) per category based on thresholds
@@ -120,6 +120,7 @@ T_water(t) = a₁ + a₂·T_air + a₃·T_air·e^(-Q/a₄) + a₅·cos(2π·t/36
 ### 3.2 IFAS Ecological Requirements
 
 **Aral Sea Restoration Targets:**
+
 - Minimum flow to Northern Aral Sea (Syr Darya): Maintained via Kok-Aral Dam
 - Minimum flow to Amu Darya delta wetlands: Critical for biodiversity
 - Salinity targets for delta ecosystems
@@ -141,6 +142,7 @@ T_water(t) = a₁ + a₂·T_air + a₃·T_air·e^(-Q/a₄) + a₅·cos(2π·t/36
 ### 4.1 IZV (Uzbekistan) - Индекс Загрязнения Воды
 
 **Formula:**
+
 ```
 IZV = (1/n) × Σ(Ci / PDKi)
 ```
@@ -158,6 +160,7 @@ IZV = (1/n) × Σ(Ci / PDKi)
 **Parameters:** 6 mandatory (to be confirmed)
 
 **Status:** ⏳ **AWAITING MINISTRY FEEDBACK** on current PDK values and mandatory parameter list.
+
 - Contacted: Uzbek Ministry of Ecology / Oyture / Committee
 - Reference baseline: Госкомгидромет СССР (1988), SanPiN standards
 - Need: Current (2020+) Uzbekistan PDK values for implementation
@@ -167,6 +170,7 @@ IZV = (1/n) × Σ(Ci / PDKi)
 More comprehensive than IZV. Per [РД 52.24.643-2002](https://meganorm.ru/Data2/1/4293831/4293831806.htm).
 
 **Method:**
+
 1. For each parameter: Sα (frequency score) × Sβ (intensity score) = Si
 2. KIZV = Σ Si (combinatorial index)
 3. UKIZV = KIZV / N (specific combinatorial index)
@@ -186,6 +190,7 @@ More comprehensive than IZV. Per [РД 52.24.643-2002](https://meganorm.ru/Data2
 Critical for Amu Darya / Syr Darya irrigation contexts.
 
 **Formula:**
+
 ```
 IWQI = Σ(wi × qi)
 ```
@@ -217,6 +222,7 @@ IWQI = Σ(wi × qi)
 The EU WFD does **not prescribe specific hydrological indices**. Each member state develops their own methods. Since DHRAM (Section 1.2) already maps IHA → WFD classes, this provides WFD-compatible output.
 
 **For hydrological regime**, the WFD requires assessment of:
+
 - Quantity and dynamics of flow
 - Connection to groundwaters
 
@@ -227,6 +233,7 @@ Reference: [Hydrological Regime Alteration Assessment in the Context of WFD](htt
 Switzerland uses its own national framework ([BAFU Modular Stepwise Procedure](https://www.bafu.admin.ch/bafu/en/home/topics/water/state-of-watercourses/modular-stepwise-procedure.html)).
 
 **Structure:**
+
 - **Level F:** Comprehensive surveys with minimal effort
 - **Level S:** Detailed investigation of selected systems
 
@@ -263,23 +270,28 @@ Switzerland uses its own national framework ([BAFU Modular Stepwise Procedure](h
 ## Key References
 
 ### Hydrological
+
 - [IHA Manual v7.1 (TNC)](https://www.conservationgateway.org/Documents/IHAV7.pdf)
 - [DHRAM - Black et al. (2005)](https://onlinelibrary.wiley.com/doi/abs/10.1002/aqc.707)
 
 ### Thermal
+
 - [StreamThermal (USGS)](https://github.com/tsangyp/StreamThermal)
 - [Air2Stream](https://github.com/marcotoffolon/air2stream)
 
 ### Transboundary (ICWC/IFAS)
+
 - [ICWC Official Portal](http://www.icwc-aral.uz/)
 - [IFAS Executive Committee](http://ec-ifas.waterunites-ca.org/)
 
 ### Water Quality (CIS)
+
 - [РД 52.24.643-2002 (UKIZV)](https://meganorm.ru/Data2/1/4293831/4293831806.htm)
 - [Uzbekistan wastewater standards overview (UNECE 2024)](https://unece.org/sites/default/files/2024-04/2.%20wastewater%20standards%20overview_Viacheslav%20Shi-Syan_Engl%20%28automatic%29.pdf)
 - [FAO Irrigation and Drainage Paper 29](https://www.fao.org/3/T0234E/T0234E00.htm)
 
 ### EU WFD & Switzerland
+
 - [WFD Ecological Status Portal](https://water.europa.eu/freshwater/europe-freshwater/water-framework-directive/ecological-status-of-surface-water)
 - [BAFU Modular Stepwise Procedure](https://www.bafu.admin.ch/bafu/en/home/topics/water/state-of-watercourses/modular-stepwise-procedure.html)
 - [Swiss hydrology module (PDF)](https://modul-stufen-konzept.ch/wp-content/uploads/2020/12/Modul_Hydrologie_DE-1.pdf)

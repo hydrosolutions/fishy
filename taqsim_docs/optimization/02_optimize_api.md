@@ -62,12 +62,16 @@ Each `Solution` contains:
 The `WaterSystem` must be validated before optimization:
 
 ```python
-system = WaterSystem(...)
+from taqsim.common import Frequency
+
+system = WaterSystem(frequency=Frequency.MONTHLY)
 system.validate()  # Required
 result = optimize(system, objectives, timesteps=12)
 ```
 
 The system must also expose tunable parameters via strategies with bounds. If `system.param_schema()` returns an empty list, optimization will fail.
+
+**Note:** The optimizer works with compact parameter vectors that are frequency-agnostic. The `frequency` on `WaterSystem` affects simulation behavior only -- it does not change the shape or contents of the parameter vectors that the optimizer evolves. Cyclical parameters are stored in their compact (single-cycle) form in the vector; the system handles tiling at simulation time.
 
 ### objectives
 
@@ -201,11 +205,12 @@ result = optimize(
 
 ```python
 from taqsim.system import WaterSystem
+from taqsim.common import Frequency
 from taqsim.objective import minimize
 from taqsim.optimization import optimize
 
 # Build and validate system
-system = WaterSystem(...)
+system = WaterSystem(frequency=Frequency.MONTHLY)
 system.validate()
 
 # Define objectives

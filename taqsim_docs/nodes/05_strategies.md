@@ -45,17 +45,17 @@ class FixedRelease(Strategy):
 
 ### Note on Physical Models
 
-`LossRule` implementations do **not** inherit from `Strategy`. They are physical models representing infrastructure, not operational policies. Only `ReleaseRule` and `SplitRule` are optimizable.
+`LossRule` implementations do **not** inherit from `Strategy`. They are physical models representing infrastructure, not operational policies. Only `ReleasePolicy` and `SplitPolicy` are optimizable.
 
 ## Protocol Definitions
 
-### ReleaseRule
+### ReleasePolicy
 
 Controls how storage nodes release water.
 
 ```python
 @runtime_checkable
-class ReleaseRule(Protocol):
+class ReleasePolicy(Protocol):
     def release(
         self,
         node: Storage,  # the storage node (provides storage, dead_storage, capacity)
@@ -65,13 +65,13 @@ class ReleaseRule(Protocol):
     ) -> float: ...     # amount to release
 ```
 
-### SplitRule
+### SplitPolicy
 
 Determines how water is distributed among downstream nodes.
 
 ```python
 @runtime_checkable
-class SplitRule(Protocol):
+class SplitPolicy(Protocol):
     def split(
         self,
         node: Splitter,           # the splitter node (provides targets)
@@ -168,7 +168,7 @@ from taqsim.common import Strategy
 from taqsim.constraints import SumToOne
 
 @dataclass(frozen=True)
-class MySplitRule(Strategy):
+class MySplitPolicy(Strategy):
     __params__: ClassVar[tuple[str, ...]] = ("ratio_a", "ratio_b")
     __bounds__: ClassVar[dict[str, tuple[float, float]]] = {"ratio_a": (0, 1), "ratio_b": (0, 1)}
     __constraints__: ClassVar[tuple[SumToOne, ...]] = (SumToOne(("ratio_a", "ratio_b")),)
@@ -306,15 +306,15 @@ source = Source(
     id="river",
     inflow=TimeSeries(values=[10.0, 15.0]),
     targets=["dam"],
-    split_rule=split
+    split_policy=split
 )
 
 storage = Storage(
     id="dam",
     capacity=1000.0,
-    release_rule=release,
+    release_policy=release,
     loss_rule=loss,
-    split_rule=split,
+    split_policy=split,
     targets=["downstream"]
 )
 ```
@@ -324,13 +324,13 @@ storage = Storage(
 Strategies satisfy protocols via structural typing:
 
 ```python
-from taqsim.node import SplitRule, ReleaseRule, LossRule
+from taqsim.node import SplitPolicy, ReleasePolicy, LossRule
 
 split = EqualSplit()
-assert isinstance(split, SplitRule)
+assert isinstance(split, SplitPolicy)
 
 release = FixedRelease(rate=5.0)
-assert isinstance(release, ReleaseRule)
+assert isinstance(release, ReleasePolicy)
 
 loss = ZeroLoss()
 assert isinstance(loss, LossRule)
@@ -386,7 +386,7 @@ AllocationSplit(city=0.6, farm=0.6)  # ConstraintViolationError: SumToOne violat
 
 ## Time-Varying Parameters
 
-Some operational strategies have parameters that vary over time. For example, a release rate might differ in wet vs dry seasons, or allocation ratios might shift monthly.
+Some operational strategies have parameters that vary over time. For example, a release rate might differ in wet vs dry seasons, or allocation ratios might shift monthly. Data is stored in per-timestep units (no `dt` scaling factor).
 
 ### Declaration
 
@@ -399,10 +399,10 @@ class SeasonalRelease(Strategy):
     __time_varying__: ClassVar[tuple[str, ...]] = ("rate",)
     __bounds__: ClassVar[dict[str, tuple[float, float]]] = {"rate": (0.0, 100.0)}
 
-    rate: tuple[float, ...] = (50.0, 60.0, 70.0)  # 3 timesteps
+    rate: tuple[float, ...] = (50.0, 60.0, 70.0)  # 3 timesteps, per-timestep units
 
-    def release(self, node: Storage, inflow: float, t: int, dt: float) -> float:
-        return min(self.rate[t] * dt, node.storage)
+    def release(self, node: Storage, inflow: float, t: Timestep, dt: float) -> float:
+        return min(self.param_at("rate", t), node.storage)
 ```
 
 ### Key Elements
@@ -411,7 +411,20 @@ class SeasonalRelease(Strategy):
 |---------|---------|
 | `__time_varying__` | Declares which `__params__` vary over time |
 | `tuple[float, ...]` field | Time-varying params stored as tuples |
-| `self.rate[t]` | Access value for current timestep |
+| `self.param_at("rate", t)` | Access value for current timestep (handles both plain and cyclical params) |
+
+### param_at() Method
+
+`param_at(name, t)` is the single API for accessing parameter values at a given timestep. It handles scalar params, time-varying params, and cyclical params with cross-frequency mapping:
+
+```python
+# For scalar params: returns the value directly
+# For time-varying params: returns value[t.index]
+# For cyclical params: maps through frequency and wraps around
+current_rate = self.param_at("rate", t)
+```
+
+Always use `param_at()` instead of direct indexing to ensure correct behavior across all parameter types.
 
 ### Bounds Validation
 
@@ -462,25 +475,30 @@ class SeasonalBands(Strategy):
     low: tuple[float, ...] = (10.0, 20.0, 15.0)
     high: tuple[float, ...] = (50.0, 60.0, 55.0)
 
-    def release(self, node: Storage, inflow: float, t: int, dt: float) -> float:
-        return min(self.high[t] * dt, max(self.low[t] * dt, node.storage * 0.1))
+    def release(self, node: Storage, inflow: float, t: Timestep, dt: float) -> float:
+        lo = self.param_at("low", t)
+        hi = self.param_at("high", t)
+        return min(hi, max(lo, node.storage * 0.1))
 ```
 
 At construction, `low[t] <= high[t]` is validated for every timestep.
 
 ## Cyclical Time-Varying Parameters
 
-Some parameters repeat in cycles, such as monthly allocation ratios that apply across multiple years. The `__cyclical__` declaration enables short tuples to work for longer simulations.
+Some parameters repeat in cycles, such as monthly allocation ratios that apply across multiple years. The `__cyclical__` declaration enables short tuples to work for longer simulations, and `__cyclical_freq__` declares the frequency at which each cyclical parameter is defined.
 
 ### Declaration
 
 ```python
+from taqsim.time import Frequency
+
 @dataclass(frozen=True)
 class SeasonalAllocation(Strategy):
     __params__: ClassVar[tuple[str, ...]] = ("city_fraction",)
     __bounds__: ClassVar[dict[str, tuple[float, float]]] = {"city_fraction": (0.0, 1.0)}
     __time_varying__: ClassVar[tuple[str, ...]] = ("city_fraction",)
     __cyclical__: ClassVar[tuple[str, ...]] = ("city_fraction",)
+    __cyclical_freq__: ClassVar[dict[str, Frequency]] = {"city_fraction": Frequency.MONTHLY}
 
     city_fraction: tuple[float, ...] = (0.5, 0.6, 0.7, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.3, 0.4)  # 12 monthly values
 ```
@@ -490,19 +508,90 @@ class SeasonalAllocation(Strategy):
 | Element | Purpose |
 |---------|---------|
 | `__cyclical__` | Declares which time-varying params repeat cyclically |
+| `__cyclical_freq__` | **Required** when `__cyclical__` is non-empty. Maps each cyclical param name to its `Frequency` |
 | Must be subset of `__time_varying__` | Cyclical params must also be declared time-varying |
 | Implicit cycle length | Cycle length equals tuple length |
 
+### __cyclical_freq__ ClassVar
+
+`__cyclical_freq__` is a `ClassVar[dict[str, Frequency]]` that declares the temporal frequency at which each cyclical parameter is defined. It is validated at class definition time:
+
+- **Required**: If `__cyclical__` is non-empty, `__cyclical_freq__` must also be provided. Omitting it raises `TypeError`.
+- **Keys must match**: The keys of `__cyclical_freq__` must exactly match the entries in `__cyclical__`. Mismatched keys raise `TypeError`.
+- **Values must be `Frequency`**: Each value must be a `Frequency` instance. Non-`Frequency` values raise `TypeError`.
+
+```python
+# Valid: keys match __cyclical__, values are Frequency instances
+__cyclical__: ClassVar[tuple[str, ...]] = ("rate", "ratio")
+__cyclical_freq__: ClassVar[dict[str, Frequency]] = {
+    "rate": Frequency.MONTHLY,
+    "ratio": Frequency.WEEKLY,
+}
+
+# Invalid: missing __cyclical_freq__ when __cyclical__ is non-empty
+__cyclical__: ClassVar[tuple[str, ...]] = ("rate",)
+# TypeError: MyStrategy: __cyclical_freq__ is required when __cyclical__ is non-empty
+
+# Invalid: keys don't match
+__cyclical__: ClassVar[tuple[str, ...]] = ("rate",)
+__cyclical_freq__: ClassVar[dict[str, Frequency]] = {"other": Frequency.MONTHLY}
+# TypeError: MyStrategy: __cyclical_freq__ keys must match __cyclical__
+```
+
 ### Behavior
 
-- **Access pattern**: `value[t % len(value)]` for cyclical params
+- **Access pattern**: Use `self.param_at("name", t)` which applies frequency-aware index mapping: `idx = (t.index * param_freq // t.frequency) % len(value)`
 - **Simulation validation**: Cyclical params skip length validation (no InsufficientLengthError)
 - **Constraint validation**: For cyclical-only strategies, validates constraints at each cycle position
+
+### param_at() with Cross-Frequency Mapping
+
+When a cyclical parameter's frequency differs from the simulation's frequency, `param_at()` automatically maps the timestep:
+
+```python
+# Daily simulation (365 steps/year) with monthly params (12 values)
+t = Timestep(index=45, frequency=Frequency.DAILY)
+value = self.param_at("city_fraction", t)
+# idx = (45 * 12 // 365) % 12 = 1 -> returns city_fraction[1]
+```
+
+This means ~30 consecutive daily steps map to the same monthly value, which is the correct physical interpretation.
+
+### cyclical_freq() Accessor
+
+The `cyclical_freq()` method returns a copy of the `__cyclical_freq__` mapping:
+
+```python
+strategy = SeasonalAllocation()
+strategy.cyclical_freq()  # {"city_fraction": Frequency.MONTHLY}
+```
+
+### Example: Daily Simulation with Monthly Parameters
+
+```python
+from taqsim.time import Frequency, Timestep
+
+@dataclass(frozen=True)
+class MonthlySplit(Strategy):
+    __params__: ClassVar[tuple[str, ...]] = ("ratio",)
+    __time_varying__: ClassVar[tuple[str, ...]] = ("ratio",)
+    __cyclical__: ClassVar[tuple[str, ...]] = ("ratio",)
+    __cyclical_freq__: ClassVar[dict[str, Frequency]] = {"ratio": Frequency.MONTHLY}
+    __bounds__: ClassVar[dict[str, tuple[float, float]]] = {"ratio": (0.0, 1.0)}
+
+    ratio: tuple[float, ...] = (0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3)
+
+    def split(self, node: Splitter, amount: float, t: Timestep) -> dict[str, float]:
+        r = self.param_at("ratio", t)  # correct monthly value for this daily step
+        return {"irrigation": amount * r, "municipal": amount * (1 - r)}
+```
+
+When the simulation runs daily, `param_at("ratio", t)` maps each daily step to the correct month. Day 0-30 maps to month 0, day 31-60 to month 1, and so on.
 
 ### Example: Monthly Allocation for Multi-Year Simulation
 
 ```python
-# 12 monthly values work for 120-month (10-year) simulation
+# 12 monthly values work for any simulation length - they cycle
 system.simulate(120)  # No error - city_fraction cycles through its 12 values
 ```
 
@@ -511,9 +600,12 @@ system.simulate(120)  # No error - city_fraction cycles through its 12 values
 | Aspect | Time-Varying | Cyclical |
 |--------|--------------|----------|
 | Tuple length | Must match simulation timesteps | Any length (cycles) |
-| Access pattern | `value[t]` | `value[t % len(value)]` |
+| Access pattern | `self.param_at("name", t)` | `self.param_at("name", t)` (with frequency mapping) |
 | Length validation | Raises InsufficientLengthError if too short | Skipped |
+| Required ClassVars | `__time_varying__` | `__time_varying__`, `__cyclical__`, `__cyclical_freq__` |
 | Use case | Unique value per timestep | Repeating patterns (seasonal, weekly) |
+
+See [Frequency and Timestep](../common/04_frequency.md) for details on frequency-aware index mapping and rate conversion.
 
 ## Strategy Tags and Metadata
 

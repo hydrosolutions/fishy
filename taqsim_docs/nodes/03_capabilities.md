@@ -74,7 +74,7 @@ Returns `(consumed, remaining)`.
 | Sink        |           | ✓        |        |       |          |
 
 > **Note**: Topology (targets, distribution) is handled by `WaterSystem`, not by nodes.
-> The `Gives` protocol has been removed. Splitter uses `split_rule` internally
+> The `Gives` protocol has been removed. Splitter uses `split_policy` internally
 > but targets are derived from edges by the orchestrator.
 
 ## Checking Protocol Satisfaction

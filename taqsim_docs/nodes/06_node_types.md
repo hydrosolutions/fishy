@@ -132,7 +132,7 @@ Distribution node. Receives water and splits among multiple targets using a spli
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `id` | `str` | Yes | Unique identifier |
-| `split_rule` | `SplitRule` | Yes | Distribution rule |
+| `split_policy` | `SplitPolicy` | Yes | Distribution rule |
 | `location` | `tuple[float, float]` | No | (lat, lon) in WGS84 |
 
 > **Note**: Targets are derived from edges by `WaterSystem` and populated via `_set_targets()` during validation.
@@ -155,7 +155,7 @@ from taqsim.node import Splitter
 
 splitter = Splitter(
     id="canal_junction",
-    split_rule=proportional_split
+    split_policy=proportional_split
 )
 ```
 
@@ -265,7 +265,7 @@ Reservoir node. Receives, stores, loses, releases, and outputs water.
 | `capacity` | `float` | Yes | Maximum storage volume [m³] |
 | `initial_storage` | `float` | No | Starting volume (default: 0) [m³] |
 | `dead_storage` | `float` | No | Volume of water that cannot be released (default: 0.0) [m³] |
-| `release_rule` | `ReleaseRule` | Yes | Release calculation |
+| `release_policy` | `ReleasePolicy` | Yes | Release calculation |
 | `loss_rule` | `LossRule` | Yes | Loss calculation |
 | `location` | `tuple[float, float]` | No | (lat, lon) in WGS84 |
 
@@ -329,7 +329,7 @@ reservoir = Storage(
     id="main_dam",
     capacity=10000.0,
     initial_storage=5000.0,
-    release_rule=fixed_release,
+    release_policy=fixed_release,
     loss_rule=evaporation_loss
 )
 

@@ -12,6 +12,8 @@
 
 ## Design Principles
 
+See [Design Philosophy](../00_philosophy.md) for the foundational principle: **expose everything, decide nothing**.
+
 ### Separation of Concerns
 
 | Component | Responsibility |
@@ -46,7 +48,7 @@ import networkx as nx
 
 @dataclass
 class WaterSystem:
-    dt: float = 1  # default timestep duration in seconds
+    frequency: Frequency  # simulation frequency (e.g., Frequency.DAILY) — no default, must be explicit
 
     _nodes: dict[str, BaseNode] = field(default_factory=dict, init=False)
     _edges: dict[str, Edge] = field(default_factory=dict, init=False)
@@ -104,14 +106,14 @@ from taqsim.system import WaterSystem
 # Create nodes (no targets specified)
 # (Assume rule, losses, equal_split are pre-defined strategy implementations)
 source = Source(id="river", inflow=TimeSeries([100.0] * 12))
-dam = Storage(id="dam", capacity=1000, release_rule=rule, loss_rule=losses)
+dam = Storage(id="dam", capacity=1000, release_policy=rule, loss_rule=losses)
 turbine = PassThrough(id="turbine")
-junction = Splitter(id="junction", split_rule=equal_split)
+junction = Splitter(id="junction", split_policy=equal_split)
 farm = Demand(id="farm", requirement=TimeSeries([30.0] * 12))
 city = Sink(id="city")
 
 # Create system
-system = WaterSystem(dt=86400)  # 1 day
+system = WaterSystem(frequency=Frequency.DAILY)
 
 # Add nodes
 system.add_node(source)
@@ -155,20 +157,25 @@ system._graph.edges()  # [('river', 'dam'), ('dam', 'turbine'), ...]
 ## Simulation Flow
 
 ```
-For each timestep t:
+timesteps = frequency.make_timesteps(n)  # Create Timestep objects from frequency
+For each timestep ts in timesteps:
     For each node_id in topological_sort(graph):
-        node.update(t, dt)           # Node processes water, records events
-        _route_output(node_id, t)    # System reads events, routes via edges
+        node.update(ts)                  # Node processes water, records events
+        _route_output(node_id, ts)       # System reads events, routes via edges
 ```
+
+The `Timestep` is created from the `Frequency` and carries all temporal context a node needs. Nodes no longer receive a separate `dt` argument.
+
+**Data units**: All data (inflows, demands, capacities, release rates) is in **per-timestep units**. There is no internal scaling factor. If the simulation frequency is daily, a demand of `30.0` means 30 units per day.
 
 ### Routing Logic
 
 1. Read `WaterOutput` events → route to single outgoing edge
 2. Read `WaterDistributed` events → route to specified target edge
 3. For each routed amount:
-   - `edge.receive(amount, t)`
-   - `delivered = edge.update(t, dt)` (applies losses)
-   - `target_node.receive(delivered, edge_id, t)`
+   - `edge.receive(amount, ts)`
+   - `delivered = edge.update(ts)` (applies losses)
+   - `target_node.receive(delivered, edge_id, ts)`
 
 ## Properties
 

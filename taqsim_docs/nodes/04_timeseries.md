@@ -98,14 +98,16 @@ demand_with_losses = Demand(
 )
 ```
 
-## Conversion to Volume
+## Per-Timestep Units
 
-`TimeSeries` stores flow rates. During simulation, values are converted to volumes:
+`TimeSeries` stores values in per-timestep units. During simulation, values are used directly:
 
 ```python
 # In Source.generate():
-amount = self.inflow[t] * dt  # flow rate * time = volume
+amount = self.inflow[t]
 
 # In Demand.consume():
-required = self.requirement[t] * dt
+required = self.requirement[t]
 ```
+
+`Timestep` implements `__index__`, so `TimeSeries[timestep]` works transparently -- no need to extract `.index` manually.

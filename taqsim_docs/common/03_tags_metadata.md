@@ -45,7 +45,7 @@ source = Source(
 storage = Storage(
     id="main_reservoir",
     capacity=1000.0,
-    release_rule=my_release_rule,
+    release_policy=my_release_policy,
     loss_rule=my_loss_rule,
     tags=frozenset({"reservoir", "regulated"}),
     metadata={"built_year": 1985, "operator": "NWC"},
@@ -187,6 +187,8 @@ def group_edges_by_type(system: WaterSystem) -> dict[str, list[Edge]]:
   - Technical: `"material"`, `"efficiency"`, `"loss_coefficient"`
 
 ### Separation of Concerns
+
+This follows taqsim's core principle: [expose everything, decide nothing](../00_philosophy.md).
 
 Taqsim intentionally does **not** interpret tags or metadata:
 

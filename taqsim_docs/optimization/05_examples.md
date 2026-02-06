@@ -70,7 +70,7 @@ system.add_node(
         id="dam",
         capacity=500.0,
         initial_storage=200.0,
-        release_rule=ProportionalRelease(rate=10.0),
+        release_policy=ProportionalRelease(rate=10.0),
         loss_rule=NoLoss(),
     )
 )
@@ -117,7 +117,7 @@ print(f"Found {len(result)} Pareto-optimal solutions")
 for i, solution in enumerate(result):
     spill = solution.scores["dam.spill"]
     deficit = solution.scores["city.deficit"]
-    rate = solution.parameters["dam.release_rule.rate"]
+    rate = solution.parameters["dam.release_policy.rate"]
     print(f"Solution {i}: spill={spill:.1f}, deficit={deficit:.1f}, rate={rate:.2f}")
 ```
 
@@ -181,7 +181,7 @@ print("-" * 50)
 for s in sorted_solutions[:5]:  # First 5
     print(f"Spill: {s.scores['dam.spill']:6.1f} | "
           f"Deficit: {s.scores['city.deficit']:6.1f} | "
-          f"Rate: {s.parameters['dam.release_rule.rate']:.2f}")
+          f"Rate: {s.parameters['dam.release_policy.rate']:.2f}")
 ```
 
 ---
@@ -259,7 +259,7 @@ dam = optimized_system.nodes["dam"]
 city = optimized_system.nodes["city"]
 
 print(f"\nOptimized system results:")
-print(f"  Release rate: {dam.release_rule.rate:.2f}")
+print(f"  Release rate: {dam.release_policy.rate:.2f}")
 print(f"  Final storage: {dam.storage:.1f}")
 ```
 

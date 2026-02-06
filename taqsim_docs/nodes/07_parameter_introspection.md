@@ -37,23 +37,23 @@ class FixedRelease(Strategy):
     __bounds__: ClassVar[dict[str, tuple[float, float]]] = {"rate": (0.0, 100.0)}
     rate: float = 50.0
 
-    def release(self, node, inflow: float, t: int, dt: float) -> float:
-        return min(self.rate * dt, node.storage - node.dead_storage)
+    def release(self, node, inflow: float, t: Timestep) -> float:
+        return min(self.rate, node.storage - node.dead_storage)
 
 class ZeroLoss:
     """Physical model (not a Strategy)."""
-    def calculate(self, node, t: int, dt: float) -> dict:
+    def calculate(self, node, t: Timestep) -> dict:
         return {}
 
 storage = Storage(
     id="reservoir",
     capacity=1000.0,
-    release_rule=FixedRelease(rate=50.0),
+    release_policy=FixedRelease(rate=50.0),
     loss_rule=ZeroLoss()
 )
 
 storage.strategies()
-# -> {"release_rule": FixedRelease(rate=50.0)}
+# -> {"release_policy": FixedRelease(rate=50.0)}
 # Note: loss_rule is NOT included (LossRule is not a Strategy)
 ```
 
@@ -136,8 +136,8 @@ for node_id, node in system.nodes.items():
 ### Example Output
 
 ```
-reservoir.release_rule: {"rate": 50.0}
-junction.split_rule: {"ratio_a": 0.6, "ratio_b": 0.4}
+reservoir.release_policy: {"rate": 50.0}
+junction.split_policy: {"ratio_a": 0.6, "ratio_b": 0.4}
 ```
 
 ---
@@ -205,6 +205,35 @@ strategy.constraints(node)
 # -> (SumToOne(params=('ratio_a', 'ratio_b'), target=1.0),)
 ```
 
+### cyclical_freq()
+
+Returns the frequency associated with each cyclical time-varying parameter. This lets optimization and analysis tools discover the periodicity of cyclical parameters defined on a strategy.
+
+```python
+from taqsim.time import Frequency
+
+@dataclass(frozen=True)
+class SeasonalRelease(Strategy):
+    __params__: ClassVar[tuple[str, ...]] = ("monthly_rates",)
+    __bounds__: ClassVar[dict[str, tuple[float, float]]] = {"monthly_rates": (0.0, 100.0)}
+    __time_varying__: ClassVar[tuple[str, ...]] = ("monthly_rates",)
+    __cyclical__: ClassVar[tuple[str, ...]] = ("monthly_rates",)
+    __cyclical_freq__: ClassVar[dict[str, Frequency]] = {"monthly_rates": Frequency.MONTHLY}
+    monthly_rates: tuple[float, ...] = (50.0,) * 12
+
+strategy = SeasonalRelease()
+strategy.cyclical_freq()
+# -> {"monthly_rates": Frequency.MONTHLY}
+```
+
+Strategies that have no cyclical parameters return an empty dict:
+
+```python
+strategy = FixedRelease(rate=50.0)
+strategy.cyclical_freq()
+# -> {}
+```
+
 ### with_params(**kwargs)
 
 Creates a new strategy instance with updated parameters (immutable):
@@ -254,11 +283,11 @@ best_params = optimizer.minimize(
 
 ```python
 # Strategies are immutable - use with_params() to create new instances
-old_release = storage.release_rule
+old_release = storage.release_policy
 new_release = old_release.with_params(rate=75.0)
 
 # Update the node (requires mutable node)
-storage.release_rule = new_release
+storage.release_policy = new_release
 ```
 
 For full details on system-level vectorization API (`to_vector()`, `with_vector()`, `param_bounds()`, `constraint_specs()`), see [Parameter Exposure](../system/03_parameter_exposure.md).

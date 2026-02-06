@@ -35,11 +35,11 @@ Nodes implement capability protocols defined in `protocols.py`:
 
 | Protocol | Method | Description |
 |----------|--------|-------------|
-| Generates | `generate(t, dt) -> float` | Produce water |
+| Generates | `generate(t) -> float` | Produce water |
 | Receives | `receive(amount, source_id, t) -> float` | Accept water from upstream |
-| Stores | `store(amount, t, dt) -> tuple[float, float]` | Buffer water (returns stored, spilled) |
-| Loses | `lose(t, dt) -> float` | Physical losses |
-| Consumes | `consume(amount, t, dt) -> tuple[float, float]` | Consume water (returns withdrawn, remaining) |
+| Stores | `store(amount, t) -> tuple[float, float]` | Buffer water (returns stored, spilled) |
+| Loses | `lose(t) -> float` | Physical losses |
+| Consumes | `consume(amount, t) -> tuple[float, float]` | Consume water (returns withdrawn, remaining) |
 
 Node types and their capabilities:
 
@@ -57,7 +57,7 @@ Note: `distribute()` and `release()` are node-specific methods, not protocols.
 ## Node Lifecycle
 
 ```
-create(id) → [update(t, dt) → record events]* → derive state from events
+create(id) → [update(t: Timestep) → record events]* → derive state from events
 ```
 
 ## BaseNode
@@ -85,7 +85,7 @@ class BaseNode:
 
     # Lifecycle
     def reset() -> None                   # clears events and resets state for fresh simulation
-    def update(t: int, dt: float) -> None # MUST be implemented by subclasses
+    def update(t: Timestep) -> None       # MUST be implemented by subclasses
 
     # Strategy introspection
     def strategies() -> dict[str, Strategy]  # returns all Strategy-typed fields
@@ -93,7 +93,7 @@ class BaseNode:
 
 ## Universal update() Pattern
 
-All nodes implement `update(t, dt)` which:
+All nodes implement `update(t: Timestep)` which:
 
 1. Generate water (if source)
 2. Receive from upstream edges

@@ -10,7 +10,7 @@ Not all configurable objects are optimizable. The system distinguishes between:
 
 | Type | Category | Optimizable | Examples |
 |------|----------|-------------|----------|
-| **Operational Policy** | Strategy | Yes | `ReleaseRule`, `SplitRule` |
+| **Operational Policy** | Strategy | Yes | `ReleasePolicy`, `SplitPolicy` |
 | **Physical Model** | Rule | No | `LossRule`, `EdgeLossRule` |
 
 ### Why the Distinction?
@@ -98,9 +98,9 @@ class FixedRelease(Strategy):
     __bounds__: ClassVar[dict[str, ParamBounds]] = {"rate": (0.0, 100.0)}
     rate: float = 50.0
 
-    def release(self, node: Storage, inflow: float, t: int, dt: float) -> float:
+    def release(self, node: Storage, inflow: float, ts: Timestep) -> float:
         available = node.storage - node.dead_storage
-        return min(self.rate * dt, available)
+        return min(self.rate, available)
 ```
 
 ### Non-Optimizable Fields
@@ -176,13 +176,13 @@ Each tunable parameter is described by a `ParamSpec`:
 ```python
 @dataclass(frozen=True, slots=True)
 class ParamSpec:
-    path: str    # e.g., "dam.release_rule.rate"
+    path: str    # e.g., "dam.release_policy.rate"
     value: float # scalar value
 ```
 
 | Field | Description | Example |
 |-------|-------------|---------|
-| `path` | Dot-separated path to parameter | `"dam.release_rule.rate"` |
+| `path` | Dot-separated path to parameter | `"dam.release_policy.rate"` |
 | `value` | Current scalar value | `50.0` |
 
 ## WaterSystem Vectorization API
@@ -201,9 +201,9 @@ for spec in schema:
 
 Output:
 ```
-dam.release_rule.rate = 50.0
-junction.split_rule.ratio_a = 0.6
-junction.split_rule.ratio_b = 0.4
+dam.release_policy.rate = 50.0
+junction.split_policy.ratio_a = 0.6
+junction.split_policy.ratio_b = 0.4
 ```
 
 ### to_vector()
@@ -229,9 +229,9 @@ for path, (low, high) in bounds.items():
 
 Output:
 ```
-dam.release_rule.rate: [0.0, 100.0]
-junction.split_rule.ratio_a: [0.0, 1.0]
-junction.split_rule.ratio_b: [0.0, 1.0]
+dam.release_policy.rate: [0.0, 100.0]
+junction.split_policy.ratio_a: [0.0, 1.0]
+junction.split_policy.ratio_b: [0.0, 1.0]
 ```
 
 ### bounds_vector()
@@ -320,8 +320,8 @@ Schema output:
 
 | path | value |
 |------|-------|
-| `junction.split_rule.ratio_a` | `0.6` |
-| `junction.split_rule.ratio_b` | `0.4` |
+| `junction.split_policy.ratio_a` | `0.6` |
+| `junction.split_policy.ratio_b` | `0.4` |
 
 Vector: `[0.6, 0.4]`
 
@@ -417,6 +417,24 @@ See [Constraints](../common/02_constraints.md) for full documentation on constra
 
 Time-varying parameters are expanded in the vector representation.
 
+### Cyclical Parameters
+
+Cyclical parameters (parameters that repeat on a periodic cycle, e.g., monthly release rules over a multi-year simulation) must declare `__cyclical_freq__` on the strategy class:
+
+```python
+@dataclass(frozen=True)
+class MonthlyRelease(Strategy):
+    __params__: ClassVar[tuple[str, ...]] = ("rate",)
+    __cyclical_freq__: ClassVar[Frequency] = Frequency.MONTHLY
+    rate: tuple[float, ...] = (50.0,) * 12  # 12 monthly values, cycled
+```
+
+The `__cyclical_freq__` tells the system the natural period of the parameter. During vectorization, only one cycle is exposed (compact form). At simulation time, the system tiles the cycle to cover the full simulation horizon. This keeps the parameter vector small regardless of simulation length.
+
+### Vectorization and Frequency
+
+Vectorization (`to_vector()`, `with_vector()`, `param_schema()`, `bounds_vector()`) operates on the **compact parameter form** and is frequency-agnostic. The `frequency` field on `WaterSystem` controls simulation-time behavior only -- it does not affect the shape or contents of the parameter vector.
+
 ### Path Expansion
 
 For a time-varying parameter with N timesteps, `param_schema()` returns N `ParamSpec` objects with indexed paths:
@@ -425,9 +443,9 @@ For a time-varying parameter with N timesteps, `param_schema()` returns N `Param
 # Strategy: rate = (50.0, 60.0, 70.0)
 schema = system.param_schema()
 # [
-#   ParamSpec(path="dam.release_rule.rate[0]", value=50.0),
-#   ParamSpec(path="dam.release_rule.rate[1]", value=60.0),
-#   ParamSpec(path="dam.release_rule.rate[2]", value=70.0),
+#   ParamSpec(path="dam.release_policy.rate[0]", value=50.0),
+#   ParamSpec(path="dam.release_policy.rate[1]", value=60.0),
+#   ParamSpec(path="dam.release_policy.rate[2]", value=70.0),
 # ]
 ```
 
@@ -445,7 +463,7 @@ vector = system.to_vector()  # [50.0, 60.0, 70.0]
 
 ```python
 new_system = system.with_vector([55.0, 65.0, 75.0])
-# dam.release_rule.rate = (55.0, 65.0, 75.0)
+# dam.release_policy.rate = (55.0, 65.0, 75.0)
 ```
 
 ### Bounds Expansion

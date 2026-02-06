@@ -1,32 +1,19 @@
 """Tests for naturalize function."""
 
-# conftest.py sets up sys.modules with mock taqsim modules BEFORE this file loads.
-# We import the mock classes via sys.modules to get the same classes that
-# naturalize.py will use for isinstance() checks.
-
-import sys
-
 import pytest
+from taqsim.edge import Edge
+from taqsim.node import (
+    Demand,
+    PassThrough,
+    Sink,
+    Source,
+    Splitter,
+    Storage,
+    TimeSeries,
+)
+from taqsim.system import WaterSystem
 
-# Get the mock classes from sys.modules (set up by conftest.py)
-_taqsim_node = sys.modules["taqsim.node"]
-_taqsim_edge = sys.modules["taqsim.edge"]
-_taqsim_system = sys.modules["taqsim.system"]
-
-Source = _taqsim_node.Source
-Sink = _taqsim_node.Sink
-PassThrough = _taqsim_node.PassThrough
-Storage = _taqsim_node.Storage
-Demand = _taqsim_node.Demand
-Splitter = _taqsim_node.Splitter
-TimeSeries = _taqsim_node.TimeSeries
-
-Edge = _taqsim_edge.Edge
-
-WaterSystem = _taqsim_system.WaterSystem
-
-# Now import from fishy.naturalize (will use same classes via sys.modules)
-from fishy.naturalize import (  # noqa: E402
+from fishy.naturalize import (
     NATURAL_TAG,
     AmbiguousSplitError,
     NaturalizeResult,

@@ -1,24 +1,10 @@
 """Tests for NaturalRiverSplitter."""
 
-import sys
 from dataclasses import FrozenInstanceError, dataclass
-from types import ModuleType
-from unittest.mock import MagicMock
 
 import pytest
 
-# Mock taqsim modules before importing fishy to avoid ModuleNotFoundError
-# This must happen before any fishy imports
-_taqsim_mock = ModuleType("taqsim")
-_taqsim_mock.system = MagicMock()
-_taqsim_mock.node = MagicMock()
-_taqsim_mock.edge = MagicMock()
-sys.modules.setdefault("taqsim", _taqsim_mock)
-sys.modules.setdefault("taqsim.system", _taqsim_mock.system)
-sys.modules.setdefault("taqsim.node", _taqsim_mock.node)
-sys.modules.setdefault("taqsim.edge", _taqsim_mock.edge)
-
-from fishy.naturalize.natural_river_splitter import NaturalRiverSplitter  # noqa: E402
+from fishy.naturalize.natural_river_splitter import NaturalRiverSplitter
 
 # NATURAL_TAG constant - must match the value in types.py
 NATURAL_TAG = "natural"

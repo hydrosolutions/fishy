@@ -1,26 +1,7 @@
 """Shared fixtures for IHA tests."""
 
-import sys
-from types import ModuleType
-
-
-class _StubModule(ModuleType):
-    """Module stub that returns a dummy class for any attribute access."""
-
-    def __getattr__(self, name: str) -> type:
-        return type(name, (), {})
-
-
-# Stub taqsim before fishy.__init__ tries to import fishy.naturalize.
-# The IHA subpackage has no dependency on taqsim, but importing
-# fishy.iha.* triggers the top-level fishy package which eagerly
-# imports fishy.naturalize (which requires taqsim).
-if "taqsim" not in sys.modules:
-    for _name in ("taqsim", "taqsim.node", "taqsim.edge", "taqsim.system"):
-        sys.modules.setdefault(_name, _StubModule(_name))
-
-import numpy as np  # noqa: E402
-import pytest  # noqa: E402
+import numpy as np
+import pytest
 
 DATES_2023 = np.arange("2023-01-01", "2024-01-01", dtype="datetime64[D]")
 

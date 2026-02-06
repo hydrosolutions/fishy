@@ -26,6 +26,7 @@ fishy (intelligence layer)
 ### taqsim Reference
 
 The `taqsim_docs/` directory contains API documentation for taqsim. Key types:
+
 - **Nodes**: `Source`, `Sink`, `Storage`, `Demand`, `Splitter`, `PassThrough`
 - **Edges**: `Edge` with `tags` for marking natural vs. infrastructure
 - **System**: `WaterSystem` orchestrates simulation

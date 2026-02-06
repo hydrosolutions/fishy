@@ -4,7 +4,7 @@ Environmental flows intelligence layer for [taqsim](https://github.com/hydrosolu
 
 ## Overview
 
-Fishy provides tools for environmental flow analysis of water systems simulated with taqsim. The primary use case is calculating IHA (Indicators of Hydrological Alteration) indices, which require comparing current flow regimes against natural baselines.
+Fishy provides tools for environmental flow analysis of water systems simulated with taqsim. It supports calculating IHA (Indicators of Hydrological Alteration) indices, comparing current flow regimes against natural baselines, and classifying regime alteration using DHRAM.
 
 ## Installation
 
@@ -94,6 +94,33 @@ splitter_rule = NaturalRiverSplitter(
 )
 ```
 
+### `iha`
+
+Compute the 33 IHA parameters (Richter et al., 1996) from daily flow timeseries.
+
+**Key exports:**
+- `compute_iha(q, dates)` — Compute IHA parameters per calendar year
+- `iha_from_trace(system, edge_id)` — Bridge from taqsim edge to IHA
+- `pulse_thresholds_from_record(q)` — Derive pulse thresholds from flow record
+- `IHAResult` — Immutable result wrapping `(n_years, 33)` matrix
+
+```python
+from fishy.iha import compute_iha, iha_from_trace
+```
+
+### `dhram`
+
+Classify flow regime alteration using the Dundee Hydrological Regime Alteration Method (Black et al., 2005). Produces a 1–5 classification compatible with the EU Water Framework Directive.
+
+**Key exports:**
+- `compute_dhram(natural, impacted)` — Classify from IHA results
+- `evaluate_dhram(natural_system, impacted_system)` — Full pipeline from WaterSystem pairs
+- `DHRAMResult` — Classification with full audit trail
+
+```python
+from fishy.dhram import compute_dhram, evaluate_dhram
+```
+
 ## Development
 
 ```bash
@@ -114,6 +141,8 @@ uv run ruff format
 ## Documentation
 
 - [Naturalize Module](docs/naturalize.md) — Detailed documentation with examples
+- [IHA Module](docs/iha.md) — IHA parameter computation
+- [DHRAM Module](docs/dhram.md) — Flow regime alteration classification
 
 ## License
 

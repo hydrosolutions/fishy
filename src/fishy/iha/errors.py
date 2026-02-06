@@ -80,3 +80,42 @@ class NegativeFlowError(IHAError):
             f"Flow data contains {self.n_negative} negative value(s) "
             f"(minimum: {self.min_value:.6g}). IHA requires non-negative flows."
         )
+
+
+@dataclass
+class MissingStartDateError(IHAError):
+    """Raised when a WaterSystem has no start_date set."""
+
+    def __str__(self) -> str:
+        return "WaterSystem has no start_date. IHA requires calendar dates for year extraction."
+
+
+@dataclass
+class NonDailyFrequencyError(IHAError):
+    """Raised when a WaterSystem does not use daily frequency."""
+
+    frequency: int
+
+    def __str__(self) -> str:
+        return f"WaterSystem frequency is {self.frequency}, but IHA requires daily (365)."
+
+
+@dataclass
+class EdgeNotFoundError(IHAError):
+    """Raised when the requested edge_id is not in the system."""
+
+    edge_id: str
+    available_edge_ids: frozenset[str]
+
+    def __str__(self) -> str:
+        return f"Edge '{self.edge_id}' not found in system. Available edges: {sorted(self.available_edge_ids)}"
+
+
+@dataclass
+class EmptyTraceError(IHAError):
+    """Raised when an edge trace contains no data."""
+
+    edge_id: str
+
+    def __str__(self) -> str:
+        return f"Edge '{self.edge_id}' has an empty trace (no WaterDelivered events)."

@@ -4,6 +4,7 @@ import networkx as nx
 from taqsim.edge import Edge
 from taqsim.node import Demand, PassThrough, Sink, Source, Splitter, Storage
 from taqsim.system import WaterSystem
+from taqsim.time import Frequency
 
 from fishy.naturalize.errors import (
     AmbiguousSplitError,
@@ -78,7 +79,7 @@ def naturalize(system: WaterSystem) -> NaturalizeResult:
     ctx.removed_edges.update(original_edge_ids - retained_edge_ids)
 
     # Step 8: Build new system
-    new_system = _build_system(system.dt, new_nodes, new_edges)
+    new_system = _build_system(system.frequency, new_nodes, new_edges)
 
     # Generate warnings
     ctx.warnings.extend(_generate_warnings(ctx, system))
@@ -204,7 +205,7 @@ def _validate_no_terminal_demands(
 
 def _has_natural_river_splitter(node: Splitter) -> bool:
     """Check if a splitter uses NaturalRiverSplitter."""
-    return isinstance(node.split_rule, NaturalRiverSplitter)
+    return isinstance(node.split_policy, NaturalRiverSplitter)
 
 
 def _transform_nodes(
@@ -280,7 +281,7 @@ def _clone_splitter(node: Splitter) -> Splitter:
     """Clone a Splitter node (only called for NaturalRiverSplitter)."""
     return Splitter(
         id=node.id,
-        split_rule=node.split_rule,
+        split_policy=node.split_policy,
         location=node.location,
         tags=node.tags,
         metadata=node.metadata,
@@ -346,12 +347,12 @@ def _clone_edge(edge: Edge) -> Edge:
 
 
 def _build_system(
-    dt: float,
+    frequency: Frequency,
     nodes: dict[NodeId, Source | Sink | PassThrough | Splitter],
     edges: dict[EdgeId, Edge],
 ) -> WaterSystem:
     """Build a new WaterSystem from nodes and edges."""
-    system = WaterSystem(dt=dt)
+    system = WaterSystem(frequency=frequency)
 
     for node in nodes.values():
         system.add_node(node)

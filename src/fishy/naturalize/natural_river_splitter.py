@@ -8,6 +8,7 @@ from fishy.naturalize.types import NATURAL_TAG
 
 if TYPE_CHECKING:
     from taqsim.node import Splitter
+    from taqsim.time import Timestep
 
 
 @dataclass(frozen=True)
@@ -102,7 +103,7 @@ class NaturalRiverSplitter:
         first_val = next(iter(self.ratios.values()))
         return len(first_val) if isinstance(first_val, tuple) else None
 
-    def split(self, node: "Splitter", amount: float, t: int) -> dict[str, float]:
+    def split(self, node: "Splitter", amount: float, t: "Timestep") -> dict[str, float]:
         """Distribute water according to natural ratios.
 
         Args:

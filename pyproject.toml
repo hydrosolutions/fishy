@@ -7,6 +7,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "networkx>=3.6.1",
     "numpy>=1.26",
+    "taqsim",
 ]
 
 
@@ -73,5 +74,6 @@ addopts = [
 prerelease = "if-necessary"
 
 [tool.uv.sources]
+taqsim = { git = "https://github.com/hydrosolutions/taqsim.git", rev = "main" }
 # transfer-learning-publication = { git = "https://github.com/CooperBigFoot/transfer-learning-publication.git", rev = "main" }
 # ctrl-freak = { git = "https://github.com/hydrosolutions/ctrl-freak.git", rev = "main" }

@@ -49,6 +49,7 @@ import networkx as nx
 @dataclass
 class WaterSystem:
     frequency: Frequency  # simulation frequency (e.g., Frequency.DAILY) — no default, must be explicit
+    start_date: date | None = None  # optional calendar anchor for time_index()
 
     _nodes: dict[str, BaseNode] = field(default_factory=dict, init=False)
     _edges: dict[str, Edge] = field(default_factory=dict, init=False)
@@ -96,6 +97,18 @@ Runs the simulation:
    - Process nodes in topological order
    - Route output from each node to downstream via edges
 
+### time_index(n)
+
+Returns `n` calendar dates starting from `start_date`, spaced by the system's frequency. Raises `ValueError` if `start_date` is `None`.
+
+```python
+system = WaterSystem(frequency=Frequency.MONTHLY, start_date=date(2024, 1, 1))
+dates = system.time_index(12)
+# (date(2024, 1, 1), date(2024, 2, 1), ..., date(2024, 12, 1))
+```
+
+See [Frequency — Calendar Date Mapping](../common/04_frequency.md#calendar-date-mapping) for details on monthly/yearly day clamping.
+
 ## Usage Example
 
 ```python
@@ -113,7 +126,7 @@ farm = Demand(id="farm", requirement=TimeSeries([30.0] * 12))
 city = Sink(id="city")
 
 # Create system
-system = WaterSystem(frequency=Frequency.DAILY)
+system = WaterSystem(frequency=Frequency.DAILY, start_date=date(2020, 1, 1))
 
 # Add nodes
 system.add_node(source)

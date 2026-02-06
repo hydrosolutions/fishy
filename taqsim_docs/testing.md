@@ -137,6 +137,7 @@ Nodes and edges can be passed in any order — the builder separates them by typ
 make_system(
     *components,
     frequency=Frequency.MONTHLY,  # default
+    start_date=None,              # optional calendar anchor
     validate=True,                # default
 )
 ```

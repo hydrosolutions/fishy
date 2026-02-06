@@ -191,3 +191,37 @@ daily_evap = t.scale(monthly_evap_rate, from_freq=Frequency.MONTHLY)
 # Value lookup: selecting from cyclical params
 current_ratio = self.param_at("city_fraction", t)
 ```
+
+## Calendar Date Mapping
+
+The `time_index` function bridges integer timesteps to real calendar dates. The simulation engine itself stays in integer-space — `time_index` is a pure derivation for intelligence layers that need calendar awareness (e.g., computing monthly means or day-of-year timing).
+
+```python
+from datetime import date
+from taqsim.time import Frequency, time_index
+
+time_index(start: date, frequency: Frequency, n: int) -> tuple[date, ...]
+```
+
+Given a start date, a frequency, and a count `n`, it returns `n` dates spaced according to the frequency:
+
+| Frequency | Spacing |
+|-----------|---------|
+| `DAILY` | `start + timedelta(days=i)` |
+| `WEEKLY` | `start + timedelta(weeks=i)` |
+| `MONTHLY` | Calendar months from start (day clamped to month length) |
+| `YEARLY` | Calendar years from start (day clamped to month length) |
+
+Monthly and yearly offsets are always computed from the **original start date**, not from the previous entry. This means day-of-month is preserved when the target month is long enough, and clamped otherwise:
+
+```python
+# Monthly: Jan 31 -> Feb 29 (leap) -> Mar 31 -> Apr 30
+time_index(date(2024, 1, 31), Frequency.MONTHLY, 4)
+# (date(2024, 1, 31), date(2024, 2, 29), date(2024, 3, 31), date(2024, 4, 30))
+
+# Daily: 3 days from Jan 1
+time_index(date(2024, 1, 1), Frequency.DAILY, 3)
+# (date(2024, 1, 1), date(2024, 1, 2), date(2024, 1, 3))
+```
+
+`WaterSystem` exposes this as a convenience method when `start_date` is set — see [WaterSystem Architecture](../system/01_architecture.md).

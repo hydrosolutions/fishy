@@ -25,12 +25,12 @@ fishy (intelligence layer)
 
 ### taqsim Reference
 
-The `taqsim_docs/` directory contains API documentation for taqsim. Key types:
+The `taqsim_docs/` directory contains API documentation synced from the installed taqsim package. Run `make sync-docs` to update.
 
-- **Nodes**: `Source`, `Sink`, `Storage`, `Demand`, `Splitter`, `PassThrough`
+- **Nodes**: `Source`, `Sink`, `Storage`, `Demand`, `Splitter`, `PassThrough`, `Reach`
 - **Edges**: `Edge` with `tags` for marking natural vs. infrastructure
 - **System**: `WaterSystem` orchestrates simulation
-- **Protocols**: `SplitRule`, `ReleaseRule`, `LossRule`
+- **Protocols**: `SplitRule`, `ReleaseRule`, `LossRule`, `RoutingModel`, `ReachLossRule`
 
 ## Quick Reference
 

@@ -16,3 +16,5 @@ wheels/
 .coverage
 .pytest_cache/
 htmlcov/
+
+taqsim_docs/

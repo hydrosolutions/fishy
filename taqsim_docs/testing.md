@@ -9,12 +9,12 @@ from taqsim.testing import (
     # Decision policies (Strategy subclasses — optimizable)
     FixedRelease, ProportionalRelease, EvenSplit, FixedSplit,
     # Physical model rules (frozen dataclasses — NOT Strategy)
-    ConstantLoss, ProportionalEdgeLoss,
+    ConstantLoss, ProportionalReachLoss,
     # Core no-ops (re-exported from taqsim)
-    NoLoss, NoEdgeLoss,
+    NoLoss, NoReachLoss, NoRouting,
     # Factory functions
     make_source, make_sink, make_storage, make_demand,
-    make_splitter, make_passthrough, make_edge,
+    make_splitter, make_passthrough, make_reach, make_edge,
     # System builder
     make_system,
 )
@@ -66,15 +66,16 @@ Weights are matched to targets by position. If there are more targets than weigh
 
 ## Physical Model Rules
 
-Plain frozen dataclasses — **not** `Strategy` subclasses, not optimizable. They satisfy `LossRule` or `EdgeLossRule` protocols.
+Plain frozen dataclasses — **not** `Strategy` subclasses, not optimizable. They satisfy `LossRule` or `ReachLossRule` protocols.
 
-### NoLoss / NoEdgeLoss
+### NoLoss / NoReachLoss / NoRouting
 
-Zero-loss implementations re-exported from core. Return `{}`.
+Zero-loss and pass-through implementations re-exported from core.
 
 ```python
-NoLoss()       # satisfies LossRule
-NoEdgeLoss()   # satisfies EdgeLossRule
+NoLoss()       # satisfies LossRule — returns {}
+NoReachLoss()  # satisfies ReachLossRule — returns {}
+NoRouting()    # satisfies RoutingModel — passes inflow straight through with no delay
 ```
 
 ### ConstantLoss
@@ -86,12 +87,12 @@ ConstantLoss(evaporation_rate=0.01, seepage_rate=0.005)
 # Returns {EVAPORATION: storage * 0.01, SEEPAGE: storage * 0.005}
 ```
 
-### ProportionalEdgeLoss
+### ProportionalReachLoss
 
-Proportional loss on edge flow.
+Proportional loss on reach flow.
 
 ```python
-ProportionalEdgeLoss(loss_fraction=0.1)
+ProportionalReachLoss(loss_fraction=0.1)
 # Returns {SEEPAGE: flow * 0.1}
 ```
 
@@ -107,7 +108,8 @@ Each factory creates a node or edge with sensible defaults. Pass `**overrides` t
 | `make_demand(id, *, n_steps=12)` | `"demand"` | `requirement=TimeSeries([50.0] * n_steps)` |
 | `make_splitter(id)` | `"splitter"` | `split_policy=EvenSplit()` |
 | `make_passthrough(id)` | `"passthrough"` | — |
-| `make_edge(id, source, target)` | *(required)* | `capacity=1000, loss_rule=NoEdgeLoss()` |
+| `make_reach(id)` | `"reach"` | `routing_model=NoRouting(), loss_rule=NoReachLoss()` |
+| `make_edge(id, source, target)` | *(required)* | — (pure topology, no defaults beyond id/source/target) |
 
 ```python
 # Override any default
@@ -115,6 +117,9 @@ storage = make_storage("dam", capacity=5000.0, release_policy=FixedRelease(rate=
 
 # Use defaults for quick setup
 source = make_source("river", n_steps=24)
+
+# Reach with custom loss
+reach = make_reach("canal", loss_rule=ProportionalReachLoss(loss_fraction=0.05))
 ```
 
 ## System Builder
@@ -146,20 +151,23 @@ make_system(
 
 ```python
 from taqsim.testing import (
-    FixedRelease, EvenSplit, ConstantLoss, ProportionalEdgeLoss,
-    make_source, make_storage, make_splitter, make_sink, make_edge, make_system,
+    FixedRelease, EvenSplit, ConstantLoss, ProportionalReachLoss,
+    make_source, make_storage, make_splitter, make_sink,
+    make_reach, make_edge, make_system,
 )
 
 system = make_system(
     make_source("river", n_steps=24),
     make_storage("reservoir", release_policy=FixedRelease(rate=30.0), loss_rule=ConstantLoss()),
+    make_reach("canal", loss_rule=ProportionalReachLoss(loss_fraction=0.05)),
     make_splitter("junction", split_policy=EvenSplit()),
     make_sink("irrigation"),
     make_sink("municipal"),
     make_edge("e1", "river", "reservoir"),
-    make_edge("e2", "reservoir", "junction", loss_rule=ProportionalEdgeLoss(loss_fraction=0.05)),
-    make_edge("e3", "junction", "irrigation"),
-    make_edge("e4", "junction", "municipal"),
+    make_edge("e2", "reservoir", "canal"),
+    make_edge("e3", "canal", "junction"),
+    make_edge("e4", "junction", "irrigation"),
+    make_edge("e5", "junction", "municipal"),
 )
 
 results = system.simulate(24)

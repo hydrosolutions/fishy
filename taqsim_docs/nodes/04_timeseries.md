@@ -103,10 +103,10 @@ demand_with_losses = Demand(
 `TimeSeries` stores values in per-timestep units. During simulation, values are used directly:
 
 ```python
-# In Source.generate():
+# In Source._generate():
 amount = self.inflow[t]
 
-# In Demand.consume():
+# In Demand._consume():
 required = self.requirement[t]
 ```
 

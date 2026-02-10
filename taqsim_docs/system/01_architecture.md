@@ -19,7 +19,7 @@ See [Design Philosophy](../00_philosophy.md) for the foundational principle: **e
 | Component | Responsibility |
 |-----------|----------------|
 | **Nodes** | Process water, record events (know nothing about topology) |
-| **Edges** | Transport water, apply losses (know source/target IDs) |
+| **Edges** | Define topology (pure connectors — know source/target IDs, no physics) |
 | **WaterSystem** | Derive topology, validate, orchestrate simulation |
 
 ### Nodes Don't Know Targets
@@ -69,10 +69,10 @@ system.add_node(Source(id="river", inflow=inflow_data))
 
 ### add_edge(edge)
 
-Registers an edge connecting two nodes.
+Registers an edge connecting two nodes. Edges are pure topology — they define connectivity only.
 
 ```python
-system.add_edge(Edge(id="e1", source="river", target="dam", capacity=500, loss_rule=no_loss))
+system.add_edge(Edge(id="e1", source="river", target="dam"))
 ```
 
 ### validate()
@@ -136,13 +136,12 @@ system.add_node(junction)
 system.add_node(farm)
 system.add_node(city)
 
-# Add edges (topology defined here)
-# (Assume no_loss and seepage are pre-defined EdgeLossRule implementations)
-system.add_edge(Edge(id="e1", source="river", target="dam", capacity=500, loss_rule=no_loss))
-system.add_edge(Edge(id="e2", source="dam", target="turbine", capacity=500, loss_rule=no_loss))
-system.add_edge(Edge(id="e3", source="turbine", target="junction", capacity=500, loss_rule=no_loss))
-system.add_edge(Edge(id="e4", source="junction", target="farm", capacity=200, loss_rule=seepage))
-system.add_edge(Edge(id="e5", source="junction", target="city", capacity=100, loss_rule=no_loss))
+# Add edges (pure topology — just connectivity, no physics)
+system.add_edge(Edge(id="e1", source="river", target="dam"))
+system.add_edge(Edge(id="e2", source="dam", target="turbine"))
+system.add_edge(Edge(id="e3", source="turbine", target="junction"))
+system.add_edge(Edge(id="e4", source="junction", target="farm"))
+system.add_edge(Edge(id="e5", source="junction", target="city"))
 
 # Validate (derives targets from edges)
 system.validate()
@@ -183,12 +182,15 @@ The `Timestep` is created from the `Frequency` and carries all temporal context 
 
 ### Routing Logic
 
+Edges are pure topology, so routing is a direct pass-through:
+
 1. Read `WaterOutput` events → route to single outgoing edge
 2. Read `WaterDistributed` events → route to specified target edge
 3. For each routed amount:
-   - `edge.receive(amount, ts)`
-   - `delivered = edge.update(ts)` (applies losses)
-   - `target_node.receive(delivered, edge_id, ts)`
+   - Look up `edge.target` to find the downstream node
+   - `target_node.receive(amount, edge_id, ts)` — deliver directly, no edge processing
+
+There is no `edge.receive()` or `edge.update()` call. The edge is used only to resolve which target node receives the water. Transport physics (routing delay, losses) are handled by **Reach** nodes when present in the network.
 
 ## Properties
 

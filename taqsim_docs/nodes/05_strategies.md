@@ -45,7 +45,7 @@ class FixedRelease(Strategy):
 
 ### Note on Physical Models
 
-`LossRule` implementations do **not** inherit from `Strategy`. They are physical models representing infrastructure, not operational policies. Only `ReleasePolicy` and `SplitPolicy` are optimizable.
+`LossRule`, `RoutingModel`, and `ReachLossRule` implementations do **not** inherit from `Strategy`. They are physical models representing infrastructure, not operational policies. Only `ReleasePolicy` and `SplitPolicy` are optimizable.
 
 ## Protocol Definitions
 
@@ -108,16 +108,57 @@ class LossRule(Protocol):
 - `SEEPAGE`
 - `OVERFLOW`
 - `INEFFICIENCY`
-- `CAPACITY_EXCEEDED`
 
 Users can create custom loss reasons: `LossReason("infiltration")`
 
 Import from `taqsim.common` or `taqsim.node`:
 ```python
-from taqsim.common import LossReason, EVAPORATION, SEEPAGE, OVERFLOW, INEFFICIENCY, CAPACITY_EXCEEDED
-# or (CAPACITY_EXCEEDED not exported from taqsim.node)
+from taqsim.common import LossReason, EVAPORATION, SEEPAGE, OVERFLOW, INEFFICIENCY
 from taqsim.node import LossReason, EVAPORATION, SEEPAGE, OVERFLOW, INEFFICIENCY
 ```
+
+### RoutingModel
+
+Models physical transport through a Reach node (routing delay, attenuation). This is a physical model, **not** a `Strategy` — it is not optimizable.
+
+```python
+@runtime_checkable
+class RoutingModel(Protocol):
+    def initial_state(self, reach: Reach) -> Any: ...
+    def route(
+        self,
+        reach: Reach,      # the reach node
+        inflow: float,     # inflow this timestep
+        state: Any,        # current routing state
+        t: Timestep        # timestep
+    ) -> tuple[float, Any]: ...  # (outflow, new_state)
+    def storage(self, state: Any) -> float: ...  # water in transit
+```
+
+| Method | Purpose |
+|--------|---------|
+| `initial_state(reach)` | Returns the initial routing state for the given reach |
+| `route(reach, inflow, state, t)` | Transforms (state, inflow) into (outflow, new_state) |
+| `storage(state)` | Returns the volume of water currently in transit within the routing state |
+
+The `state` parameter is opaque to the Reach node — the routing model owns its internal representation. Simple models may use `None`; delay-based models may use a deque or array of in-transit volumes.
+
+### ReachLossRule
+
+Calculates transit losses for a Reach node. Like `LossRule`, this is a physical model, **not** a `Strategy`.
+
+```python
+@runtime_checkable
+class ReachLossRule(Protocol):
+    def calculate(
+        self,
+        reach: Reach,   # the reach node
+        flow: float,    # routed outflow to apply losses to
+        t: Timestep     # timestep
+    ) -> dict[LossReason, float]: ...  # {reason: amount}
+```
+
+Note: `ReachLossRule.calculate` receives the routed **outflow** (not inflow), so losses are applied after routing.
 
 ## Parameter Bounds
 
@@ -291,6 +332,30 @@ class CombinedLoss:
         }
 ```
 
+### NoRouting (default RoutingModel)
+
+Pass-through routing with no delay or attenuation. Outflow equals inflow, no water in transit.
+
+```python
+from taqsim.node import NoRouting
+
+routing = NoRouting()
+# initial_state returns None
+# route returns (inflow, None) — immediate pass-through
+# storage returns 0.0 — nothing in transit
+```
+
+### NoReachLoss (default ReachLossRule)
+
+No transit losses. Returns an empty loss dict.
+
+```python
+from taqsim.node import NoReachLoss
+
+loss = NoReachLoss()
+# calculate returns {} — no losses
+```
+
 ## Usage
 
 ```python
@@ -305,8 +370,6 @@ loss = ZeroLoss()
 source = Source(
     id="river",
     inflow=TimeSeries(values=[10.0, 15.0]),
-    targets=["dam"],
-    split_policy=split
 )
 
 storage = Storage(
@@ -314,8 +377,6 @@ storage = Storage(
     capacity=1000.0,
     release_policy=release,
     loss_rule=loss,
-    split_policy=split,
-    targets=["downstream"]
 )
 ```
 

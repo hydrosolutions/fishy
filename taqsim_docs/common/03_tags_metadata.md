@@ -27,11 +27,10 @@ Tags and metadata provide a mechanism for intelligence layers to annotate and qu
 
 ## Usage on Nodes
 
-All node types (`Source`, `Storage`, `Demand`, `Splitter`, `PassThrough`, `Sink`) inherit `tags` and `metadata` from `BaseNode`:
+All node types (`Source`, `Storage`, `Demand`, `Splitter`, `PassThrough`, `Reach`, `Sink`) inherit `tags` and `metadata` from `BaseNode`:
 
 ```python
 from taqsim.node import Source, Storage, Sink
-from taqsim.node.timeseries import TimeSeries
 
 # Source with tags and metadata
 source = Source(
@@ -61,7 +60,7 @@ sink = Sink(
 
 ## Usage on Edges
 
-Edges also support `tags` and `metadata`:
+Edges support `tags` and `metadata` for annotation. Edges are pure topology (no capacity, no loss rules), so tags and metadata are the primary way to attach domain information:
 
 ```python
 from taqsim.edge import Edge
@@ -71,8 +70,6 @@ canal = Edge(
     id="main_canal",
     source="reservoir",
     target="city_demand",
-    capacity=200.0,
-    loss_rule=canal_loss_rule,
     tags=frozenset({"canal", "concrete", "primary"}),
     metadata={"length_km": 45.5, "year_built": 1972},
 )
@@ -82,8 +79,6 @@ river = Edge(
     id="river_segment",
     source="upstream",
     target="downstream",
-    capacity=500.0,
-    loss_rule=river_loss_rule,
     tags=frozenset({"river", "natural"}),
     metadata={"average_velocity_mps": 1.2},
 )

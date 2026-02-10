@@ -54,11 +54,11 @@ The simulation engine is intentionally "dumb." It routes water through a network
 │  │                    WaterSystem                          ││
 │  │  • Topology (DAG)                                       ││
 │  │  • Simulation loop (topological order)                  ││
-│  │  • Water routing (edges)                                ││
+│  │  • Water routing (edges as pure topology)               ││
 │  └─────────────────────────────────────────────────────────┘│
 │  ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌─────────────┐  │
 │  │  Nodes    │ │   Edges   │ │ Strategies│ │   Events    │  │
-│  │  (6 types)│ │ (routing) │ │ (behavior)│ │ (14 types)  │  │
+│  │  (7 types)│ │(topology) │ │ (behavior)│ │ (14 types)  │  │
 │  └───────────┘ └───────────┘ └───────────┘ └─────────────┘  │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -67,7 +67,7 @@ The simulation engine is intentionally "dumb." It routes water through a network
 
 ### 1. Event Sourcing
 
-Every water movement is an immutable event. Taqsim records 14 event types (11 node events, 3 edge events) with no interpretation:
+Every water movement is an immutable event. Taqsim records 14 node event types with no interpretation:
 
 ```python
 # Taqsim records this event...
@@ -77,7 +77,7 @@ WaterLost(amount=50.0, reason=EVAPORATION, t=5)
 # That judgment belongs to external analysis
 ```
 
-See: [Node Events](nodes/02_events.md), [Edge Events](edges/02_events.md)
+See: [Node Events](nodes/02_events.md)
 
 ### 2. Traces
 

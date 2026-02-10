@@ -1,137 +1,74 @@
-# Capability Protocols
+# The Node Contract
 
 ## Overview
 
-Capabilities are defined as `Protocol` classes. Nodes implement capabilities by having the required methods.
+Each node in taqsim adheres to a minimal contract: implement `update(t)` and, if accepting upstream water, satisfy the `Receives` protocol. All internal processing is private — the system and external code interact through `update()`, `receive()`, and **events**.
 
-## Protocol Definitions
+## The Receives Protocol
 
-### Generates
-
-```python
-@runtime_checkable
-class Generates(Protocol):
-    def generate(self, t: int, dt: float) -> float: ...
-```
-
-Returns water volume generated.
-
-### Receives
+`Receives` is the sole runtime-checked protocol. `WaterSystem` uses `isinstance(node, Receives)` to determine which nodes can accept water from upstream edges.
 
 ```python
 @runtime_checkable
 class Receives(Protocol):
-    def receive(self, amount: float, source_id: str, t: int) -> float: ...
+    def receive(self, amount: float, source_id: str, t: Timestep) -> float: ...
 ```
 
-Returns amount actually received.
+Returns the amount actually received.
 
-### Stores
+### Which nodes satisfy Receives
+
+| Node        | Receives |
+|-------------|----------|
+| Source      |          |
+| PassThrough | yes      |
+| Splitter    | yes      |
+| Demand      | yes      |
+| Storage     | yes      |
+| Reach       | yes      |
+| Sink        | yes      |
+
+Source is the only node that does not receive water — it generates it.
+
+## The update() Contract
+
+`update(t: Timestep)` is the universal entry point called by `WaterSystem` for every node at each timestep. The system never calls internal sub-steps.
+
+Each node type implements a private pipeline inside `update()`:
+
+| Node        | Private Pipeline                         | Output Event     |
+|-------------|------------------------------------------|------------------|
+| Source      | `_generate`                              | WaterOutput      |
+| PassThrough | (pass-through)                           | WaterOutput      |
+| Splitter    | `_distribute` (via split_policy)         | WaterDistributed |
+| Demand      | `_consume`                               | WaterOutput      |
+| Storage     | `_store`, `_lose`, `_release`            | WaterOutput      |
+| Reach       | route, lose, transit snapshot            | WaterOutput      |
+| Sink        | (terminal — no-op)                       | —                |
+
+## Events as the Observation Layer
+
+Since internal steps are private, all observation happens through events:
 
 ```python
-@runtime_checkable
-class Stores(Protocol):
-    @property
-    def storage(self) -> float: ...
-
-    @property
-    def capacity(self) -> float: ...
-
-    def store(self, amount: float, t: int, dt: float) -> tuple[float, float]: ...
+# Assert on events, not internal state
+source.update(t)
+events = source.events_of_type(WaterGenerated)
+assert events[0].amount == 100.0
 ```
 
-Returns `(stored, released)`.
-
-### Loses
-
-```python
-@runtime_checkable
-class Loses(Protocol):
-    def lose(self, t: int, dt: float) -> float: ...
-```
-
-Returns amount lost.
-
-### Consumes
-
-```python
-@runtime_checkable
-class Consumes(Protocol):
-    def consume(self, amount: float, t: int, dt: float) -> tuple[float, float]: ...
-```
-
-Returns `(consumed, remaining)`.
-
-## Composition Table
-
-| Node Type   | Generates | Receives | Stores | Loses | Consumes |
-|-------------|-----------|----------|--------|-------|----------|
-| Source      | ✓         |          |        |       |          |
-| PassThrough |           | ✓        |        |       |          |
-| Splitter    |           | ✓        |        |       |          |
-| Storage     |           | ✓        | ✓      | ✓     |          |
-| Demand      |           | ✓        |        |       | ✓        |
-| Sink        |           | ✓        |        |       |          |
-
-> **Note**: Topology (targets, distribution) is handled by `WaterSystem`, not by nodes.
-> The `Gives` protocol has been removed. Splitter uses `split_policy` internally
-> but targets are derived from edges by the orchestrator.
+This is the same pattern used by Reach from the start — the refactoring converges all nodes to this approach.
 
 ## Checking Protocol Satisfaction
 
 ```python
-from taqsim.node import Stores, Generates
+from taqsim.node import Receives
 
-if isinstance(node, Stores):
-    stored, released = node.store(water, t, dt)
-
-if isinstance(node, Generates):
-    water = node.generate(t, dt)
-```
-
-## Implementing a Capability
-
-Example: implementing `Stores` for a reservoir:
-
-```python
-from taqsim.node import BaseNode, WaterStored, WaterReleased, WaterLost
-
-@dataclass
-class Reservoir(BaseNode):
-    _capacity: float = 0.0
-    _initial_storage: float = 0.0
-
-    @property
-    def storage(self) -> float:
-        stored = sum(e.amount for e in self.events_of_type(WaterStored))
-        released = sum(e.amount for e in self.events_of_type(WaterReleased))
-        lost = sum(e.amount for e in self.events_of_type(WaterLost))
-        return self._initial_storage + stored - released - lost
-
-    @property
-    def capacity(self) -> float:
-        return self._capacity
-
-    def store(self, amount: float, t: int, dt: float) -> tuple[float, float]:
-        available_space = self.capacity - self.storage
-        stored = min(amount, available_space)
-        released = amount - stored
-
-        self.record(WaterStored(amount=stored, t=t))
-        self.record(WaterReleased(amount=released, t=t))
-
-        return stored, released
-
-# Reservoir satisfies Stores protocol
-assert isinstance(Reservoir(id="dam"), Stores)
+if isinstance(node, Receives):
+    node.receive(amount, source_id, t)
 ```
 
 ## Protocol vs BaseNode
 
-- `BaseNode`: Provides event recording infrastructure
-- Protocols: Define behavioral contracts
-
-A class can:
-1. Extend `BaseNode` for event recording
-2. Implement protocols for specific capabilities
-3. Be checked with `isinstance(obj, Protocol)` at runtime
+- `BaseNode`: Provides event recording infrastructure and the `update()` contract
+- `Receives`: The sole protocol — defines the ability to accept water from upstream

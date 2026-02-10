@@ -29,30 +29,11 @@ node.record(WaterReleased(amount=outflow, t=0))
 current_storage = sum(stored) - sum(released) - sum(lost)
 ```
 
-### Capability Protocols
+### The Node Contract
 
-Nodes implement capability protocols defined in `protocols.py`:
+`Receives` is the sole runtime-checked protocol. `WaterSystem` uses `isinstance(node, Receives)` to determine which nodes can accept water from upstream edges. All other node behavior is encapsulated within `update(t)` using private pipeline methods.
 
-| Protocol | Method | Description |
-|----------|--------|-------------|
-| Generates | `generate(t) -> float` | Produce water |
-| Receives | `receive(amount, source_id, t) -> float` | Accept water from upstream |
-| Stores | `store(amount, t) -> tuple[float, float]` | Buffer water (returns stored, spilled) |
-| Loses | `lose(t) -> float` | Physical losses |
-| Consumes | `consume(amount, t) -> tuple[float, float]` | Consume water (returns withdrawn, remaining) |
-
-Node types and their capabilities:
-
-```
-Source      = Generates
-Splitter    = Receives + distribute()
-Storage     = Receives + Stores + Loses + release()
-Demand      = Receives + Consumes
-Sink        = Receives
-PassThrough = Receives
-```
-
-Note: `distribute()` and `release()` are node-specific methods, not protocols.
+See [The Node Contract](03_capabilities.md) for details.
 
 ## Node Lifecycle
 
@@ -93,16 +74,17 @@ class BaseNode:
 
 ## Universal update() Pattern
 
-All nodes implement `update(t: Timestep)` which:
+All nodes implement `update(t: Timestep)` as their sole public processing method. The system calls `update()` once per timestep for each node in topological order. Internal processing is private to each node type:
 
-1. Generate water (if source)
-2. Receive from upstream edges
-3. Store/release (if has storage)
-4. Consume (if demand)
-5. Calculate losses
-6. Distribute downstream
+- **Source**: `_generate` → WaterOutput
+- **Storage**: `_store` → `_lose` → `_release` → WaterOutput
+- **Demand**: `_consume` → WaterOutput
+- **Splitter**: `_distribute` → WaterDistributed
+- **Reach**: route → exit → lose → transit snapshot → WaterOutput
+- **PassThrough**: pass-through → WaterOutput
+- **Sink**: no-op
 
-Each step records appropriate events.
+Each step records appropriate events. External code observes behavior through events, never by calling sub-steps directly.
 
 ## Data Flow
 

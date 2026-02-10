@@ -2,16 +2,17 @@
 
 ## Overview
 
-Six node types compose the water system. Each combines specific capabilities. Nodes process water and record events but **do not know their targets** — topology is derived from edges by `WaterSystem`.
+Seven node types compose the water system. Each combines specific capabilities. Nodes process water and record events but **do not know their targets** — topology is derived from edges by `WaterSystem`.
 
-| Node | Generates | Receives | Stores | Loses | Consumes | Output Event |
-|------|-----------|----------|--------|-------|----------|--------------|
-| Source | ✓ | | | | | WaterOutput |
-| PassThrough | | ✓ | | | | WaterOutput |
-| Splitter | | ✓ | | | | WaterDistributed |
-| Demand | | ✓ | | | ✓ | WaterOutput |
-| Storage | | ✓ | ✓ | ✓ | | WaterOutput |
-| Sink | | ✓ | | | | (terminal) |
+| Node        | Receives | Pipeline (private)                    | Output Event     |
+|-------------|----------|---------------------------------------|------------------|
+| Source      |          | `_generate`                           | WaterOutput      |
+| PassThrough | yes      | (pass-through)                        | WaterOutput      |
+| Splitter    | yes      | `_distribute` (via split_policy)      | WaterDistributed |
+| Demand      | yes      | `_consume`                            | WaterOutput      |
+| Storage     | yes      | `_store`, `_lose`, `_release`         | WaterOutput      |
+| Reach       | yes      | route, lose, transit snapshot         | WaterOutput      |
+| Sink        | yes      | (terminal)                            | —                |
 
 ---
 
@@ -19,9 +20,9 @@ Six node types compose the water system. Each combines specific capabilities. No
 
 Water entry point. Generates inflow from a TimeSeries.
 
-### Capabilities
+### Pipeline
 
-- **Generates**: Produces water from `inflow` TimeSeries
+- `_generate`: Produces water from `inflow` TimeSeries
 
 ### Parameters
 
@@ -165,10 +166,10 @@ splitter = Splitter(
 
 Consumption node. Receives water, consumes requirement, passes remainder downstream.
 
-### Capabilities
+### Pipeline
 
-- **Receives**: Accepts water from upstream
-- **Consumes**: Removes water to meet requirement
+- **Receives**: Accepts water from upstream via `receive()`
+- `_consume`: Withdraws water to meet requirement
 
 ### Parameters
 
@@ -251,11 +252,12 @@ city = Demand(
 
 Reservoir node. Receives, stores, loses, releases, and outputs water.
 
-### Capabilities
+### Pipeline
 
-- **Receives**: Accepts water from upstream
-- **Stores**: Buffers water up to capacity
-- **Loses**: Physical losses (evaporation, seepage)
+- **Receives**: Accepts water from upstream via `receive()`
+- `_store`: Buffers water up to capacity
+- `_lose`: Physical losses (evaporation, seepage)
+- `_release`: Controlled release via release_policy
 
 ### Parameters
 
@@ -335,6 +337,73 @@ reservoir = Storage(
 
 # Check current storage
 print(reservoir.storage)  # 5000.0
+```
+
+---
+
+## Reach
+
+Transport node. Models physical transport processes: routing delay, attenuation, and transit losses. Water enters the reach, is routed through (potentially with delay), losses are applied to the routed outflow, and the net outflow continues downstream.
+
+### Pipeline
+
+- **Receives**: Accepts water from upstream via `receive()`
+- Route: Transforms inflow through routing_model (delay, attenuation)
+- Lose: Transit losses applied to routed outflow via loss_rule
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `id` | `str` | Yes | Unique identifier |
+| `routing_model` | `RoutingModel` | Yes | Routing physics (delay, attenuation) |
+| `loss_rule` | `ReachLossRule` | Yes | Transit loss calculation |
+| `location` | `tuple[float, float]` | No | (lat, lon) in WGS84 |
+
+### Properties
+
+- `water_in_transit` — current volume of water stored within the routing model's internal state
+
+### Events Recorded
+
+- `WaterReceived(amount, source_id, t)` — when water arrives
+- `WaterEnteredReach(amount, t)` — total inflow entering the channel this timestep
+- `WaterLost(amount, reason, t)` — transit losses (per loss reason)
+- `WaterInTransit(amount, t)` — snapshot of water currently in transit after routing
+- `WaterOutput(amount, t)` — net outflow available for downstream
+
+### Loss Handling
+
+Losses are applied to the routed outflow. If total losses exceed the outflow, they are scaled proportionally:
+```python
+if total_loss > outflow:
+    scale = outflow / total_loss
+    losses = {reason: amount * scale for reason, amount in losses.items()}
+```
+
+### Update Cycle
+
+1. Record `WaterEnteredReach` for accumulated inflow
+2. Route: transform (state, inflow) into (outflow, new_state) via `routing_model.route()`
+3. Lose: calculate and apply transit losses via `loss_rule.calculate()`
+4. Record `WaterInTransit` snapshot
+5. Record `WaterOutput` for net outflow (outflow minus losses)
+6. Reset counter
+
+### Example
+
+```python
+from taqsim.node import Reach, NoRouting, NoReachLoss
+
+# Simple pass-through reach (no delay, no losses)
+channel = Reach(
+    id="main_channel",
+    routing_model=NoRouting(),
+    loss_rule=NoReachLoss()
+)
+
+# Check water currently in transit
+print(channel.water_in_transit)  # 0.0
 ```
 
 ---

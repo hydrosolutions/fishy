@@ -46,17 +46,16 @@ WaterReleased(amount=20.0, t=0)
 
 ### WaterLost
 
-Physical losses (evaporation, seepage, overflow, inefficiency, capacity exceeded, or custom reasons).
+Physical losses (evaporation, seepage, overflow, inefficiency, or custom reasons).
 
 ```python
-from taqsim.common import LossReason, EVAPORATION, SEEPAGE, OVERFLOW, INEFFICIENCY, CAPACITY_EXCEEDED
+from taqsim.common import LossReason, EVAPORATION, SEEPAGE, OVERFLOW, INEFFICIENCY
 
 # Using standard constants
 WaterLost(amount=5.0, reason=EVAPORATION, t=0)
 WaterLost(amount=2.0, reason=SEEPAGE, t=0)
 WaterLost(amount=100.0, reason=OVERFLOW, t=0)
 WaterLost(amount=20.0, reason=INEFFICIENCY, t=0)  # Delivery losses in Demand nodes
-WaterLost(amount=50.0, reason=CAPACITY_EXCEEDED, t=0)  # Edge capacity overflow
 
 # Custom loss reasons
 WaterLost(amount=10.0, reason=LossReason("infiltration"), t=0)
@@ -75,7 +74,7 @@ WaterConsumed(amount=40.0, t=0)
 
 ### WaterOutput
 
-Water available for downstream routing. Used by single-output nodes (Source, Storage, Demand, PassThrough). The `WaterSystem` orchestrator routes this to the appropriate edge.
+Water available for downstream routing. Used by single-output nodes (Source, Storage, Demand, PassThrough, Reach). The `WaterSystem` orchestrator routes this to the appropriate edge.
 
 ```python
 WaterOutput(amount=60.0, t=0)
@@ -117,6 +116,36 @@ Unmet demand or minimum flow requirement.
 DeficitRecorded(required=100.0, actual=80.0, deficit=20.0, t=0)
 ```
 
+### WaterEnteredReach
+
+Water entering a Reach node at the upstream end. Records the total inflow before routing and losses are applied.
+
+**Emitted by:** `Reach`
+
+```python
+WaterEnteredReach(amount=100.0, t=0)
+```
+
+### WaterExitedReach
+
+Water exiting a Reach node at the downstream end. Records the routed outflow after the routing model processes it but before losses.
+
+**Emitted by:** `Reach`
+
+```python
+WaterExitedReach(amount=95.0, t=0)
+```
+
+### WaterInTransit
+
+Snapshot of water currently stored within the Reach's routing model (e.g., water delayed in transit due to travel time). Recorded each timestep after routing.
+
+**Emitted by:** `Reach`
+
+```python
+WaterInTransit(amount=50.0, t=0)
+```
+
 ## Deriving State from Events
 
 Current storage:
@@ -150,7 +179,10 @@ Within a timestep, events are recorded in `update()` execution order:
 5. WaterReleased
 6. WaterConsumed
 7. WaterPassedThrough (PassThrough nodes)
-8. WaterOutput (single-output nodes) / WaterDistributed (Splitter)
+8. WaterEnteredReach (Reach nodes)
+9. WaterExitedReach (Reach nodes)
+10. WaterInTransit (Reach nodes)
+11. WaterOutput (single-output nodes) / WaterDistributed (Splitter)
 
 ## Querying Events
 
@@ -169,6 +201,9 @@ evap = sum(
     e.amount for e in node.events_of_type(WaterLost)
     if e.reason == EVAPORATION
 )
+
+# Reach transit water
+transit = node.events_of_type(WaterInTransit)
 ```
 
 ## NodeEvent Union Type
@@ -179,6 +214,7 @@ All event types are part of the `NodeEvent` union:
 NodeEvent = (
     WaterGenerated | WaterReceived | WaterStored | WaterReleased |
     WaterLost | WaterSpilled | WaterConsumed | WaterDistributed |
-    WaterOutput | WaterPassedThrough | DeficitRecorded
+    WaterOutput | WaterPassedThrough | DeficitRecorded |
+    WaterEnteredReach | WaterExitedReach | WaterInTransit
 )
 ```

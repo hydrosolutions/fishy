@@ -11,7 +11,7 @@ Not all configurable objects are optimizable. The system distinguishes between:
 | Type | Category | Optimizable | Examples |
 |------|----------|-------------|----------|
 | **Operational Policy** | Strategy | Yes | `ReleasePolicy`, `SplitPolicy` |
-| **Physical Model** | Rule | No | `LossRule`, `EdgeLossRule` |
+| **Physical Model** | Rule | No | `LossRule`, `ReachLossRule` |
 
 ### Why the Distinction?
 

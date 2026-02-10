@@ -47,15 +47,8 @@ class NoLoss:
         return {}
 
 
-# Edge loss rule
-@dataclass(frozen=True)
-class NoEdgeLoss:
-    def calculate(self, edge: Edge, flow: float, t: int, dt: float) -> dict[LossReason, float]:
-        return {}
-
-
 # Create the water system
-system = WaterSystem(dt=1.0)
+system = WaterSystem()
 
 # Seasonal inflow pattern (high in spring, low in summer)
 inflows = [80, 100, 120, 90, 60, 40, 30, 35, 50, 70, 85, 95]
@@ -77,10 +70,10 @@ system.add_node(
 system.add_node(Demand(id="city", requirement=TimeSeries(values=demands)))
 system.add_node(Sink(id="ocean"))
 
-# Connect nodes
-system.add_edge(Edge(id="e1", source="river", target="dam", capacity=200.0, loss_rule=NoEdgeLoss()))
-system.add_edge(Edge(id="e2", source="dam", target="city", capacity=100.0, loss_rule=NoEdgeLoss()))
-system.add_edge(Edge(id="e3", source="city", target="ocean", capacity=100.0, loss_rule=NoEdgeLoss()))
+# Connect nodes (edges are pure topology)
+system.add_edge(Edge(id="e1", source="river", target="dam"))
+system.add_edge(Edge(id="e2", source="dam", target="city"))
+system.add_edge(Edge(id="e3", source="city", target="ocean"))
 
 system.validate()
 ```

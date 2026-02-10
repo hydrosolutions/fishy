@@ -70,8 +70,25 @@ class AmbiguousSplitError(NaturalizationError):
         return (
             f"Splitter '{self.node_id}' has multiple natural downstream edges [{edges}] "
             f"but no NaturalRiverSplitter rule. Either assign a NaturalRiverSplitter to define "
-            f"natural flow ratios, or remove the 'natural' tag from all but one downstream edge."
+            f"natural flow ratios, add NATURAL_SPLIT_RATIOS metadata for mixed splitters, "
+            f"or remove the 'natural' tag from all but one downstream edge."
         )
+
+
+@dataclass
+class InvalidNaturalSplitRatiosError(NaturalizationError):
+    """Raised when NATURAL_SPLIT_RATIOS metadata on a Splitter is malformed.
+
+    Args:
+        node_id: ID of the problematic splitter node.
+        reason: Description of what is wrong with the metadata.
+    """
+
+    node_id: str
+    reason: str
+
+    def __str__(self) -> str:
+        return f"Splitter '{self.node_id}' has invalid NATURAL_SPLIT_RATIOS metadata: {self.reason}"
 
 
 @dataclass

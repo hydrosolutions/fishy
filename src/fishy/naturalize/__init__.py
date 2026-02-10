@@ -2,6 +2,7 @@
 
 from fishy.naturalize.errors import (
     AmbiguousSplitError,
+    InvalidNaturalSplitRatiosError,
     NaturalizationError,
     NoNaturalPathError,
     NoNaturalReachError,
@@ -9,11 +10,13 @@ from fishy.naturalize.errors import (
 )
 from fishy.naturalize.natural_river_splitter import NaturalRiverSplitter
 from fishy.naturalize.naturalize import naturalize
-from fishy.naturalize.types import NATURAL_TAG, NaturalizeResult
+from fishy.naturalize.types import NATURAL_SPLIT_RATIOS, NATURAL_TAG, NaturalizeResult
 
 __all__ = [
+    "NATURAL_SPLIT_RATIOS",
     "NATURAL_TAG",
     "AmbiguousSplitError",
+    "InvalidNaturalSplitRatiosError",
     "NaturalizationError",
     "NaturalRiverSplitter",
     "NaturalizeResult",

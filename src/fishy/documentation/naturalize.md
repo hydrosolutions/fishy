@@ -73,6 +73,23 @@ canal_edge = Edge(
 )
 ```
 
+### The NATURAL_SPLIT_RATIOS Constant
+
+Use `NATURAL_SPLIT_RATIOS` (value: `"natural_split_ratios"`) as a metadata key on Splitter nodes that have both natural and non-natural downstream edges. This tells the naturalization engine what ratios to use when rebuilding the splitter for the naturalized system.
+
+```python
+from fishy import NATURAL_SPLIT_RATIOS
+from taqsim.node import Splitter
+
+splitter = Splitter(
+    id="junction",
+    split_policy=operational_rule,
+    metadata={NATURAL_SPLIT_RATIOS: {"main_channel": 0.6, "side_channel": 0.4}},
+)
+```
+
+The ratio keys must match the target node IDs of the natural downstream edges from this splitter.
+
 ### What Gets Tagged
 
 | Edge Type | Tagged Natural? | Reason |
@@ -137,6 +154,56 @@ splitter_rule = NaturalRiverSplitter(
 )
 ```
 
+## Mixed Splitters
+
+When a Splitter has both natural and non-natural downstream edges (e.g., a river bifurcation that also feeds a canal), you cannot assign `NaturalRiverSplitter` as the split policy directly — the operational system needs its own split rule. Instead, annotate the Splitter with `NATURAL_SPLIT_RATIOS` metadata.
+
+### Topology
+
+```
+Source → Reach → Splitter → Reach A → Sink A  (natural)
+                           → Reach B → Sink B  (natural)
+                           → Canal (Demand)     (non-natural)
+```
+
+### Usage
+
+```python
+from fishy import NATURAL_SPLIT_RATIOS, NATURAL_TAG, naturalize
+from taqsim.node import Splitter
+
+# The operational splitter uses whatever rule you need
+splitter = Splitter(
+    id="junction",
+    split_policy=my_operational_rule,
+    metadata={NATURAL_SPLIT_RATIOS: {"reach_a": 0.6, "reach_b": 0.4}},
+)
+
+# During naturalization:
+# - The canal edge and Demand are removed
+# - The Splitter is rebuilt with NaturalRiverSplitter(ratios={"reach_a": 0.6, "reach_b": 0.4})
+result = naturalize(system)
+```
+
+### Ratio Keys
+
+The keys in the `NATURAL_SPLIT_RATIOS` dict must be the **direct downstream target node IDs** on natural edges from the splitter — not the final sink IDs.
+
+### Time-Varying Ratios
+
+Time-varying ratios use the same tuple format as `NaturalRiverSplitter`:
+
+```python
+metadata={NATURAL_SPLIT_RATIOS: {
+    "reach_a": (0.7, 0.6, 0.5, 0.6),
+    "reach_b": (0.3, 0.4, 0.5, 0.4),
+}}
+```
+
+### Precedence
+
+If a Splitter has **both** a `NaturalRiverSplitter` policy **and** `NATURAL_SPLIT_RATIOS` metadata, the policy wins (existing path, metadata ignored).
+
 ## Understanding the Result
 
 The `naturalize()` function returns a `NaturalizeResult` with:
@@ -185,6 +252,7 @@ Naturalization Summary:
 | Demand | Yes (terminal) | **Error: TerminalDemandError** |
 | Splitter (NaturalRiverSplitter) | Yes | Preserved as Splitter |
 | Splitter (single natural downstream) | Yes | -> PassThrough |
+| Splitter (mixed, with NATURAL_SPLIT_RATIOS) | Yes | Preserved as Splitter (policy rebuilt from metadata) |
 | Splitter (multiple natural, no rule) | Yes | **Error: AmbiguousSplitError** |
 | Reach | Yes | Preserved as Reach |
 | Any node | No | Removed |
@@ -218,7 +286,7 @@ try:
 except AmbiguousSplitError as e:
     print(f"Splitter: {e.node_id}")
     print(f"Natural edges: {e.natural_edge_ids}")
-    # Fix: Add NaturalRiverSplitter or remove NATURAL_TAG from all but one edge
+    # Fix: Add NaturalRiverSplitter, add NATURAL_SPLIT_RATIOS metadata, or remove NATURAL_TAG from all but one edge
 ```
 
 ### TerminalDemandError
@@ -250,6 +318,21 @@ except NoNaturalReachError as e:
     print(f"Sinks: {e.sink_ids}")
     print(f"Path nodes: {e.path_node_ids}")
     # Fix: Add a Reach node on the natural path
+```
+
+### InvalidNaturalSplitRatiosError
+
+Raised when a Splitter has `NATURAL_SPLIT_RATIOS` metadata that is malformed (wrong type, ratios don't sum to 1.0, keys don't match downstream targets).
+
+```python
+from fishy.naturalize import InvalidNaturalSplitRatiosError
+
+try:
+    result = naturalize(system)
+except InvalidNaturalSplitRatiosError as e:
+    print(f"Splitter: {e.node_id}")
+    print(f"Reason: {e.reason}")
+    # Fix: Ensure ratios are a dict, sum to 1.0, and keys match natural downstream targets
 ```
 
 ## Complete Example
@@ -325,6 +408,59 @@ print(result.summary())
 natural_system = result.system
 natural_system.simulate(timesteps=365)
 # ... calculate IHA indices ...
+```
+
+### Mixed Splitter Example
+
+```
+source --[natural]--> reach --[natural]--> junction --[natural]--> reach_a --[natural]--> ocean_a
+(Source)             (Reach)              (Splitter)              (Reach)               (Sink)
+                                              |
+                                              +--[natural]--> reach_b --[natural]--> ocean_b
+                                              |              (Reach)               (Sink)
+                                              |
+                                              +--[canal]----> irrigation (Demand)
+```
+
+```python
+from fishy import naturalize, NATURAL_TAG, NATURAL_SPLIT_RATIOS
+from taqsim.node import Source, Reach, Splitter, Demand, Sink
+from taqsim.edge import Edge
+from taqsim.system import WaterSystem
+from taqsim.time import Frequency
+
+system = WaterSystem(frequency=Frequency.DAILY)
+
+system.add_node(Source(id="source", inflow=inflow_ts))
+system.add_node(Reach(id="reach"))
+system.add_node(Splitter(
+    id="junction",
+    split_policy=operational_rule,
+    metadata={NATURAL_SPLIT_RATIOS: {"reach_a": 0.6, "reach_b": 0.4}},
+))
+system.add_node(Reach(id="reach_a"))
+system.add_node(Reach(id="reach_b"))
+system.add_node(Sink(id="ocean_a"))
+system.add_node(Sink(id="ocean_b"))
+system.add_node(Demand(id="irrigation", requirement=irr_req))
+
+# Natural edges
+for eid, src, tgt in [
+    ("e1", "source", "reach"),
+    ("e2", "reach", "junction"),
+    ("e3", "junction", "reach_a"),
+    ("e4", "junction", "reach_b"),
+    ("e5", "reach_a", "ocean_a"),
+    ("e6", "reach_b", "ocean_b"),
+]:
+    system.add_edge(Edge(id=eid, source=src, target=tgt, tags=frozenset({NATURAL_TAG})))
+
+# Canal edge
+system.add_edge(Edge(id="e7", source="junction", target="irrigation", tags=frozenset({"canal"})))
+
+result = naturalize(system)
+# junction is preserved as Splitter with NaturalRiverSplitter(ratios={"reach_a": 0.6, "reach_b": 0.4})
+# irrigation node and canal edge removed
 ```
 
 ## Integration with IHA

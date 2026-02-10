@@ -18,6 +18,10 @@ class NaturalRiverSplitter:
     Distributes flow according to fixed or time-varying natural ratios.
     This rule is NOT optimizable - it represents physical river conditions.
 
+    For splitters where ALL downstream edges are natural, assign this as the
+    split_policy directly. For mixed splitters (some natural, some not), use
+    NATURAL_SPLIT_RATIOS metadata on the Splitter node instead.
+
     Args:
         ratios: Mapping from downstream target_id to split ratio(s).
             - Fixed: {target_id: float} where all values sum to 1.0

@@ -14,7 +14,7 @@ from taqsim.testing import (
     make_system,
 )
 
-from fishy.naturalize import NATURAL_TAG, NaturalRiverSplitter
+from fishy.naturalize import NATURAL_SPLIT_RATIOS, NATURAL_TAG, NaturalRiverSplitter
 
 
 @pytest.fixture
@@ -191,5 +191,109 @@ def system_without_reach_on_natural_path():
         make_sink("sink"),
         make_edge("source_to_storage", "source", "storage", tags=frozenset({NATURAL_TAG})),
         make_edge("storage_to_sink", "storage", "sink", tags=frozenset({NATURAL_TAG})),
+        validate=False,
+    )
+
+
+@pytest.fixture
+def system_with_mixed_splitter():
+    """Splitter with 2 natural + 1 non-natural downstream, NATURAL_SPLIT_RATIOS metadata."""
+    return make_system(
+        make_source("source"),
+        make_reach("reach"),
+        make_splitter(
+            "splitter",
+            split_policy=EvenSplit(),
+            metadata={NATURAL_SPLIT_RATIOS: {"reach_a": 0.6, "reach_b": 0.4}},
+        ),
+        make_reach("reach_a"),
+        make_reach("reach_b"),
+        make_sink("sink_a"),
+        make_sink("sink_b"),
+        make_demand("demand"),
+        make_edge("source_to_reach", "source", "reach", tags=frozenset({NATURAL_TAG})),
+        make_edge("reach_to_splitter", "reach", "splitter", tags=frozenset({NATURAL_TAG})),
+        make_edge("splitter_to_reach_a", "splitter", "reach_a", tags=frozenset({NATURAL_TAG})),
+        make_edge("splitter_to_reach_b", "splitter", "reach_b", tags=frozenset({NATURAL_TAG})),
+        make_edge("reach_a_to_sink_a", "reach_a", "sink_a", tags=frozenset({NATURAL_TAG})),
+        make_edge("reach_b_to_sink_b", "reach_b", "sink_b", tags=frozenset({NATURAL_TAG})),
+        make_edge("splitter_to_demand", "splitter", "demand", tags=frozenset({"canal"})),
+        validate=False,
+    )
+
+
+@pytest.fixture
+def system_with_mixed_splitter_bad_sum():
+    """Mixed splitter with ratios that don't sum to 1.0."""
+    return make_system(
+        make_source("source"),
+        make_reach("reach"),
+        make_splitter(
+            "splitter",
+            split_policy=EvenSplit(),
+            metadata={NATURAL_SPLIT_RATIOS: {"reach_a": 0.4, "reach_b": 0.3}},
+        ),
+        make_reach("reach_a"),
+        make_reach("reach_b"),
+        make_sink("sink_a"),
+        make_sink("sink_b"),
+        make_demand("demand"),
+        make_edge("source_to_reach", "source", "reach", tags=frozenset({NATURAL_TAG})),
+        make_edge("reach_to_splitter", "reach", "splitter", tags=frozenset({NATURAL_TAG})),
+        make_edge("splitter_to_reach_a", "splitter", "reach_a", tags=frozenset({NATURAL_TAG})),
+        make_edge("splitter_to_reach_b", "splitter", "reach_b", tags=frozenset({NATURAL_TAG})),
+        make_edge("reach_a_to_sink_a", "reach_a", "sink_a", tags=frozenset({NATURAL_TAG})),
+        make_edge("reach_b_to_sink_b", "reach_b", "sink_b", tags=frozenset({NATURAL_TAG})),
+        make_edge("splitter_to_demand", "splitter", "demand", tags=frozenset({"canal"})),
+        validate=False,
+    )
+
+
+@pytest.fixture
+def system_with_mixed_splitter_wrong_targets():
+    """Mixed splitter with ratio keys that don't match downstream targets."""
+    return make_system(
+        make_source("source"),
+        make_reach("reach"),
+        make_splitter(
+            "splitter",
+            split_policy=EvenSplit(),
+            metadata={NATURAL_SPLIT_RATIOS: {"wrong_a": 0.6, "wrong_b": 0.4}},
+        ),
+        make_reach("reach_a"),
+        make_reach("reach_b"),
+        make_sink("sink_a"),
+        make_sink("sink_b"),
+        make_demand("demand"),
+        make_edge("source_to_reach", "source", "reach", tags=frozenset({NATURAL_TAG})),
+        make_edge("reach_to_splitter", "reach", "splitter", tags=frozenset({NATURAL_TAG})),
+        make_edge("splitter_to_reach_a", "splitter", "reach_a", tags=frozenset({NATURAL_TAG})),
+        make_edge("splitter_to_reach_b", "splitter", "reach_b", tags=frozenset({NATURAL_TAG})),
+        make_edge("reach_a_to_sink_a", "reach_a", "sink_a", tags=frozenset({NATURAL_TAG})),
+        make_edge("reach_b_to_sink_b", "reach_b", "sink_b", tags=frozenset({NATURAL_TAG})),
+        make_edge("splitter_to_demand", "splitter", "demand", tags=frozenset({"canal"})),
+        validate=False,
+    )
+
+
+@pytest.fixture
+def system_with_mixed_splitter_no_metadata():
+    """Mixed splitter without NATURAL_SPLIT_RATIOS metadata — should raise AmbiguousSplitError."""
+    return make_system(
+        make_source("source"),
+        make_reach("reach"),
+        make_splitter("splitter", split_policy=EvenSplit()),
+        make_reach("reach_a"),
+        make_reach("reach_b"),
+        make_sink("sink_a"),
+        make_sink("sink_b"),
+        make_demand("demand"),
+        make_edge("source_to_reach", "source", "reach", tags=frozenset({NATURAL_TAG})),
+        make_edge("reach_to_splitter", "reach", "splitter", tags=frozenset({NATURAL_TAG})),
+        make_edge("splitter_to_reach_a", "splitter", "reach_a", tags=frozenset({NATURAL_TAG})),
+        make_edge("splitter_to_reach_b", "splitter", "reach_b", tags=frozenset({NATURAL_TAG})),
+        make_edge("reach_a_to_sink_a", "reach_a", "sink_a", tags=frozenset({NATURAL_TAG})),
+        make_edge("reach_b_to_sink_b", "reach_b", "sink_b", tags=frozenset({NATURAL_TAG})),
+        make_edge("splitter_to_demand", "splitter", "demand", tags=frozenset({"canal"})),
         validate=False,
     )

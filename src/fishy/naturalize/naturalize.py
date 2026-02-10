@@ -8,12 +8,14 @@ from taqsim.time import Frequency
 
 from fishy.naturalize.errors import (
     AmbiguousSplitError,
+    InvalidNaturalSplitRatiosError,
     NoNaturalPathError,
     NoNaturalReachError,
     TerminalDemandError,
 )
 from fishy.naturalize.natural_river_splitter import NaturalRiverSplitter
 from fishy.naturalize.types import (
+    NATURAL_SPLIT_RATIOS,
     NATURAL_TAG,
     EdgeId,
     NaturalizeContext,
@@ -40,6 +42,8 @@ def naturalize(system: WaterSystem) -> NaturalizeResult:
         NoNaturalReachError: If any connected natural path has no Reach node.
         AmbiguousSplitError: If a splitter has multiple natural downstream edges
             but no NaturalRiverSplitter rule.
+        InvalidNaturalSplitRatiosError: If a splitter has NATURAL_SPLIT_RATIOS
+            metadata that is malformed (wrong type, bad sum, target mismatch).
         TerminalDemandError: If a Demand on the natural path has no natural
             downstream edge.
     """
@@ -194,8 +198,14 @@ def _validate_splitters(
         # Find natural edges downstream of this splitter
         natural_downstream = {edge_id for edge_id, edge in natural_edges.items() if edge.source == node_id}
 
-        # If multiple natural downstream edges, need NaturalRiverSplitter
-        if len(natural_downstream) > 1 and not _has_natural_river_splitter(node):
+        # If multiple natural downstream edges, need NaturalRiverSplitter or NATURAL_SPLIT_RATIOS
+        if len(natural_downstream) > 1:
+            if _has_natural_river_splitter(node):
+                continue
+            if _has_natural_split_ratios(node):
+                natural_downstream_targets = {natural_edges[eid].target for eid in natural_downstream}
+                _validate_natural_split_ratios(node_id, node, natural_downstream_targets)
+                continue
             raise AmbiguousSplitError(
                 node_id=node_id,
                 natural_edge_ids=frozenset(natural_downstream),
@@ -232,6 +242,114 @@ def _has_natural_river_splitter(node: Splitter) -> bool:
     return isinstance(node.split_policy, NaturalRiverSplitter)
 
 
+def _has_natural_split_ratios(node: Splitter) -> bool:
+    """Check if a splitter has NATURAL_SPLIT_RATIOS in its metadata."""
+    return NATURAL_SPLIT_RATIOS in node.metadata
+
+
+def _validate_natural_split_ratios(
+    node_id: str,
+    node: Splitter,
+    natural_downstream_targets: set[str],
+) -> None:
+    """Validate NATURAL_SPLIT_RATIOS metadata on a splitter."""
+    ratios = node.metadata[NATURAL_SPLIT_RATIOS]
+
+    if not isinstance(ratios, dict):
+        raise InvalidNaturalSplitRatiosError(
+            node_id=node_id,
+            reason=f"expected a dict, got {type(ratios).__name__}",
+        )
+
+    if not ratios:
+        raise InvalidNaturalSplitRatiosError(
+            node_id=node_id,
+            reason="ratios dict is empty",
+        )
+
+    if set(ratios.keys()) != natural_downstream_targets:
+        raise InvalidNaturalSplitRatiosError(
+            node_id=node_id,
+            reason=(
+                f"ratio keys {sorted(ratios.keys())} do not match "
+                f"natural downstream targets {sorted(natural_downstream_targets)}"
+            ),
+        )
+
+    # Check if time-varying or fixed
+    is_time_varying = [isinstance(v, tuple) for v in ratios.values()]
+    if any(is_time_varying) and not all(is_time_varying):
+        raise InvalidNaturalSplitRatiosError(
+            node_id=node_id,
+            reason="all ratios must be the same type (all fixed floats or all time-varying tuples)",
+        )
+
+    if all(is_time_varying):
+        _validate_time_varying_ratios(node_id, ratios)
+    else:
+        _validate_fixed_ratios(node_id, ratios)
+
+
+def _validate_fixed_ratios(node_id: str, ratios: dict[str, float]) -> None:
+    """Validate fixed (scalar) split ratios."""
+    for target_id, ratio in ratios.items():
+        if not isinstance(ratio, (int, float)):
+            raise InvalidNaturalSplitRatiosError(
+                node_id=node_id,
+                reason=f"ratio for '{target_id}' must be a number, got {type(ratio).__name__}",
+            )
+        if ratio < 0.0 or ratio > 1.0:
+            raise InvalidNaturalSplitRatiosError(
+                node_id=node_id,
+                reason=f"ratio for '{target_id}' must be in [0.0, 1.0], got {ratio}",
+            )
+
+    total = sum(ratios.values())
+    if abs(total - 1.0) > 1e-9:
+        raise InvalidNaturalSplitRatiosError(
+            node_id=node_id,
+            reason=f"ratios must sum to 1.0, got {total}",
+        )
+
+
+def _validate_time_varying_ratios(node_id: str, ratios: dict[str, tuple[float, ...]]) -> None:
+    """Validate time-varying (tuple) split ratios."""
+    lengths = set()
+    for target_id, ratio_tuple in ratios.items():
+        if len(ratio_tuple) == 0:
+            raise InvalidNaturalSplitRatiosError(
+                node_id=node_id,
+                reason=f"ratio tuple for '{target_id}' is empty",
+            )
+        lengths.add(len(ratio_tuple))
+        for i, r in enumerate(ratio_tuple):
+            if not isinstance(r, (int, float)):
+                raise InvalidNaturalSplitRatiosError(
+                    node_id=node_id,
+                    reason=f"ratio[{i}] for '{target_id}' must be a number",
+                )
+            if r < 0.0 or r > 1.0:
+                raise InvalidNaturalSplitRatiosError(
+                    node_id=node_id,
+                    reason=f"ratio[{i}] for '{target_id}' must be in [0.0, 1.0], got {r}",
+                )
+
+    if len(lengths) > 1:
+        raise InvalidNaturalSplitRatiosError(
+            node_id=node_id,
+            reason=f"all ratio tuples must have the same length, got lengths: {lengths}",
+        )
+
+    num_timesteps = next(iter(lengths))
+    for t in range(num_timesteps):
+        total = sum(r[t] for r in ratios.values())
+        if abs(total - 1.0) > 1e-9:
+            raise InvalidNaturalSplitRatiosError(
+                node_id=node_id,
+                reason=f"ratios at timestep {t} must sum to 1.0, got {total}",
+            )
+
+
 def _transform_nodes(
     system: WaterSystem,
     natural_path_nodes: set[NodeId],
@@ -264,6 +382,8 @@ def _transform_nodes(
         elif isinstance(node, Splitter):
             if _has_natural_river_splitter(node):
                 new_nodes[node_id] = _clone_splitter(node)
+            elif _has_natural_split_ratios(node):
+                new_nodes[node_id] = _build_splitter_from_metadata(node)
             else:
                 new_nodes[node_id] = _splitter_to_passthrough(node)
                 transformed[node_id] = "Splitter"
@@ -308,6 +428,19 @@ def _clone_splitter(node: Splitter) -> Splitter:
     return Splitter(
         id=node.id,
         split_policy=node.split_policy,
+        location=node.location,
+        tags=node.tags,
+        metadata=node.metadata,
+    )
+
+
+def _build_splitter_from_metadata(node: Splitter) -> Splitter:
+    """Build a Splitter with NaturalRiverSplitter from NATURAL_SPLIT_RATIOS metadata."""
+    ratios = node.metadata[NATURAL_SPLIT_RATIOS]
+    policy = NaturalRiverSplitter(ratios=ratios)
+    return Splitter(
+        id=node.id,
+        split_policy=policy,
         location=node.location,
         tags=node.tags,
         metadata=node.metadata,

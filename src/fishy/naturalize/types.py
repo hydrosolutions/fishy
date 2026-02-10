@@ -9,6 +9,7 @@ if TYPE_CHECKING:
 
 # Constants
 NATURAL_TAG: str = "natural"
+NATURAL_SPLIT_RATIOS: str = "natural_split_ratios"
 
 # Type aliases
 NodeId = str

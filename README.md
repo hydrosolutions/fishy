@@ -59,6 +59,7 @@ Transform water systems with human infrastructure into their natural state.
 **Key exports:**
 - `naturalize(system)` — Main transformation function
 - `NATURAL_TAG` — Tag constant for marking natural edges
+- `NATURAL_SPLIT_RATIOS` — Metadata key for mixed splitter natural ratios
 - `NaturalRiverSplitter` — Split rule for natural bifurcations
 - `NaturalizeResult` — Result with system + audit trail
 
@@ -66,6 +67,7 @@ Transform water systems with human infrastructure into their natural state.
 from fishy.naturalize import (
     naturalize,
     NATURAL_TAG,
+    NATURAL_SPLIT_RATIOS,
     NaturalRiverSplitter,
     NaturalizeResult,
     NoNaturalPathError,
@@ -94,6 +96,24 @@ splitter_rule = NaturalRiverSplitter(
     cyclical=True,  # Repeat pattern
 )
 ```
+
+### Mixed Splitters
+
+For splitters with both natural and non-natural downstream edges, use `NATURAL_SPLIT_RATIOS` metadata instead of assigning a `NaturalRiverSplitter` policy directly:
+
+```python
+from fishy import NATURAL_SPLIT_RATIOS
+from taqsim.node import Splitter
+
+# Splitter with 2 natural + 1 canal downstream
+splitter = Splitter(
+    id="junction",
+    split_policy=operational_rule,  # Your operational split rule
+    metadata={NATURAL_SPLIT_RATIOS: {"main_channel": 0.6, "side_channel": 0.4}},
+)
+```
+
+Ratio keys must be the direct downstream target node IDs on natural edges. During naturalization, the metadata is validated and a `NaturalRiverSplitter` is built automatically.
 
 ### `iha`
 

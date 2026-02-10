@@ -1,13 +1,15 @@
 """Tests for naturalize function."""
 
 import pytest
-from taqsim.node import PassThrough, Reach, Sink, Source
+from taqsim.node import PassThrough, Reach, Sink, Source, Splitter
 from taqsim.system import WaterSystem
 
 from fishy.naturalize import (
     NATURAL_TAG,
     AmbiguousSplitError,
+    InvalidNaturalSplitRatiosError,
     NaturalizeResult,
+    NaturalRiverSplitter,
     NoNaturalPathError,
     NoNaturalReachError,
     naturalize,
@@ -82,6 +84,31 @@ class TestHappyPath:
         assert "canal_reach" not in result.system.nodes
         assert "canal_reach" in result.removed_nodes
 
+    def test_mixed_splitter_preserved_as_splitter(self, system_with_mixed_splitter: WaterSystem) -> None:
+        """Mixed splitter with NATURAL_SPLIT_RATIOS stays as Splitter."""
+        result = naturalize(system_with_mixed_splitter)
+
+        assert "splitter" in result.system.nodes
+        assert isinstance(result.system.nodes["splitter"], Splitter)
+        # Non-natural demand removed
+        assert "demand" not in result.system.nodes
+
+    def test_mixed_splitter_gets_natural_river_splitter_policy(self, system_with_mixed_splitter: WaterSystem) -> None:
+        """Mixed splitter's policy is rebuilt as NaturalRiverSplitter from metadata."""
+        result = naturalize(system_with_mixed_splitter)
+
+        splitter = result.system.nodes["splitter"]
+        assert isinstance(splitter, Splitter)
+        assert isinstance(splitter.split_policy, NaturalRiverSplitter)
+        assert splitter.split_policy.ratios["reach_a"] == 0.6
+        assert splitter.split_policy.ratios["reach_b"] == 0.4
+
+    def test_mixed_splitter_not_in_transformed(self, system_with_mixed_splitter: WaterSystem) -> None:
+        """Mixed splitter should NOT appear in transformed_nodes (stays a Splitter)."""
+        result = naturalize(system_with_mixed_splitter)
+
+        assert "splitter" not in result.transformed_nodes
+
 
 class TestNodeTransformations:
     """Tests for node type transformations."""
@@ -134,6 +161,17 @@ class TestEdgeFiltering:
 
         assert "storage_to_demand" in result.removed_edges
 
+    def test_mixed_splitter_non_natural_edges_removed(self, system_with_mixed_splitter: WaterSystem) -> None:
+        """Canal edge and demand node removed from mixed splitter system."""
+        result = naturalize(system_with_mixed_splitter)
+
+        # All remaining edges should be natural
+        for edge in result.system.edges.values():
+            assert NATURAL_TAG in edge.tags
+
+        # Canal edge removed
+        assert "splitter_to_demand" in result.removed_edges
+
 
 class TestErrorCases:
     """Tests for error conditions."""
@@ -173,6 +211,30 @@ class TestErrorCases:
         assert "source" in error.path_node_ids
         assert "storage" in error.path_node_ids
         assert "sink" in error.path_node_ids
+
+    def test_mixed_splitter_without_metadata_raises_ambiguous(
+        self, system_with_mixed_splitter_no_metadata: WaterSystem
+    ) -> None:
+        """Mixed splitter without NATURAL_SPLIT_RATIOS raises AmbiguousSplitError."""
+        with pytest.raises(AmbiguousSplitError):
+            naturalize(system_with_mixed_splitter_no_metadata)
+
+    def test_mixed_splitter_bad_ratios_sum_raises(self, system_with_mixed_splitter_bad_sum: WaterSystem) -> None:
+        """Mixed splitter with ratios not summing to 1.0 raises InvalidNaturalSplitRatiosError."""
+        with pytest.raises(InvalidNaturalSplitRatiosError, match="sum to 1.0"):
+            naturalize(system_with_mixed_splitter_bad_sum)
+
+    def test_mixed_splitter_wrong_targets_raises(self, system_with_mixed_splitter_wrong_targets: WaterSystem) -> None:
+        """Mixed splitter with mismatched ratio keys raises InvalidNaturalSplitRatiosError."""
+        with pytest.raises(InvalidNaturalSplitRatiosError, match="do not match"):
+            naturalize(system_with_mixed_splitter_wrong_targets)
+
+    def test_ambiguous_error_mentions_metadata(self, system_with_ambiguous_splitter: WaterSystem) -> None:
+        """AmbiguousSplitError message should mention NATURAL_SPLIT_RATIOS."""
+        with pytest.raises(AmbiguousSplitError) as exc_info:
+            naturalize(system_with_ambiguous_splitter)
+
+        assert "NATURAL_SPLIT_RATIOS" in str(exc_info.value)
 
 
 class TestNaturalizeResult:

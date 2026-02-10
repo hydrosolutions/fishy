@@ -22,18 +22,19 @@ Add this to your downstream repo's `Makefile` to sync docs locally:
 .PHONY: sync-docs
 
 sync-docs:
-	uv lock --upgrade-package taqsim
-	uv sync
-	uv run python -c "\
-		from pathlib import Path; import shutil; \
-		from taqsim.docs import get_docs_path; \
-		dst = Path('taqsim_docs'); \
-		shutil.rmtree(dst, ignore_errors=True); \
-		shutil.copytree(get_docs_path(), dst); \
-		print(f'Synced {sum(1 for _ in dst.rglob(chr(42) + \".md\"))} docs to {dst}/')"
+ uv lock --upgrade-package taqsim
+ uv sync
+ uv run python -c "\
+  from pathlib import Path; import shutil; \
+  from taqsim.docs import get_docs_path; \
+  dst = Path('taqsim_docs'); \
+  shutil.rmtree(dst, ignore_errors=True); \
+  shutil.copytree(get_docs_path(), dst); \
+  print(f'Synced {sum(1 for _ in dst.rglob(chr(42) + \".md\"))} docs to {dst}/')"
 ```
 
 Running `make sync-docs` will:
+
 1. Upgrade taqsim to the latest version
 2. Copy the bundled docs to a local `taqsim_docs/` directory
 3. Print the count of synced files

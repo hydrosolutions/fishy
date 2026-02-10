@@ -909,7 +909,7 @@ wheels = [
 [[package]]
 name = "taqsim"
 version = "0.1.0"
-source = { git = "https://github.com/hydrosolutions/taqsim.git?rev=main#2237fa15a1bf7b92142e45620607ee1dd53d331a" }
+source = { git = "https://github.com/hydrosolutions/taqsim.git?rev=main#cc5ee40f00e5fb04bf8d1b7b411d32856ccce2a2" }
 dependencies = [
     { name = "ctrl-freak" },
     { name = "deap" },

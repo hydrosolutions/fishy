@@ -2,7 +2,7 @@
 
 import networkx as nx
 from taqsim.edge import Edge
-from taqsim.node import Demand, PassThrough, Sink, Source, Splitter, Storage
+from taqsim.node import Demand, PassThrough, Reach, Sink, Source, Splitter, Storage
 from taqsim.system import WaterSystem
 from taqsim.time import Frequency
 
@@ -211,13 +211,13 @@ def _has_natural_river_splitter(node: Splitter) -> bool:
 def _transform_nodes(
     system: WaterSystem,
     natural_path_nodes: set[NodeId],
-) -> tuple[dict[NodeId, Source | Sink | PassThrough | Splitter], dict[NodeId, str]]:
+) -> tuple[dict[NodeId, Source | Sink | PassThrough | Splitter | Reach], dict[NodeId, str]]:
     """Transform nodes for the naturalized system.
 
     Returns:
         Tuple of (new_nodes dict, transformed dict mapping node_id to original type)
     """
-    new_nodes: dict[NodeId, Source | Sink | PassThrough | Splitter] = {}
+    new_nodes: dict[NodeId, Source | Sink | PassThrough | Splitter | Reach] = {}
     transformed: dict[NodeId, str] = {}
 
     for node_id in natural_path_nodes:
@@ -229,6 +229,8 @@ def _transform_nodes(
             new_nodes[node_id] = _clone_sink(node)
         elif isinstance(node, PassThrough):
             new_nodes[node_id] = _clone_passthrough(node)
+        elif isinstance(node, Reach):
+            new_nodes[node_id] = _clone_reach(node)
         elif isinstance(node, Storage):
             new_nodes[node_id] = _storage_to_passthrough(node)
             transformed[node_id] = "Storage"
@@ -288,6 +290,18 @@ def _clone_splitter(node: Splitter) -> Splitter:
     )
 
 
+def _clone_reach(node: Reach) -> Reach:
+    """Clone a Reach node."""
+    return Reach(
+        id=node.id,
+        routing_model=node.routing_model,
+        loss_rule=node.loss_rule,
+        location=node.location,
+        tags=node.tags,
+        metadata=node.metadata,
+    )
+
+
 def _storage_to_passthrough(node: Storage) -> PassThrough:
     """Convert a Storage node to PassThrough."""
     return PassThrough(
@@ -335,20 +349,12 @@ def _filter_edges(
 
 def _clone_edge(edge: Edge) -> Edge:
     """Clone an Edge."""
-    return Edge(
-        id=edge.id,
-        source=edge.source,
-        target=edge.target,
-        capacity=edge.capacity,
-        loss_rule=edge.loss_rule,
-        tags=edge.tags,
-        metadata=edge.metadata,
-    )
+    return edge._fresh_copy()
 
 
 def _build_system(
     frequency: Frequency,
-    nodes: dict[NodeId, Source | Sink | PassThrough | Splitter],
+    nodes: dict[NodeId, Source | Sink | PassThrough | Splitter | Reach],
     edges: dict[EdgeId, Edge],
 ) -> WaterSystem:
     """Build a new WaterSystem from nodes and edges."""

@@ -170,7 +170,7 @@ result = iha_from_trace(
 ) -> IHAResult
 ```
 
-Bridge between taqsim `WaterSystem` and `compute_iha`. Extracts the `WaterDelivered` trace from the named edge and converts to numpy arrays.
+Bridge between taqsim `WaterSystem` and `compute_iha`. Extracts flow data from the edge's target node via `WaterReceived` events and converts to numpy arrays.
 
 ## Result Types
 
@@ -291,9 +291,9 @@ for edge_id, dhram in results.items():
 ## Integration Pipeline
 
 ```
-WaterSystem (impacted) ──simulate──→ edge traces (impacted)
+WaterSystem (impacted) ──simulate──→ flow traces (impacted)
          │                                     │
-         └── naturalize() → simulate ──→ edge traces (natural)
+         └── naturalize() → simulate ──→ flow traces (natural)
                                                │
          For each shared natural-tagged edge:   │
            natural flows → pulse_thresholds ────┤

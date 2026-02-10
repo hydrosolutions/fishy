@@ -1,10 +1,10 @@
 """Bridge between taqsim WaterSystem and IHA computation."""
 
 import numpy as np
-from taqsim.edge import WaterDelivered
 from taqsim.system import WaterSystem
 from taqsim.time import Frequency
 
+from fishy._extract import edge_trace
 from fishy.iha.compute import compute_iha
 from fishy.iha.errors import (
     EdgeNotFoundError,
@@ -53,8 +53,7 @@ def iha_from_trace(
             available_edge_ids=frozenset(system.edges.keys()),
         )
 
-    edge = system.edges[edge_id]
-    trace = edge.trace(WaterDelivered)
+    trace = edge_trace(system, edge_id)
 
     if len(trace) == 0:
         raise EmptyTraceError(edge_id=edge_id)

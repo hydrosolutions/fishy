@@ -22,9 +22,10 @@ pip install fishy
 from fishy import naturalize, NATURAL_TAG
 from taqsim.system import WaterSystem
 from taqsim.edge import Edge
+from taqsim.time import Frequency
 
 # Build your water system with taqsim
-system = WaterSystem(dt=86400.0)
+system = WaterSystem(frequency=Frequency.DAILY)
 # ... add nodes ...
 
 # Tag edges on the natural flow path

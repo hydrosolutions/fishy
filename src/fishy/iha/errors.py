@@ -118,4 +118,4 @@ class EmptyTraceError(IHAError):
     edge_id: str
 
     def __str__(self) -> str:
-        return f"Edge '{self.edge_id}' has an empty trace (no WaterDelivered events)."
+        return f"Edge '{self.edge_id}' has an empty trace (no flow data recorded)."

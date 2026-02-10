@@ -24,9 +24,10 @@ The naturalized system:
 from fishy import naturalize, NATURAL_TAG
 from taqsim.system import WaterSystem
 from taqsim.edge import Edge
+from taqsim.time import Frequency
 
 # Create your system with edges tagged as 'natural' where appropriate
-system = WaterSystem(dt=86400.0)
+system = WaterSystem(frequency=Frequency.DAILY)
 # ... add nodes and edges ...
 
 # Ensure natural flow path edges are tagged
@@ -261,9 +262,10 @@ from fishy import naturalize, NATURAL_TAG, NaturalRiverSplitter
 from taqsim.system import WaterSystem
 from taqsim.node import Source, Storage, Splitter, Demand, Sink
 from taqsim.edge import Edge
+from taqsim.time import Frequency
 
 # Build original system
-system = WaterSystem(dt=86400.0)
+system = WaterSystem(frequency=Frequency.DAILY)
 
 system.add_node(Source(id="source", inflow=inflow_ts))
 system.add_node(Storage(id="reservoir", capacity=10000.0))

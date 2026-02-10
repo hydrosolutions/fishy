@@ -1,7 +1,7 @@
 """Tests for naturalize function."""
 
 import pytest
-from taqsim.node import PassThrough, Sink, Source
+from taqsim.node import PassThrough, Reach, Sink, Source
 from taqsim.system import WaterSystem
 
 from fishy.naturalize import (
@@ -64,6 +64,21 @@ class TestHappyPath:
         # Both sinks should be preserved
         assert "sink_a" in result.system.nodes
         assert "sink_b" in result.system.nodes
+
+    def test_reach_on_natural_path_preserved(self, system_with_reach_on_natural_path: WaterSystem) -> None:
+        """Reach on natural path should be preserved as Reach (physical channel)."""
+        result = naturalize(system_with_reach_on_natural_path)
+
+        assert "reach" in result.system.nodes
+        assert isinstance(result.system.nodes["reach"], Reach)
+        assert "reach" not in result.transformed_nodes
+
+    def test_reach_off_natural_path_removed(self, system_with_reach_off_natural_path: WaterSystem) -> None:
+        """Reach used as canal (off natural path) should be removed."""
+        result = naturalize(system_with_reach_off_natural_path)
+
+        assert "canal_reach" not in result.system.nodes
+        assert "canal_reach" in result.removed_nodes
 
 
 class TestNodeTransformations:

@@ -6,6 +6,7 @@ from taqsim.testing import (
     make_demand,
     make_edge,
     make_passthrough,
+    make_reach,
     make_sink,
     make_source,
     make_splitter,
@@ -135,5 +136,31 @@ def system_with_ambiguous_splitter():
         make_edge("source_to_splitter", "source", "splitter", tags=frozenset({NATURAL_TAG})),
         make_edge("splitter_to_sink_a", "splitter", "sink_a", tags=frozenset({NATURAL_TAG})),
         make_edge("splitter_to_sink_b", "splitter", "sink_b", tags=frozenset({NATURAL_TAG})),
+        validate=False,
+    )
+
+
+@pytest.fixture
+def system_with_reach_on_natural_path():
+    """Source -> Reach -> Sink (all natural)."""
+    return make_system(
+        make_source("source", n_steps=2),
+        make_reach("reach"),
+        make_sink("sink"),
+        make_edge("source_to_reach", "source", "reach", tags=frozenset({NATURAL_TAG})),
+        make_edge("reach_to_sink", "reach", "sink", tags=frozenset({NATURAL_TAG})),
+        validate=False,
+    )
+
+
+@pytest.fixture
+def system_with_reach_off_natural_path():
+    """Natural path: Source -> Sink. Non-natural branch has Reach as canal."""
+    return make_system(
+        make_source("source", n_steps=2),
+        make_reach("canal_reach"),
+        make_sink("sink"),
+        make_edge("source_to_sink", "source", "sink", tags=frozenset({NATURAL_TAG})),
+        make_edge("source_to_reach", "source", "canal_reach", tags=frozenset({"canal"})),
         validate=False,
     )

@@ -121,6 +121,33 @@ class TestConversion:
         result = iha_from_trace(daily_system, "e1")
         assert len(result.years) >= 1
 
+    def test_extracted_flow_matches_inflow(self) -> None:
+        """Constant-inflow source should produce matching trace values."""
+        from fishy.iha.types import PulseThresholds
+
+        system = make_system(
+            make_source("source", n_steps=N_STEPS, inflow=TimeSeries(values=[100.0] * N_STEPS)),
+            make_sink("sink"),
+            make_edge("e1", "source", "sink", tags=frozenset({"natural"})),
+            frequency=Frequency.DAILY,
+            start_date=date(2020, 1, 1),
+            validate=False,
+        )
+        system.simulate(N_STEPS)
+        result = iha_from_trace(system, "e1", pulse_thresholds=PulseThresholds(low=50.0, high=150.0))
+        # All daily values should be 100.0
+        assert result.values.shape[0] >= 1
+        assert np.allclose(result.values[0, 0], 100.0, rtol=1e-6)  # Jan mean
+
+    def test_water_received_source_id_is_edge_id(self, daily_system) -> None:
+        """WaterReceived events should use edge_id as source_id (taqsim API contract)."""
+        from taqsim.node import WaterReceived
+
+        sink = daily_system.nodes["sink"]
+        received = list(sink.events_of_type(WaterReceived))
+        assert len(received) > 0
+        assert all(e.source_id == "e1" for e in received)
+
 
 class TestEndToEnd:
     def test_full_pipeline(self, daily_system) -> None:

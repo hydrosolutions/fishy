@@ -4,10 +4,10 @@ import logging
 from collections.abc import Sequence
 
 import numpy as np
-from taqsim.edge import WaterDelivered
 from taqsim.system import WaterSystem
 from taqsim.time import Frequency
 
+from fishy._extract import edge_trace
 from fishy.dhram.compute import compute_dhram
 from fishy.dhram.errors import EdgeEvaluationError, NoCommonEdgesError
 from fishy.dhram.types import DHRAMResult, ThresholdVariant
@@ -26,8 +26,7 @@ def _natural_edge_ids(system: WaterSystem) -> frozenset[str]:
 
 def _extract_flow(system: WaterSystem, edge_id: str) -> tuple[np.ndarray, np.ndarray]:
     """Extract flow array and date array from a system edge."""
-    edge = system.edges[edge_id]
-    trace = edge.trace(WaterDelivered)
+    trace = edge_trace(system, edge_id)
     q = np.array(trace.values(), dtype=np.float64)
     timesteps = trace.timesteps()
     time_idx = system.time_index(max(timesteps) + 1)

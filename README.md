@@ -137,6 +137,9 @@ uv run pytest --cov=src/fishy --cov-report=term-missing
 # Lint and format
 uv run ruff check --fix
 uv run ruff format
+
+# Update taqsim to latest and sync its documentation
+make sync-docs
 ```
 
 ## Documentation

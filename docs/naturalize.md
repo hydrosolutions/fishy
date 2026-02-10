@@ -186,6 +186,7 @@ Naturalization Summary:
 | Splitter (NaturalRiverSplitter) | Yes | Preserved as Splitter |
 | Splitter (single natural downstream) | Yes | -> PassThrough |
 | Splitter (multiple natural, no rule) | Yes | **Error: AmbiguousSplitError** |
+| Reach | Yes | Preserved as Reach |
 | Any node | No | Removed |
 
 ## Error Handling
@@ -233,6 +234,22 @@ except TerminalDemandError as e:
     print(f"Demand: {e.node_id}")
     print(f"Downstream edges: {e.downstream_edge_ids}")
     # Fix: Tag downstream edge as natural, or remove NATURAL_TAG from upstream
+```
+
+### NoNaturalReachError
+
+Raised when a connected natural path contains no Reach node. Every natural path from Source to Sink must include at least one Reach to model the physical river channel.
+
+```python
+from fishy.naturalize import NoNaturalReachError
+
+try:
+    result = naturalize(system)
+except NoNaturalReachError as e:
+    print(f"Sources: {e.source_ids}")
+    print(f"Sinks: {e.sink_ids}")
+    print(f"Path nodes: {e.path_node_ids}")
+    # Fix: Add a Reach node on the natural path
 ```
 
 ## Complete Example
@@ -312,12 +329,12 @@ natural_system.simulate(timesteps=365)
 
 ## Integration with IHA
 
-The typical workflow:
+The typical workflow. Note that the naturalized system must contain at least one Reach node on each natural path, as IHA flow extraction operates on Reach nodes.
 
 ```
 +------------------+     +--------------+     +--------------+
 |  WaterSystem     | --> | naturalize() | --> | IHA Indices  |
-| (with infra)     |     |              |     |              |
+| (with infra)     |     |              |     | (via Reach)  |
 +------------------+     +--------------+     +--------------+
          |                     |                    |
          |                     |                    v
@@ -329,5 +346,5 @@ The typical workflow:
          |
          v
     Simulate both systems
-    Compare flow regimes
+    Compare flow regimes (at Reach nodes)
 ```

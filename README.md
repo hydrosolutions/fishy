@@ -101,12 +101,12 @@ Compute the 33 IHA parameters (Richter et al., 1996) from daily flow timeseries.
 
 **Key exports:**
 - `compute_iha(q, dates)` — Compute IHA parameters per calendar year
-- `iha_from_trace(system, edge_id)` — Bridge from taqsim edge to IHA
+- `iha_from_reach(system, reach_id)` — Bridge from taqsim Reach node to IHA
 - `pulse_thresholds_from_record(q)` — Derive pulse thresholds from flow record
 - `IHAResult` — Immutable result wrapping `(n_years, 33)` matrix
 
 ```python
-from fishy.iha import compute_iha, iha_from_trace
+from fishy.iha import compute_iha, iha_from_reach
 ```
 
 ### `dhram`

@@ -182,7 +182,7 @@ This implementation uses [sarawater](https://github.com/hydrosolutions/sarawater
 
 ```
 src/fishy/iha/
-    __init__.py     # Public API: compute_iha, Col, IHAResult, PulseThresholds, errors
+    __init__.py     # Public API: compute_iha, iha_from_reach, Col, IHAResult, PulseThresholds, errors
     types.py        # Col, IHAResult, PulseThresholds, ZERO_FLOW_THRESHOLD
     errors.py       # IHAError hierarchy (5 exception types)
     compute.py      # compute_iha(), pulse_thresholds_from_record()
@@ -199,7 +199,10 @@ IHAError (Exception)
 ├── InsufficientDataError    — too few complete calendar years
 ├── DateFlowLengthMismatchError — len(q) != len(dates)
 ├── NonDailyTimestepError    — gap in daily dates
-└── NegativeFlowError        — q contains negative values
+├── NegativeFlowError        — q contains negative values
+├── ReachNotFoundError       — reach_id not in system
+├── NotAReachError           — node exists but is not a Reach
+└── EmptyReachTraceError     — Reach trace has no data
 ```
 
 All are dataclasses with structured fields for programmatic access:

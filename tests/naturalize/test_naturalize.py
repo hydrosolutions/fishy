@@ -9,6 +9,7 @@ from fishy.naturalize import (
     AmbiguousSplitError,
     NaturalizeResult,
     NoNaturalPathError,
+    NoNaturalReachError,
     naturalize,
 )
 
@@ -22,9 +23,9 @@ class TestHappyPath:
 
         assert isinstance(result, NaturalizeResult)
         assert "source" in result.system.nodes
+        assert "reach" in result.system.nodes
         assert "storage" in result.system.nodes
         assert "sink" in result.system.nodes
-        assert result.removed_count == 0
         assert result.transformed_count == 1
         assert "storage" in result.transformed_nodes
         assert result.transformed_nodes["storage"] == "Storage"
@@ -77,6 +78,7 @@ class TestHappyPath:
         """Reach used as canal (off natural path) should be removed."""
         result = naturalize(system_with_reach_off_natural_path)
 
+        assert "natural_reach" in result.system.nodes
         assert "canal_reach" not in result.system.nodes
         assert "canal_reach" in result.removed_nodes
 
@@ -146,13 +148,7 @@ class TestErrorCases:
         assert "sink" in error.sink_ids
 
     def test_terminal_demand_raises_no_path_error(self, system_with_terminal_demand: WaterSystem) -> None:
-        """Terminal demand on natural path actually raises NoNaturalPathError.
-
-        Note: A demand with no natural downstream edges cannot be "on a natural path"
-        because natural_path_nodes requires the node to have a natural path TO a sink.
-        If demand→sink isn't natural, demand can't reach sink via natural edges,
-        so it's not on a natural path, and NoNaturalPathError is raised instead.
-        """
+        """Terminal demand on natural path actually raises NoNaturalPathError."""
         with pytest.raises(NoNaturalPathError):
             naturalize(system_with_terminal_demand)
 
@@ -165,6 +161,18 @@ class TestErrorCases:
         assert error.node_id == "splitter"
         assert "splitter_to_sink_a" in error.natural_edge_ids
         assert "splitter_to_sink_b" in error.natural_edge_ids
+
+    def test_no_reach_on_natural_path_raises(self, system_without_reach_on_natural_path: WaterSystem) -> None:
+        """Should raise NoNaturalReachError when natural path has no Reach node."""
+        with pytest.raises(NoNaturalReachError) as exc_info:
+            naturalize(system_without_reach_on_natural_path)
+
+        error = exc_info.value
+        assert "source" in error.source_ids
+        assert "sink" in error.sink_ids
+        assert "source" in error.path_node_ids
+        assert "storage" in error.path_node_ids
+        assert "sink" in error.path_node_ids
 
 
 class TestNaturalizeResult:

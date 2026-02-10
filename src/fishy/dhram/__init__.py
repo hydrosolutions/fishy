@@ -3,10 +3,10 @@
 from fishy.dhram.compute import compute_dhram
 from fishy.dhram.errors import (
     DHRAMError,
-    EdgeEvaluationError,
     IncompatibleIHAResultsError,
     InsufficientYearsError,
-    NoCommonEdgesError,
+    NoCommonReachesError,
+    ReachEvaluationError,
 )
 from fishy.dhram.evaluate import evaluate_dhram
 from fishy.dhram.types import (
@@ -30,14 +30,14 @@ __all__ = [
     "DHRAMError",
     "DHRAMResult",
     "EMPIRICAL_THRESHOLDS",
-    "EdgeEvaluationError",
     "INDICATOR_NAMES",
     "IncompatibleIHAResultsError",
     "IndicatorDetail",
     "InsufficientYearsError",
     "MAX_POINTS",
     "N_INDICATORS",
-    "NoCommonEdgesError",
+    "NoCommonReachesError",
+    "ReachEvaluationError",
     "SIMPLIFIED_THRESHOLDS",
     "ScoringThresholds",
     "ThresholdVariant",

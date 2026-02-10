@@ -4,12 +4,13 @@ import logging
 from collections.abc import Sequence
 
 import numpy as np
+from taqsim.node import Reach
 from taqsim.system import WaterSystem
 from taqsim.time import Frequency
 
-from fishy._extract import edge_trace
+from fishy._extract import reach_trace
 from fishy.dhram.compute import compute_dhram
-from fishy.dhram.errors import EdgeEvaluationError, NoCommonEdgesError
+from fishy.dhram.errors import NoCommonReachesError, ReachEvaluationError
 from fishy.dhram.types import DHRAMResult, ThresholdVariant
 from fishy.iha.compute import compute_iha, pulse_thresholds_from_record
 from fishy.iha.errors import MissingStartDateError, NonDailyFrequencyError
@@ -20,13 +21,18 @@ logger = logging.getLogger(__name__)
 NATURAL_TAG: str = "natural"
 
 
-def _natural_edge_ids(system: WaterSystem) -> frozenset[str]:
-    return frozenset(eid for eid, edge in system.edges.items() if NATURAL_TAG in edge.tags)
+def _natural_reach_ids(system: WaterSystem) -> frozenset[str]:
+    """Find Reach nodes that have both natural incoming and natural outgoing edges."""
+    natural_edges = {eid: e for eid, e in system.edges.items() if NATURAL_TAG in e.tags}
+    has_natural_incoming = {e.target for e in natural_edges.values()}
+    has_natural_outgoing = {e.source for e in natural_edges.values()}
+    candidates = has_natural_incoming & has_natural_outgoing
+    return frozenset(nid for nid in candidates if isinstance(system.nodes[nid], Reach))
 
 
-def _extract_flow(system: WaterSystem, edge_id: str) -> tuple[np.ndarray, np.ndarray]:
-    """Extract flow array and date array from a system edge."""
-    trace = edge_trace(system, edge_id)
+def _extract_reach_flow(system: WaterSystem, reach_id: str) -> tuple[np.ndarray, np.ndarray]:
+    """Extract flow array and date array from a Reach node's WaterOutput events."""
+    trace = reach_trace(system, reach_id)
     q = np.array(trace.values(), dtype=np.float64)
     timesteps = trace.timesteps()
     time_idx = system.time_index(max(timesteps) + 1)
@@ -38,19 +44,19 @@ def evaluate_dhram(
     natural: WaterSystem,
     impacted: WaterSystem,
     *,
-    edge_ids: Sequence[str] | None = None,
+    reach_ids: Sequence[str] | None = None,
     threshold_variant: ThresholdVariant = ThresholdVariant.EMPIRICAL,
     flow_cessation: bool = False,
     subdaily_oscillation: bool = False,
     zero_flow_threshold: float = ZERO_FLOW_THRESHOLD,
     min_years: int = 1,
 ) -> dict[str, DHRAMResult]:
-    """Evaluate DHRAM classification for each shared natural-tagged edge.
+    """Evaluate DHRAM classification for each shared natural Reach node.
 
     Args:
         natural: Simulated WaterSystem representing natural conditions.
         impacted: Simulated WaterSystem representing impacted conditions.
-        edge_ids: Specific edges to evaluate. If None, uses all shared natural-tagged edges.
+        reach_ids: Specific Reach nodes to evaluate. If None, uses all shared natural Reaches.
         threshold_variant: Empirical (default) or simplified thresholds.
         flow_cessation: Whether anthropogenic flow cessation is present.
         subdaily_oscillation: Whether sub-daily oscillations exceed threshold.
@@ -58,13 +64,13 @@ def evaluate_dhram(
         min_years: Minimum complete years required in each series.
 
     Returns:
-        Dict mapping edge_id to DHRAMResult for each successfully evaluated edge.
+        Dict mapping reach_id to DHRAMResult for each successfully evaluated Reach.
 
     Raises:
         NonDailyFrequencyError: If either system is not daily.
         MissingStartDateError: If either system has no start_date.
-        NoCommonEdgesError: If no shared natural-tagged edges are found.
-        EdgeEvaluationError: If ALL edges fail evaluation.
+        NoCommonReachesError: If no shared natural Reach nodes are found.
+        ReachEvaluationError: If ALL Reaches fail evaluation.
     """
     # Validate prerequisites
     if natural.frequency != Frequency.DAILY:
@@ -76,36 +82,36 @@ def evaluate_dhram(
     if impacted.start_date is None:
         raise MissingStartDateError()
 
-    # Resolve edge selection
-    if edge_ids is not None:
-        selected = list(edge_ids)
+    # Resolve reach selection
+    if reach_ids is not None:
+        selected = list(reach_ids)
     else:
-        nat_edges = _natural_edge_ids(natural)
-        imp_edges = _natural_edge_ids(impacted)
-        common = nat_edges & imp_edges
+        nat_reaches = _natural_reach_ids(natural)
+        imp_reaches = _natural_reach_ids(impacted)
+        common = nat_reaches & imp_reaches
         if not common:
-            raise NoCommonEdgesError(
-                natural_edge_ids=nat_edges,
-                impacted_edge_ids=imp_edges,
+            raise NoCommonReachesError(
+                natural_reach_ids=nat_reaches,
+                impacted_reach_ids=imp_reaches,
             )
         selected = sorted(common)
 
     if not selected:
-        nat_edges = _natural_edge_ids(natural)
-        imp_edges = _natural_edge_ids(impacted)
-        raise NoCommonEdgesError(
-            natural_edge_ids=nat_edges,
-            impacted_edge_ids=imp_edges,
+        nat_reaches = _natural_reach_ids(natural)
+        imp_reaches = _natural_reach_ids(impacted)
+        raise NoCommonReachesError(
+            natural_reach_ids=nat_reaches,
+            impacted_reach_ids=imp_reaches,
         )
 
-    # Per-edge pipeline
+    # Per-reach pipeline
     results: dict[str, DHRAMResult] = {}
     errors: dict[str, Exception] = {}
 
-    for eid in selected:
+    for rid in selected:
         try:
             # Extract natural flow and derive pulse thresholds
-            nat_q, nat_dates = _extract_flow(natural, eid)
+            nat_q, nat_dates = _extract_reach_flow(natural, rid)
             thresholds = pulse_thresholds_from_record(nat_q)
 
             # Compute IHA for both using same pulse thresholds
@@ -117,7 +123,7 @@ def evaluate_dhram(
                 min_years=min_years,
             )
 
-            imp_q, imp_dates = _extract_flow(impacted, eid)
+            imp_q, imp_dates = _extract_reach_flow(impacted, rid)
             imp_iha = compute_iha(
                 imp_q,
                 imp_dates,
@@ -135,13 +141,13 @@ def evaluate_dhram(
                 subdaily_oscillation=subdaily_oscillation,
                 min_years=min_years,
             )
-            results[eid] = result
+            results[rid] = result
 
         except Exception as exc:
-            logger.warning("DHRAM evaluation failed for edge '%s': %s", eid, exc)
-            errors[eid] = exc
+            logger.warning("DHRAM evaluation failed for reach '%s': %s", rid, exc)
+            errors[rid] = exc
 
     if not results:
-        raise EdgeEvaluationError(edge_errors=errors)
+        raise ReachEvaluationError(reach_errors=errors)
 
     return results

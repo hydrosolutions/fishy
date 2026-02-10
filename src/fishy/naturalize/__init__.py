@@ -4,6 +4,7 @@ from fishy.naturalize.errors import (
     AmbiguousSplitError,
     NaturalizationError,
     NoNaturalPathError,
+    NoNaturalReachError,
     TerminalDemandError,
 )
 from fishy.naturalize.natural_river_splitter import NaturalRiverSplitter
@@ -12,11 +13,12 @@ from fishy.naturalize.types import NATURAL_TAG, NaturalizeResult
 
 __all__ = [
     "NATURAL_TAG",
-    "NaturalizeResult",
-    "NaturalizationError",
-    "NoNaturalPathError",
     "AmbiguousSplitError",
-    "TerminalDemandError",
+    "NaturalizationError",
     "NaturalRiverSplitter",
+    "NaturalizeResult",
+    "NoNaturalPathError",
+    "NoNaturalReachError",
+    "TerminalDemandError",
     "naturalize",
 ]

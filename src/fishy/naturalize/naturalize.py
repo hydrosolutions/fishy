@@ -9,6 +9,7 @@ from taqsim.time import Frequency
 from fishy.naturalize.errors import (
     AmbiguousSplitError,
     NoNaturalPathError,
+    NoNaturalReachError,
     TerminalDemandError,
 )
 from fishy.naturalize.natural_river_splitter import NaturalRiverSplitter
@@ -36,6 +37,7 @@ def naturalize(system: WaterSystem) -> NaturalizeResult:
 
     Raises:
         NoNaturalPathError: If no path exists from sources to sinks via natural edges.
+        NoNaturalReachError: If any connected natural path has no Reach node.
         AmbiguousSplitError: If a splitter has multiple natural downstream edges
             but no NaturalRiverSplitter rule.
         TerminalDemandError: If a Demand on the natural path has no natural
@@ -58,6 +60,7 @@ def naturalize(system: WaterSystem) -> NaturalizeResult:
 
     # Step 5: Validate preconditions
     _validate_natural_paths_exist(natural_path_nodes, sources, sinks)
+    _validate_natural_reach_exists(system, natural_graph, natural_path_nodes)
     _validate_splitters(system, natural_edges, natural_path_nodes)
     _validate_no_terminal_demands(system, natural_edges, natural_path_nodes)
 
@@ -154,6 +157,27 @@ def _validate_natural_paths_exist(
             source_ids=frozenset(sources),
             sink_ids=frozenset(sinks),
         )
+
+
+def _validate_natural_reach_exists(
+    system: WaterSystem,
+    natural_graph: nx.DiGraph,
+    natural_path_nodes: set[NodeId],
+) -> None:
+    """Raise if any connected natural path has no Reach node."""
+    for component_nodes in nx.weakly_connected_components(natural_graph):
+        component_path_nodes = component_nodes & natural_path_nodes
+        if not component_path_nodes:
+            continue
+        has_reach = any(isinstance(system.nodes[nid], Reach) for nid in component_path_nodes)
+        if not has_reach:
+            component_sources = frozenset(nid for nid in component_path_nodes if isinstance(system.nodes[nid], Source))
+            component_sinks = frozenset(nid for nid in component_path_nodes if isinstance(system.nodes[nid], Sink))
+            raise NoNaturalReachError(
+                path_node_ids=frozenset(component_path_nodes),
+                source_ids=component_sources,
+                sink_ids=component_sinks,
+            )
 
 
 def _validate_splitters(

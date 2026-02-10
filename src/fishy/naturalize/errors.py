@@ -29,6 +29,31 @@ class NoNaturalPathError(NaturalizationError):
 
 
 @dataclass
+class NoNaturalReachError(NaturalizationError):
+    """Raised when a connected natural path contains no Reach node.
+
+    Args:
+        path_node_ids: IDs of nodes on the Reach-less natural path component.
+        source_ids: IDs of source nodes in the component.
+        sink_ids: IDs of sink nodes in the component.
+    """
+
+    path_node_ids: frozenset[str]
+    source_ids: frozenset[str]
+    sink_ids: frozenset[str]
+
+    def __str__(self) -> str:
+        sources = ", ".join(sorted(self.source_ids)) or "(none)"
+        sinks = ", ".join(sorted(self.sink_ids)) or "(none)"
+        nodes = ", ".join(sorted(self.path_node_ids))
+        return (
+            f"Natural path from sources [{sources}] to sinks [{sinks}] "
+            f"contains no Reach node. Nodes on path: [{nodes}]. "
+            f"Add a Reach node to model the physical river channel."
+        )
+
+
+@dataclass
 class AmbiguousSplitError(NaturalizationError):
     """Raised when a splitter on the natural path has multiple natural downstream edges but no NaturalRiverSplitter.
 

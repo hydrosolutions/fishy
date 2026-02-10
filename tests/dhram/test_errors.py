@@ -4,17 +4,18 @@ import pytest
 
 from fishy.dhram.errors import (
     DHRAMError,
-    EdgeEvaluationError,
     IncompatibleIHAResultsError,
     InsufficientYearsError,
-    NoCommonEdgesError,
+    NoCommonReachesError,
+    ReachEvaluationError,
 )
 from fishy.iha.errors import (
-    EdgeNotFoundError,
-    EmptyTraceError,
+    EmptyReachTraceError,
     IHAError,
     MissingStartDateError,
     NonDailyFrequencyError,
+    NotAReachError,
+    ReachNotFoundError,
 )
 
 # ---------------------------------------------------------------------------
@@ -26,8 +27,8 @@ class TestDHRAMErrorHierarchy:
     def test_base_class(self) -> None:
         assert issubclass(IncompatibleIHAResultsError, DHRAMError)
         assert issubclass(InsufficientYearsError, DHRAMError)
-        assert issubclass(NoCommonEdgesError, DHRAMError)
-        assert issubclass(EdgeEvaluationError, DHRAMError)
+        assert issubclass(NoCommonReachesError, DHRAMError)
+        assert issubclass(ReachEvaluationError, DHRAMError)
 
     def test_dhram_error_is_exception(self) -> None:
         assert issubclass(DHRAMError, Exception)
@@ -66,37 +67,37 @@ class TestInsufficientYearsError:
         assert "5" in msg
 
 
-class TestNoCommonEdgesError:
+class TestNoCommonReachesError:
     def test_fields(self) -> None:
-        err = NoCommonEdgesError(
-            natural_edge_ids=frozenset({"a", "b"}),
-            impacted_edge_ids=frozenset({"c", "d"}),
+        err = NoCommonReachesError(
+            natural_reach_ids=frozenset({"a", "b"}),
+            impacted_reach_ids=frozenset({"c", "d"}),
         )
-        assert err.natural_edge_ids == frozenset({"a", "b"})
-        assert err.impacted_edge_ids == frozenset({"c", "d"})
+        assert err.natural_reach_ids == frozenset({"a", "b"})
+        assert err.impacted_reach_ids == frozenset({"c", "d"})
 
-    def test_str_contains_edges(self) -> None:
-        err = NoCommonEdgesError(
-            natural_edge_ids=frozenset({"edge1"}),
-            impacted_edge_ids=frozenset({"edge2"}),
+    def test_str_contains_reaches(self) -> None:
+        err = NoCommonReachesError(
+            natural_reach_ids=frozenset({"reach1"}),
+            impacted_reach_ids=frozenset({"reach2"}),
         )
         msg = str(err)
-        assert "edge1" in msg
-        assert "edge2" in msg
+        assert "reach1" in msg
+        assert "reach2" in msg
 
 
-class TestEdgeEvaluationError:
+class TestReachEvaluationError:
     def test_fields(self) -> None:
-        errors = {"e1": ValueError("bad"), "e2": RuntimeError("worse")}
-        err = EdgeEvaluationError(edge_errors=errors)
-        assert len(err.edge_errors) == 2
+        errors = {"r1": ValueError("bad"), "r2": RuntimeError("worse")}
+        err = ReachEvaluationError(reach_errors=errors)
+        assert len(err.reach_errors) == 2
 
     def test_str_contains_count_and_details(self) -> None:
-        errors = {"e1": ValueError("bad data")}
-        err = EdgeEvaluationError(edge_errors=errors)
+        errors = {"r1": ValueError("bad data")}
+        err = ReachEvaluationError(reach_errors=errors)
         msg = str(err)
         assert "1" in msg
-        assert "e1" in msg
+        assert "r1" in msg
         assert "bad data" in msg
 
 
@@ -109,8 +110,9 @@ class TestIHABridgeErrorHierarchy:
     def test_all_inherit_from_iha_error(self) -> None:
         assert issubclass(MissingStartDateError, IHAError)
         assert issubclass(NonDailyFrequencyError, IHAError)
-        assert issubclass(EdgeNotFoundError, IHAError)
-        assert issubclass(EmptyTraceError, IHAError)
+        assert issubclass(ReachNotFoundError, IHAError)
+        assert issubclass(NotAReachError, IHAError)
+        assert issubclass(EmptyReachTraceError, IHAError)
 
 
 class TestMissingStartDateError:
@@ -134,24 +136,38 @@ class TestNonDailyFrequencyError:
         assert "365" in str(err)
 
 
-class TestEdgeNotFoundError:
+class TestReachNotFoundError:
     def test_fields(self) -> None:
-        err = EdgeNotFoundError(edge_id="bad_edge", available_edge_ids=frozenset({"e1", "e2"}))
-        assert err.edge_id == "bad_edge"
-        assert err.available_edge_ids == frozenset({"e1", "e2"})
+        err = ReachNotFoundError(reach_id="bad_reach", available_reach_ids=frozenset({"r1", "r2"}))
+        assert err.reach_id == "bad_reach"
+        assert err.available_reach_ids == frozenset({"r1", "r2"})
 
-    def test_str_mentions_edge_and_available(self) -> None:
-        err = EdgeNotFoundError(edge_id="bad_edge", available_edge_ids=frozenset({"e1"}))
+    def test_str_mentions_reach_and_available(self) -> None:
+        err = ReachNotFoundError(reach_id="bad_reach", available_reach_ids=frozenset({"r1"}))
         msg = str(err)
-        assert "bad_edge" in msg
-        assert "e1" in msg
+        assert "bad_reach" in msg
+        assert "r1" in msg
 
 
-class TestEmptyTraceError:
+class TestNotAReachError:
+    def test_fields(self) -> None:
+        err = NotAReachError(node_id="sink1", actual_type="Sink")
+        assert err.node_id == "sink1"
+        assert err.actual_type == "Sink"
+
+    def test_str_mentions_node_and_type(self) -> None:
+        err = NotAReachError(node_id="sink1", actual_type="Sink")
+        msg = str(err)
+        assert "sink1" in msg
+        assert "Sink" in msg
+        assert "Reach" in msg
+
+
+class TestEmptyReachTraceError:
     def test_field(self) -> None:
-        err = EmptyTraceError(edge_id="e1")
-        assert err.edge_id == "e1"
+        err = EmptyReachTraceError(reach_id="r1")
+        assert err.reach_id == "r1"
 
-    def test_str_mentions_edge(self) -> None:
-        err = EmptyTraceError(edge_id="e1")
-        assert "e1" in str(err)
+    def test_str_mentions_reach(self) -> None:
+        err = EmptyReachTraceError(reach_id="r1")
+        assert "r1" in str(err)

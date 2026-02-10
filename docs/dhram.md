@@ -7,7 +7,7 @@ Classify flow regime alteration using the Dundee Hydrological Regime Alteration 
 - **Two-series comparison**: Takes natural and impacted IHA results, computes deviation across all five IHA groups.
 - **Fixed empirical thresholds**: Default scoring uses the original Black et al. (2005) thresholds derived from Scottish catchments. Simplified uniform thresholds available as an option.
 - **Circular statistics for timing**: Group 3 (timing of extremes) uses circular mean to handle December–January wraparound.
-- **Skip-and-collect evaluation**: `evaluate_dhram` processes multiple edges independently, returning partial results if some edges fail.
+- **Skip-and-collect evaluation**: `evaluate_dhram` processes multiple Reach nodes independently, returning partial results if some Reach nodes fail.
 - **Immutable output**: `DHRAMResult` is a frozen dataclass with full audit trail.
 
 ## Quick Start
@@ -135,7 +135,7 @@ results = evaluate_dhram(
     natural,                                  # WaterSystem — simulated natural
     impacted,                                 # WaterSystem — simulated impacted
     *,
-    edge_ids=None,                            # Sequence[str] | None — defaults to shared natural-tagged edges
+    reach_ids=None,                           # Sequence[str] | None — defaults to shared natural Reach nodes
     threshold_variant=ThresholdVariant.EMPIRICAL,
     flow_cessation=False,
     subdaily_oscillation=False,
@@ -144,7 +144,7 @@ results = evaluate_dhram(
 ) -> dict[str, DHRAMResult]
 ```
 
-Per-edge pipeline: extracts flows, derives pulse thresholds from natural record, computes IHA for both series using the same thresholds, then computes DHRAM.
+Per-Reach pipeline: extracts flows, derives pulse thresholds from natural record, computes IHA for both series using the same thresholds, then computes DHRAM.
 
 **Raises:**
 
@@ -152,17 +152,17 @@ Per-edge pipeline: extracts flows, derives pulse thresholds from natural record,
 |-----------|-----------|
 | `NonDailyFrequencyError` | Either system is not daily |
 | `MissingStartDateError` | Either system has no `start_date` |
-| `NoCommonEdgesError` | No shared natural-tagged edges found |
-| `EdgeEvaluationError` | ALL edges failed (partial results returned otherwise) |
+| `NoCommonReachesError` | No shared natural Reach nodes found |
+| `ReachEvaluationError` | ALL Reach nodes failed (partial results returned otherwise) |
 
-### `iha_from_trace`
+### `iha_from_reach`
 
 ```python
-from fishy.iha import iha_from_trace
+from fishy.iha import iha_from_reach
 
-result = iha_from_trace(
+result = iha_from_reach(
     system,                                   # WaterSystem — simulated, daily
-    edge_id,                                  # str — edge to extract
+    reach_id,                                 # str — Reach node to extract
     *,
     zero_flow_threshold=0.001,
     pulse_thresholds=None,                    # PulseThresholds | None
@@ -170,7 +170,15 @@ result = iha_from_trace(
 ) -> IHAResult
 ```
 
-Bridge between taqsim `WaterSystem` and `compute_iha`. Extracts flow data from the edge's target node via `WaterReceived` events and converts to numpy arrays.
+Bridge between taqsim `WaterSystem` and `compute_iha`. Extracts flow data from the Reach node's `WaterOutput` events and converts to numpy arrays.
+
+**Raises:**
+
+| Exception | Condition |
+|-----------|-----------|
+| `NotAReachError` | Node exists but is not a Reach |
+| `ReachNotFoundError` | `reach_id` not in system |
+| `EmptyReachTraceError` | Reach trace has no data |
 
 ## Result Types
 
@@ -243,14 +251,15 @@ from fishy.dhram import (
     DHRAMError,
     IncompatibleIHAResultsError,
     InsufficientYearsError,
-    NoCommonEdgesError,
-    EdgeEvaluationError,
+    NoCommonReachesError,
+    ReachEvaluationError,
 )
 from fishy.iha import (
     MissingStartDateError,
     NonDailyFrequencyError,
-    EdgeNotFoundError,
-    EmptyTraceError,
+    ReachNotFoundError,
+    NotAReachError,
+    EmptyReachTraceError,
 )
 ```
 
@@ -283,8 +292,8 @@ natural.simulate(730)
 
 # 3. Evaluate DHRAM
 results = evaluate_dhram(natural, impacted)
-for edge_id, dhram in results.items():
-    print(f"{edge_id}: Class {dhram.final_class} ({dhram.wfd_status})")
+for reach_id, dhram in results.items():
+    print(f"{reach_id}: Class {dhram.final_class} ({dhram.wfd_status})")
     print(dhram.summary())
 ```
 
@@ -295,7 +304,7 @@ WaterSystem (impacted) ──simulate──→ flow traces (impacted)
          │                                     │
          └── naturalize() → simulate ──→ flow traces (natural)
                                                │
-         For each shared natural-tagged edge:   │
+         For each shared natural Reach:          │
            natural flows → pulse_thresholds ────┤
            compute_iha(natural, thresholds)     │
            compute_iha(impacted, thresholds) ───┤

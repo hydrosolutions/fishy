@@ -36,26 +36,26 @@ class InsufficientYearsError(DHRAMError):
 
 
 @dataclass
-class NoCommonEdgesError(DHRAMError):
-    """Raised when natural and impacted systems share no natural-tagged edges."""
+class NoCommonReachesError(DHRAMError):
+    """Raised when natural and impacted systems share no natural Reach nodes."""
 
-    natural_edge_ids: frozenset[str]
-    impacted_edge_ids: frozenset[str]
+    natural_reach_ids: frozenset[str]
+    impacted_reach_ids: frozenset[str]
 
     def __str__(self) -> str:
         return (
-            f"No common natural-tagged edges between systems. "
-            f"Natural edges: {sorted(self.natural_edge_ids)}, "
-            f"impacted edges: {sorted(self.impacted_edge_ids)}."
+            f"No common natural Reach nodes between systems. "
+            f"Natural reaches: {sorted(self.natural_reach_ids)}, "
+            f"impacted reaches: {sorted(self.impacted_reach_ids)}."
         )
 
 
 @dataclass
-class EdgeEvaluationError(DHRAMError):
-    """Raised when all edges fail during DHRAM evaluation."""
+class ReachEvaluationError(DHRAMError):
+    """Raised when all Reach nodes fail during DHRAM evaluation."""
 
-    edge_errors: dict[str, Exception]
+    reach_errors: dict[str, Exception]
 
     def __str__(self) -> str:
-        details = "; ".join(f"{eid}: {err}" for eid, err in sorted(self.edge_errors.items()))
-        return f"All {len(self.edge_errors)} edge(s) failed DHRAM evaluation: {details}"
+        details = "; ".join(f"{rid}: {err}" for rid, err in sorted(self.reach_errors.items()))
+        return f"All {len(self.reach_errors)} reach(es) failed DHRAM evaluation: {details}"

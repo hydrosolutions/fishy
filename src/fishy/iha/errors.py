@@ -101,21 +101,32 @@ class NonDailyFrequencyError(IHAError):
 
 
 @dataclass
-class EdgeNotFoundError(IHAError):
-    """Raised when the requested edge_id is not in the system."""
+class ReachNotFoundError(IHAError):
+    """Raised when the requested reach_id is not in the system."""
 
-    edge_id: str
-    available_edge_ids: frozenset[str]
+    reach_id: str
+    available_reach_ids: frozenset[str]
 
     def __str__(self) -> str:
-        return f"Edge '{self.edge_id}' not found in system. Available edges: {sorted(self.available_edge_ids)}"
+        return f"Reach '{self.reach_id}' not found in system. Available reaches: {sorted(self.available_reach_ids)}"
 
 
 @dataclass
-class EmptyTraceError(IHAError):
-    """Raised when an edge trace contains no data."""
+class NotAReachError(IHAError):
+    """Raised when the specified node exists but is not a Reach."""
 
-    edge_id: str
+    node_id: str
+    actual_type: str
 
     def __str__(self) -> str:
-        return f"Edge '{self.edge_id}' has an empty trace (no flow data recorded)."
+        return f"Node '{self.node_id}' is a {self.actual_type}, not a Reach."
+
+
+@dataclass
+class EmptyReachTraceError(IHAError):
+    """Raised when a Reach node's trace contains no data."""
+
+    reach_id: str
+
+    def __str__(self) -> str:
+        return f"Reach '{self.reach_id}' has an empty trace (no flow data recorded)."

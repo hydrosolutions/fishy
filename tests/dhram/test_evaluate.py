@@ -8,6 +8,7 @@ from taqsim.node import TimeSeries
 from taqsim.testing import (
     EvenSplit,
     make_edge,
+    make_reach,
     make_sink,
     make_source,
     make_splitter,
@@ -15,7 +16,7 @@ from taqsim.testing import (
 )
 from taqsim.time import Frequency
 
-from fishy.dhram.errors import NoCommonEdgesError
+from fishy.dhram.errors import NoCommonReachesError
 from fishy.dhram.evaluate import evaluate_dhram
 from fishy.dhram.types import ThresholdVariant
 from fishy.iha.errors import MissingStartDateError, NonDailyFrequencyError
@@ -35,11 +36,13 @@ def _variable_inflow(n: int, seed: int = 42) -> TimeSeries:
 
 @pytest.fixture
 def simple_daily_system():
-    """Source -> Sink with natural tag, daily, 2 years."""
+    """Source -> Reach -> Sink with natural tags, daily, 2 years."""
     system = make_system(
         make_source("source", n_steps=N_STEPS, inflow=_variable_inflow(N_STEPS)),
+        make_reach("reach"),
         make_sink("sink"),
-        make_edge("e1", "source", "sink", tags=frozenset({NATURAL_TAG})),
+        make_edge("e_in", "source", "reach", tags=frozenset({NATURAL_TAG})),
+        make_edge("e_out", "reach", "sink", tags=frozenset({NATURAL_TAG})),
         frequency=Frequency.DAILY,
         start_date=date(2020, 1, 1),
         validate=False,
@@ -49,16 +52,22 @@ def simple_daily_system():
 
 
 @pytest.fixture
-def multi_edge_system():
-    """Source -> Splitter -> (Sink1, Sink2), both natural-tagged, daily."""
+def multi_reach_system():
+    """Source -> Reach1 -> Splitter -> Reach2 -> Sink1, Splitter -> Reach3 -> Sink2."""
     system = make_system(
         make_source("source", n_steps=N_STEPS, inflow=_variable_inflow(N_STEPS)),
+        make_reach("reach1"),
         make_splitter("splitter", split_policy=EvenSplit()),
+        make_reach("reach2"),
+        make_reach("reach3"),
         make_sink("sink1"),
         make_sink("sink2"),
-        make_edge("e_in", "source", "splitter", tags=frozenset({NATURAL_TAG})),
-        make_edge("e_out1", "splitter", "sink1", tags=frozenset({NATURAL_TAG})),
-        make_edge("e_out2", "splitter", "sink2", tags=frozenset({NATURAL_TAG})),
+        make_edge("e_src_r1", "source", "reach1", tags=frozenset({NATURAL_TAG})),
+        make_edge("e_r1_sp", "reach1", "splitter", tags=frozenset({NATURAL_TAG})),
+        make_edge("e_sp_r2", "splitter", "reach2", tags=frozenset({NATURAL_TAG})),
+        make_edge("e_sp_r3", "splitter", "reach3", tags=frozenset({NATURAL_TAG})),
+        make_edge("e_r2_s1", "reach2", "sink1", tags=frozenset({NATURAL_TAG})),
+        make_edge("e_r3_s2", "reach3", "sink2", tags=frozenset({NATURAL_TAG})),
         frequency=Frequency.DAILY,
         start_date=date(2020, 1, 1),
         validate=False,
@@ -72,8 +81,10 @@ def monthly_system():
     """Monthly system — should fail validation."""
     system = make_system(
         make_source("source", n_steps=24),
+        make_reach("reach"),
         make_sink("sink"),
-        make_edge("e1", "source", "sink", tags=frozenset({NATURAL_TAG})),
+        make_edge("e_in", "source", "reach", tags=frozenset({NATURAL_TAG})),
+        make_edge("e_out", "reach", "sink", tags=frozenset({NATURAL_TAG})),
         frequency=Frequency.MONTHLY,
         start_date=date(2020, 1, 1),
         validate=False,
@@ -87,8 +98,10 @@ def no_start_date_system():
     """Daily system without start_date."""
     system = make_system(
         make_source("source", n_steps=N_STEPS),
+        make_reach("reach"),
         make_sink("sink"),
-        make_edge("e1", "source", "sink", tags=frozenset({NATURAL_TAG})),
+        make_edge("e_in", "source", "reach", tags=frozenset({NATURAL_TAG})),
+        make_edge("e_out", "reach", "sink", tags=frozenset({NATURAL_TAG})),
         frequency=Frequency.DAILY,
         validate=False,
     )
@@ -97,12 +110,12 @@ def no_start_date_system():
 
 
 @pytest.fixture
-def no_natural_edges_system():
-    """Daily system with no natural-tagged edges."""
+def no_natural_reaches_system():
+    """Daily system with natural-tagged edges but no Reach node on natural path."""
     system = make_system(
-        make_source("source", n_steps=N_STEPS),
+        make_source("source", n_steps=N_STEPS, inflow=_variable_inflow(N_STEPS)),
         make_sink("sink"),
-        make_edge("e1", "source", "sink", tags=frozenset({"canal"})),
+        make_edge("e1", "source", "sink", tags=frozenset({NATURAL_TAG})),
         frequency=Frequency.DAILY,
         start_date=date(2020, 1, 1),
         validate=False,
@@ -124,33 +137,33 @@ class TestInputValidation:
         with pytest.raises(MissingStartDateError, match="start_date"):
             evaluate_dhram(no_start_date_system, simple_daily_system)
 
-    def test_no_common_edges_raises(self, no_natural_edges_system, simple_daily_system) -> None:
-        with pytest.raises(NoCommonEdgesError, match="No common"):
-            evaluate_dhram(simple_daily_system, no_natural_edges_system)
+    def test_no_common_reaches_raises(self, no_natural_reaches_system, simple_daily_system) -> None:
+        with pytest.raises(NoCommonReachesError, match="No common"):
+            evaluate_dhram(simple_daily_system, no_natural_reaches_system)
 
 
-class TestEdgeSelection:
-    def test_default_selects_natural_tagged(self, simple_daily_system) -> None:
+class TestReachSelection:
+    def test_default_selects_natural_reaches(self, simple_daily_system) -> None:
         results = evaluate_dhram(simple_daily_system, simple_daily_system)
-        assert "e1" in results
+        assert "reach" in results
 
-    def test_subset_filtering(self, multi_edge_system) -> None:
-        results = evaluate_dhram(multi_edge_system, multi_edge_system, edge_ids=["e_out1"])
-        assert "e_out1" in results
-        assert "e_out2" not in results
+    def test_subset_filtering(self, multi_reach_system) -> None:
+        results = evaluate_dhram(multi_reach_system, multi_reach_system, reach_ids=["reach2"])
+        assert "reach2" in results
+        assert "reach3" not in results
 
 
-class TestMultiEdge:
-    def test_returns_dict_keyed_by_edge(self, multi_edge_system) -> None:
-        results = evaluate_dhram(multi_edge_system, multi_edge_system)
+class TestMultiReach:
+    def test_returns_dict_keyed_by_reach(self, multi_reach_system) -> None:
+        results = evaluate_dhram(multi_reach_system, multi_reach_system)
         assert isinstance(results, dict)
-        # Should have at least some natural-tagged edges
-        assert len(results) >= 1
+        # Should have multiple natural reaches
+        assert len(results) >= 2
 
-    def test_each_result_is_dhram_result(self, multi_edge_system) -> None:
+    def test_each_result_is_dhram_result(self, multi_reach_system) -> None:
         from fishy.dhram.types import DHRAMResult
 
-        results = evaluate_dhram(multi_edge_system, multi_edge_system)
+        results = evaluate_dhram(multi_reach_system, multi_reach_system)
         for result in results.values():
             assert isinstance(result, DHRAMResult)
 

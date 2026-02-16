@@ -8,7 +8,10 @@ __all__ = [
     "NATURAL_SPLIT_RATIOS",
     "NATURAL_TAG",
     "NaturalRiverSplitter",
+    "__version__",
     "evaluate_dhram",
     "get_docs_path",
     "naturalize",
 ]
+
+__version__ = "0.1.1"

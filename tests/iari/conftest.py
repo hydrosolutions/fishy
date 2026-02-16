@@ -16,6 +16,9 @@ from taqsim.testing import (
 )
 from taqsim.time import Frequency
 
+from fishy.iari._deviation import bands_from_iha
+from fishy.iari.types import NaturalBands
+from fishy.iha.bridge import iha_from_reach
 from fishy.iha.types import IHAResult, PulseThresholds
 
 NATURAL_TAG = "natural"
@@ -197,3 +200,9 @@ def no_natural_reaches_system():
     )
     system.simulate(N_STEPS)
     return system
+
+
+@pytest.fixture
+def multi_reach_bands(multi_reach_system) -> dict[str, NaturalBands]:
+    """Pre-computed NaturalBands for each reach in multi_reach_system."""
+    return {rid: bands_from_iha(iha_from_reach(multi_reach_system, rid)) for rid in ["reach1", "reach2", "reach3"]}

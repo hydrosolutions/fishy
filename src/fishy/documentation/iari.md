@@ -136,6 +136,36 @@ objective = iari_objective(
 
 Builds a taqsim `Objective` that evaluates IARI at a single Reach. The `bands` argument is frozen and picklable, so the objective can be serialized for parallel optimization.
 
+### `composite_iari_objective`
+
+```python
+from fishy.iari import composite_iari_objective
+
+objective = composite_iari_objective(
+    bands_by_reach,                           # dict[str, NaturalBands] -- one entry per Reach
+    *,
+    weights=None,                             # dict[str, float] | None -- None = equal weights
+    name="iari",                              # str -- objective name for the optimizer
+    zero_flow_threshold=0.001,
+    min_years=1,
+    priority=1,                               # objective priority for optimizer
+) -> Objective
+```
+
+Collapses N per-Reach IARI scores into a single taqsim `Objective` via weighted mean. Useful when optimizing systems with many Reach nodes where adding a separate `iari_objective` per Reach would make the Pareto front sparse (NSGA-II struggles beyond ~4 objectives).
+
+- **Equal weights** (default): Arithmetic mean of all per-Reach IARI scores.
+- **Custom weights**: Normalized to sum to 1; keys must match `bands_by_reach` exactly.
+- **Evaluation**: Strict — any Reach failure raises immediately (unlike `evaluate_iari` which collects partial results).
+
+**Raises (construction):**
+
+| Exception | Condition |
+|-----------|-----------|
+| `ValueError` | `bands_by_reach` is empty |
+| `ValueError` | `weights` keys don't match `bands_by_reach` keys |
+| `ValueError` | Any weight is not positive |
+
 ### `bands_from_iha`
 
 ```python
@@ -202,6 +232,41 @@ from fishy.iha import (
     ReachNotFoundError,
     NotAReachError,
     EmptyReachTraceError,
+)
+```
+
+## Reducing NSGA-II Dimensions
+
+When a system has N Reach nodes, creating a separate `iari_objective` per Reach adds N environmental objectives to the optimizer. NSGA-II performance degrades as the Pareto front becomes sparse beyond ~4 objectives. `composite_iari_objective` solves this by collapsing N scores into one.
+
+```python
+from fishy.iari import composite_iari_objective, bands_from_iha
+from fishy.iha.bridge import iha_from_reach
+
+# Pre-compute bands from natural baseline
+reach_bands = {
+    rid: bands_from_iha(iha_from_reach(natural, rid))
+    for rid in ["r1", "r2", "r3"]
+}
+
+# Single objective (equal weights)
+obj = composite_iari_objective(reach_bands, priority=2)
+
+# Weighted by ecological importance
+obj = composite_iari_objective(
+    reach_bands,
+    weights={"r1": 3, "r2": 1, "r3": 1},
+    priority=2,
+)
+
+# Sub-basin grouping
+upstream = composite_iari_objective(
+    {k: reach_bands[k] for k in ["r1"]},
+    name="upstream.iari",
+)
+downstream = composite_iari_objective(
+    {k: reach_bands[k] for k in ["r2", "r3"]},
+    name="downstream.iari",
 )
 ```
 

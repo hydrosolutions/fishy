@@ -1,6 +1,6 @@
 [project]
 name = "fishy"
-version = "0.1.1"
+version = "0.1.2"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -83,7 +83,7 @@ taqsim = { git = "https://github.com/hydrosolutions/taqsim.git", rev = "main" }
 # Bump My Version
 # -----------------------
 [tool.bumpversion]
-current_version = "0.1.1"
+current_version = "0.1.2"
 commit = false
 tag = false
 allow_dirty = true

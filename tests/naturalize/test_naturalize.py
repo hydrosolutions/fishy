@@ -3,7 +3,7 @@
 from datetime import date
 
 import pytest
-from taqsim.node import PassThrough, Reach, Sink, Source, Splitter
+from taqsim.node import NoReachLoss, PassThrough, Reach, Sink, Source, Splitter
 from taqsim.system import WaterSystem
 
 from fishy.naturalize import (
@@ -138,6 +138,32 @@ class TestNodeTransformations:
         demand_node = result.system.nodes["demand"]
         assert isinstance(demand_node, PassThrough)
         assert "naturalized_from_demand" in demand_node.tags
+
+    def test_reach_loss_rule_stripped_on_naturalization(
+        self, system_with_reach_canal_loss: WaterSystem
+    ) -> None:
+        """Reach on natural path should have loss_rule replaced with NoReachLoss."""
+        result = naturalize(system_with_reach_canal_loss)
+        reach = result.system.nodes["reach"]
+        assert isinstance(reach, Reach)
+        assert isinstance(reach.loss_rule, NoReachLoss)
+
+    def test_reach_original_loss_rule_in_metadata(
+        self, system_with_reach_canal_loss: WaterSystem
+    ) -> None:
+        """Original loss_rule should be preserved in metadata for audit trail."""
+        result = naturalize(system_with_reach_canal_loss)
+        reach = result.system.nodes["reach"]
+        assert "original_loss_rule" in reach.metadata
+
+    def test_reach_routing_model_preserved(
+        self, system_with_reach_canal_loss: WaterSystem
+    ) -> None:
+        """Routing model (physical channel property) should be preserved."""
+        original_reach = system_with_reach_canal_loss.nodes["reach"]
+        result = naturalize(system_with_reach_canal_loss)
+        nat_reach = result.system.nodes["reach"]
+        assert nat_reach.routing_model == original_reach.routing_model
 
     def test_source_preserved(self, simple_linear_system: WaterSystem) -> None:
         """Source nodes should be preserved as Source."""

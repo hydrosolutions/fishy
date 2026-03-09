@@ -203,6 +203,22 @@ def no_natural_reaches_system():
 
 
 @pytest.fixture
+def unsimulated_daily_system():
+    """Daily system that has NOT been simulated — Reach has empty trace."""
+    system = make_system(
+        make_source("source", n_steps=N_STEPS, inflow=_variable_inflow(N_STEPS)),
+        make_reach("reach"),
+        make_sink("sink"),
+        make_edge("e_in", "source", "reach", tags=frozenset({NATURAL_TAG})),
+        make_edge("e_out", "reach", "sink", tags=frozenset({NATURAL_TAG})),
+        frequency=Frequency.DAILY,
+        start_date=date(2020, 1, 1),
+        validate=False,
+    )
+    return system
+
+
+@pytest.fixture
 def multi_reach_bands(multi_reach_system) -> dict[str, NaturalBands]:
     """Pre-computed NaturalBands for each reach in multi_reach_system."""
     return {rid: bands_from_iha(iha_from_reach(multi_reach_system, rid)) for rid in ["reach1", "reach2", "reach3"]}

@@ -5,6 +5,7 @@ from datetime import date
 import pytest
 from taqsim.testing import (
     EvenSplit,
+    ProportionalReachLoss,
     make_demand,
     make_edge,
     make_passthrough,
@@ -162,6 +163,19 @@ def system_with_reach_on_natural_path():
     return make_system(
         make_source("source", n_steps=2),
         make_reach("reach"),
+        make_sink("sink"),
+        make_edge("source_to_reach", "source", "reach", tags=frozenset({NATURAL_TAG})),
+        make_edge("reach_to_sink", "reach", "sink", tags=frozenset({NATURAL_TAG})),
+        validate=False,
+    )
+
+
+@pytest.fixture
+def system_with_reach_canal_loss():
+    """Source -> Reach(ProportionalReachLoss) -> Sink, all natural-tagged."""
+    return make_system(
+        make_source("source", n_steps=2),
+        make_reach("reach", loss_rule=ProportionalReachLoss(loss_fraction=0.5)),
         make_sink("sink"),
         make_edge("source_to_reach", "source", "reach", tags=frozenset({NATURAL_TAG})),
         make_edge("reach_to_sink", "reach", "sink", tags=frozenset({NATURAL_TAG})),

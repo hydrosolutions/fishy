@@ -16,7 +16,7 @@ from taqsim.testing import (
 )
 from taqsim.time import Frequency
 
-from fishy.dhram.errors import NoCommonReachesError
+from fishy.dhram.errors import NoCommonReachesError, ReachEvaluationError
 from fishy.dhram.evaluate import evaluate_dhram
 from fishy.dhram.types import ThresholdVariant
 from fishy.iha.errors import MissingStartDateError, NonDailyFrequencyError
@@ -110,6 +110,22 @@ def no_start_date_system():
 
 
 @pytest.fixture
+def unsimulated_daily_system():
+    """Daily system that has NOT been simulated — Reach has empty trace."""
+    system = make_system(
+        make_source("source", n_steps=N_STEPS, inflow=_variable_inflow(N_STEPS)),
+        make_reach("reach"),
+        make_sink("sink"),
+        make_edge("e_in", "source", "reach", tags=frozenset({NATURAL_TAG})),
+        make_edge("e_out", "reach", "sink", tags=frozenset({NATURAL_TAG})),
+        frequency=Frequency.DAILY,
+        start_date=date(2020, 1, 1),
+        validate=False,
+    )
+    return system
+
+
+@pytest.fixture
 def no_natural_reaches_system():
     """Daily system with natural-tagged edges but no Reach node on natural path."""
     system = make_system(
@@ -140,6 +156,15 @@ class TestInputValidation:
     def test_no_common_reaches_raises(self, no_natural_reaches_system, simple_daily_system) -> None:
         with pytest.raises(NoCommonReachesError, match="No common"):
             evaluate_dhram(simple_daily_system, no_natural_reaches_system)
+
+    def test_empty_trace_raises_reach_evaluation_error(self, unsimulated_daily_system) -> None:
+        """Unsimulated system should raise ReachEvaluationError, not ValueError."""
+        from fishy.iha.errors import EmptyReachTraceError
+
+        with pytest.raises(ReachEvaluationError) as exc_info:
+            evaluate_dhram(unsimulated_daily_system, unsimulated_daily_system)
+        assert "reach" in exc_info.value.reach_errors
+        assert isinstance(exc_info.value.reach_errors["reach"], EmptyReachTraceError)
 
 
 class TestReachSelection:

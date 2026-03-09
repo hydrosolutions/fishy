@@ -3,7 +3,7 @@
 import pytest
 from fishy.iari.evaluate import evaluate_iari
 
-from fishy.iari.errors import NoCommonReachesError
+from fishy.iari.errors import NoCommonReachesError, ReachEvaluationError
 from fishy.iari.types import IARIResult
 from fishy.iha.errors import MissingStartDateError, NonDailyFrequencyError
 
@@ -24,6 +24,15 @@ class TestInputValidation:
     def test_no_common_reaches_raises(self, no_natural_reaches_system, simple_daily_system) -> None:
         with pytest.raises(NoCommonReachesError, match="No common"):
             evaluate_iari(simple_daily_system, no_natural_reaches_system)
+
+    def test_empty_trace_raises_reach_evaluation_error(self, unsimulated_daily_system) -> None:
+        """Unsimulated system should raise ReachEvaluationError, not ValueError."""
+        from fishy.iha.errors import EmptyReachTraceError
+
+        with pytest.raises(ReachEvaluationError) as exc_info:
+            evaluate_iari(unsimulated_daily_system, unsimulated_daily_system)
+        assert "reach" in exc_info.value.reach_errors
+        assert isinstance(exc_info.value.reach_errors["reach"], EmptyReachTraceError)
 
 
 class TestReachSelection:

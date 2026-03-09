@@ -4,7 +4,7 @@ from datetime import date
 
 import networkx as nx
 from taqsim.edge import Edge
-from taqsim.node import Demand, PassThrough, Reach, Sink, Source, Splitter, Storage
+from taqsim.node import Demand, NoReachLoss, PassThrough, Reach, Sink, Source, Splitter, Storage
 from taqsim.system import WaterSystem
 from taqsim.time import Frequency
 
@@ -450,14 +450,14 @@ def _build_splitter_from_metadata(node: Splitter) -> Splitter:
 
 
 def _clone_reach(node: Reach) -> Reach:
-    """Clone a Reach node."""
+    """Clone a Reach node, stripping operational loss rules."""
     return Reach(
         id=node.id,
         routing_model=node.routing_model,
-        loss_rule=node.loss_rule,
+        loss_rule=NoReachLoss(),
         location=node.location,
         tags=node.tags,
-        metadata=node.metadata,
+        metadata={**node.metadata, "original_loss_rule": node.loss_rule},
     )
 
 

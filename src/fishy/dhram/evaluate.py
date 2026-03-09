@@ -13,7 +13,7 @@ from fishy.dhram.compute import compute_dhram
 from fishy.dhram.errors import NoCommonReachesError, ReachEvaluationError
 from fishy.dhram.types import DHRAMResult, ThresholdVariant
 from fishy.iha.compute import compute_iha, pulse_thresholds_from_record
-from fishy.iha.errors import MissingStartDateError, NonDailyFrequencyError
+from fishy.iha.errors import EmptyReachTraceError, MissingStartDateError, NonDailyFrequencyError
 from fishy.iha.types import ZERO_FLOW_THRESHOLD
 
 logger = logging.getLogger(__name__)
@@ -33,6 +33,8 @@ def _natural_reach_ids(system: WaterSystem) -> frozenset[str]:
 def _extract_reach_flow(system: WaterSystem, reach_id: str) -> tuple[np.ndarray, np.ndarray]:
     """Extract flow array and date array from a Reach node's WaterOutput events."""
     trace = reach_trace(system, reach_id)
+    if len(trace) == 0:
+        raise EmptyReachTraceError(reach_id=reach_id)
     q = np.array(trace.values(), dtype=np.float64)
     timesteps = trace.timesteps()
     time_idx = system.time_index(max(timesteps) + 1)

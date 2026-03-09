@@ -1,5 +1,7 @@
 """Core naturalize function for transforming water systems."""
 
+from datetime import date
+
 import networkx as nx
 from taqsim.edge import Edge
 from taqsim.node import Demand, PassThrough, Reach, Sink, Source, Splitter, Storage
@@ -86,7 +88,7 @@ def naturalize(system: WaterSystem) -> NaturalizeResult:
     ctx.removed_edges.update(original_edge_ids - retained_edge_ids)
 
     # Step 8: Build new system
-    new_system = _build_system(system.frequency, new_nodes, new_edges)
+    new_system = _build_system(system.frequency, system.start_date, new_nodes, new_edges)
 
     # Generate warnings
     ctx.warnings.extend(_generate_warnings(ctx, system))
@@ -511,11 +513,12 @@ def _clone_edge(edge: Edge) -> Edge:
 
 def _build_system(
     frequency: Frequency,
+    start_date: date | None,
     nodes: dict[NodeId, Source | Sink | PassThrough | Splitter | Reach],
     edges: dict[EdgeId, Edge],
 ) -> WaterSystem:
     """Build a new WaterSystem from nodes and edges."""
-    system = WaterSystem(frequency=frequency)
+    system = WaterSystem(frequency=frequency, start_date=start_date)
 
     for node in nodes.values():
         system.add_node(node)

@@ -1,5 +1,7 @@
 """Tests for naturalize function."""
 
+from datetime import date
+
 import pytest
 from taqsim.node import PassThrough, Reach, Sink, Source, Splitter
 from taqsim.system import WaterSystem
@@ -31,6 +33,13 @@ class TestHappyPath:
         assert result.transformed_count == 1
         assert "storage" in result.transformed_nodes
         assert result.transformed_nodes["storage"] == "Storage"
+        assert result.system.start_date is None
+
+    def test_preserves_start_date(self, system_with_start_date: WaterSystem) -> None:
+        """Naturalized system should preserve the original start_date."""
+        result = naturalize(system_with_start_date)
+
+        assert result.system.start_date == date(2020, 1, 1)
 
     def test_side_branch_removed(self, system_with_side_branch: WaterSystem) -> None:
         """Non-natural side branch should be removed."""

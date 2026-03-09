@@ -1,5 +1,7 @@
 """Test fixtures for naturalize module tests."""
 
+from datetime import date
+
 import pytest
 from taqsim.testing import (
     EvenSplit,
@@ -295,5 +297,19 @@ def system_with_mixed_splitter_no_metadata():
         make_edge("reach_a_to_sink_a", "reach_a", "sink_a", tags=frozenset({NATURAL_TAG})),
         make_edge("reach_b_to_sink_b", "reach_b", "sink_b", tags=frozenset({NATURAL_TAG})),
         make_edge("splitter_to_demand", "splitter", "demand", tags=frozenset({"canal"})),
+        validate=False,
+    )
+
+
+@pytest.fixture
+def system_with_start_date():
+    """Source -> Reach -> Sink (all natural) with start_date."""
+    return make_system(
+        make_source("source", n_steps=2),
+        make_reach("reach"),
+        make_sink("sink"),
+        make_edge("source_to_reach", "source", "reach", tags=frozenset({NATURAL_TAG})),
+        make_edge("reach_to_sink", "reach", "sink", tags=frozenset({NATURAL_TAG})),
+        start_date=date(2020, 1, 1),
         validate=False,
     )

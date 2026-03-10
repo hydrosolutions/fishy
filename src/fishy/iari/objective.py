@@ -1,5 +1,7 @@
 """IARI objective factory for taqsim optimization."""
 
+import logging
+
 import numpy as np
 from taqsim.objective import Objective
 from taqsim.system import WaterSystem
@@ -7,7 +9,10 @@ from taqsim.system import WaterSystem
 from fishy.iari._deviation import compute_deviations
 from fishy.iari.types import NaturalBands
 from fishy.iha.bridge import iha_from_reach
+from fishy.iha.errors import EmptyReachTraceError, InsufficientDataError
 from fishy.iha.types import ZERO_FLOW_THRESHOLD
+
+logger = logging.getLogger(__name__)
 
 
 def iari_objective(
@@ -29,16 +34,21 @@ def iari_objective(
 
     Returns:
         taqsim Objective that minimizes IARI deviation at the given Reach.
+        Returns float('inf') if the reach has insufficient data or an empty trace.
     """
 
     def evaluate(system: WaterSystem) -> float:
-        iha = iha_from_reach(
-            system,
-            reach_id,
-            pulse_thresholds=bands.pulse_thresholds,
-            zero_flow_threshold=zero_flow_threshold,
-            min_years=min_years,
-        )
+        try:
+            iha = iha_from_reach(
+                system,
+                reach_id,
+                pulse_thresholds=bands.pulse_thresholds,
+                zero_flow_threshold=zero_flow_threshold,
+                min_years=min_years,
+            )
+        except (InsufficientDataError, EmptyReachTraceError) as exc:
+            logger.warning("Skipping reach '%s' in IARI objective: %s", reach_id, exc)
+            return float("inf")
         deviations = compute_deviations(iha.values, bands)
         per_year = np.mean(deviations, axis=1)
         return float(np.mean(per_year))
@@ -72,7 +82,10 @@ def composite_iari_objective(
         priority: Objective priority for the optimizer.
 
     Returns:
-        taqsim Objective that minimizes weighted-average IARI deviation.
+        taqsim Objective that minimizes weighted-average IARI deviation. Reaches
+        that raise InsufficientDataError or EmptyReachTraceError are skipped with
+        a warning, and weights are re-normalized over the active (non-skipped)
+        reaches. Returns float('inf') if all reaches are skipped.
 
     Raises:
         ValueError: If bands_by_reach is empty, weights keys do not match, or
@@ -102,20 +115,29 @@ def composite_iari_objective(
         normalized = dict.fromkeys(reach_ids, 1.0 / n)
 
     def evaluate(system: WaterSystem) -> float:
-        total = 0.0
+        weighted_sum = 0.0
+        active_weight = 0.0
         for rid in reach_ids:
             bands = bands_by_reach[rid]
-            iha = iha_from_reach(
-                system,
-                rid,
-                pulse_thresholds=bands.pulse_thresholds,
-                zero_flow_threshold=zero_flow_threshold,
-                min_years=min_years,
-            )
+            try:
+                iha = iha_from_reach(
+                    system,
+                    rid,
+                    pulse_thresholds=bands.pulse_thresholds,
+                    zero_flow_threshold=zero_flow_threshold,
+                    min_years=min_years,
+                )
+            except (InsufficientDataError, EmptyReachTraceError) as exc:
+                logger.warning("Skipping reach '%s' in composite IARI objective: %s", rid, exc)
+                continue
             deviations = compute_deviations(iha.values, bands)
             per_year = np.mean(deviations, axis=1)
-            total += normalized[rid] * float(np.mean(per_year))
-        return total
+            weighted_sum += normalized[rid] * float(np.mean(per_year))
+            active_weight += normalized[rid]
+        if active_weight == 0.0:
+            logger.warning("All reaches skipped in composite IARI objective; returning inf")
+            return float("inf")
+        return weighted_sum / active_weight
 
     return Objective(
         name=name,

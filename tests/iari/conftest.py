@@ -23,6 +23,7 @@ from fishy.iha.types import IHAResult, PulseThresholds
 
 NATURAL_TAG = "natural"
 N_STEPS = 730  # ~2 years of daily data
+N_SHORT = 100  # < 365 days, insufficient for 1 complete calendar year
 
 
 def make_iha_result(
@@ -222,3 +223,45 @@ def unsimulated_daily_system():
 def multi_reach_bands(multi_reach_system) -> dict[str, NaturalBands]:
     """Pre-computed NaturalBands for each reach in multi_reach_system."""
     return {rid: bands_from_iha(iha_from_reach(multi_reach_system, rid)) for rid in ["reach1", "reach2", "reach3"]}
+
+
+@pytest.fixture
+def short_daily_system():
+    """Source -> Reach -> Sink, 100 steps: insufficient for 1 complete calendar year."""
+    system = make_system(
+        make_source("source", n_steps=N_SHORT, inflow=_variable_inflow(N_SHORT)),
+        make_reach("reach"),
+        make_sink("sink"),
+        make_edge("e_in", "source", "reach", tags=frozenset({NATURAL_TAG})),
+        make_edge("e_out", "reach", "sink", tags=frozenset({NATURAL_TAG})),
+        frequency=Frequency.DAILY,
+        start_date=date(2020, 1, 1),
+        validate=False,
+    )
+    system.simulate(N_SHORT)
+    return system
+
+
+@pytest.fixture
+def short_multi_reach_system():
+    """Same topology as multi_reach_system but only 100 steps — all reaches insufficient."""
+    system = make_system(
+        make_source("source", n_steps=N_SHORT, inflow=_variable_inflow(N_SHORT)),
+        make_reach("reach1"),
+        make_splitter("splitter", split_policy=EvenSplit()),
+        make_reach("reach2"),
+        make_reach("reach3"),
+        make_sink("sink1"),
+        make_sink("sink2"),
+        make_edge("e_src_r1", "source", "reach1", tags=frozenset({NATURAL_TAG})),
+        make_edge("e_r1_sp", "reach1", "splitter", tags=frozenset({NATURAL_TAG})),
+        make_edge("e_sp_r2", "splitter", "reach2", tags=frozenset({NATURAL_TAG})),
+        make_edge("e_sp_r3", "splitter", "reach3", tags=frozenset({NATURAL_TAG})),
+        make_edge("e_r2_s1", "reach2", "sink1", tags=frozenset({NATURAL_TAG})),
+        make_edge("e_r3_s2", "reach3", "sink2", tags=frozenset({NATURAL_TAG})),
+        frequency=Frequency.DAILY,
+        start_date=date(2020, 1, 1),
+        validate=False,
+    )
+    system.simulate(N_SHORT)
+    return system

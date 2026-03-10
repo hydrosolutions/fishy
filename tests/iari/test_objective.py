@@ -1,5 +1,8 @@
 """Tests for IARI objective factory."""
 
+import logging
+from unittest.mock import patch
+
 import numpy as np
 import pytest
 from taqsim.objective import Objective
@@ -8,6 +11,7 @@ from fishy.iari._deviation import bands_from_iha
 from fishy.iari.objective import composite_iari_objective, iari_objective
 from fishy.iari.types import NaturalBands
 from fishy.iha.bridge import iha_from_reach
+from fishy.iha.errors import EmptyReachTraceError, InsufficientDataError
 from fishy.iha.types import PulseThresholds
 
 
@@ -196,3 +200,142 @@ class TestCompositeIARIObjective:
         score = obj.evaluate(multi_reach_system)
         assert isinstance(score, float)
         assert score >= 0.0
+
+
+class TestIARIObjectiveInsufficientData:
+    def test_insufficient_data_returns_inf(self, short_daily_system) -> None:
+        bands = NaturalBands(
+            q25=np.zeros(33),
+            q75=np.ones(33),
+            pulse_thresholds=PulseThresholds(low=5.0, high=50.0),
+        )
+        obj = iari_objective(bands, "reach")
+        score = obj.evaluate(short_daily_system)
+        assert score == float("inf")
+
+    def test_empty_trace_returns_inf(self, unsimulated_daily_system) -> None:
+        bands = NaturalBands(
+            q25=np.zeros(33),
+            q75=np.ones(33),
+            pulse_thresholds=PulseThresholds(low=5.0, high=50.0),
+        )
+        obj = iari_objective(bands, "reach")
+        score = obj.evaluate(unsimulated_daily_system)
+        assert score == float("inf")
+
+    def test_insufficient_data_logs_warning(self, short_daily_system, caplog) -> None:
+        bands = NaturalBands(
+            q25=np.zeros(33),
+            q75=np.ones(33),
+            pulse_thresholds=PulseThresholds(low=5.0, high=50.0),
+        )
+        obj = iari_objective(bands, "reach")
+        with caplog.at_level(logging.WARNING, logger="fishy.iari.objective"):
+            obj.evaluate(short_daily_system)
+        assert "reach" in caplog.text
+
+
+class TestCompositeIARIObjectiveInsufficientData:
+    def test_all_reaches_insufficient_returns_inf(
+        self, short_multi_reach_system, multi_reach_bands
+    ) -> None:
+        obj = composite_iari_objective(multi_reach_bands)
+        score = obj.evaluate(short_multi_reach_system)
+        assert score == float("inf")
+
+    def test_one_reach_skipped_renormalizes(
+        self, multi_reach_system, multi_reach_bands
+    ) -> None:
+        real_iha_from_reach = iha_from_reach
+
+        def side_effect(system, rid, **kwargs):
+            if rid == "reach2":
+                raise InsufficientDataError(n_days=100, n_years=0, min_years=1)
+            return real_iha_from_reach(system, rid, **kwargs)
+
+        with patch("fishy.iari.objective.iha_from_reach", side_effect=side_effect):
+            obj = composite_iari_objective(multi_reach_bands)
+            score = obj.evaluate(multi_reach_system)
+
+        # Expected: re-normalized weighted average of reach1 and reach3 only
+        r1_score = iari_objective(multi_reach_bands["reach1"], "reach1").evaluate(multi_reach_system)
+        r3_score = iari_objective(multi_reach_bands["reach3"], "reach3").evaluate(multi_reach_system)
+        # Equal weights: each originally 1/3, active weight = 2/3, re-normalized = (1/3 * r1 + 1/3 * r3) / (2/3)
+        expected = (r1_score + r3_score) / 2.0
+        assert score == pytest.approx(expected)
+
+    def test_two_reaches_skipped_scores_remaining(
+        self, multi_reach_system, multi_reach_bands
+    ) -> None:
+        real_iha_from_reach = iha_from_reach
+
+        def side_effect(system, rid, **kwargs):
+            if rid in ("reach2", "reach3"):
+                raise InsufficientDataError(n_days=100, n_years=0, min_years=1)
+            return real_iha_from_reach(system, rid, **kwargs)
+
+        with patch("fishy.iari.objective.iha_from_reach", side_effect=side_effect):
+            obj = composite_iari_objective(multi_reach_bands)
+            score = obj.evaluate(multi_reach_system)
+
+        expected = iari_objective(multi_reach_bands["reach1"], "reach1").evaluate(multi_reach_system)
+        assert score == pytest.approx(expected)
+
+    def test_skipped_reach_logs_warning(
+        self, multi_reach_system, multi_reach_bands, caplog
+    ) -> None:
+        def side_effect(system, rid, **kwargs):
+            raise InsufficientDataError(n_days=100, n_years=0, min_years=1)
+
+        with patch("fishy.iari.objective.iha_from_reach", side_effect=side_effect):
+            obj = composite_iari_objective(multi_reach_bands)
+            with caplog.at_level(logging.WARNING, logger="fishy.iari.objective"):
+                obj.evaluate(multi_reach_system)
+
+        for rid in ["reach1", "reach2", "reach3"]:
+            assert rid in caplog.text
+
+    def test_custom_weights_redistributed_on_skip(
+        self, multi_reach_system, multi_reach_bands
+    ) -> None:
+        real_iha_from_reach = iha_from_reach
+
+        def side_effect(system, rid, **kwargs):
+            if rid == "reach1":
+                raise InsufficientDataError(n_days=100, n_years=0, min_years=1)
+            return real_iha_from_reach(system, rid, **kwargs)
+
+        weights = {"reach1": 3.0, "reach2": 1.0, "reach3": 1.0}
+        with patch("fishy.iari.objective.iha_from_reach", side_effect=side_effect):
+            obj = composite_iari_objective(multi_reach_bands, weights=weights)
+            score = obj.evaluate(multi_reach_system)
+
+        r2_score = iari_objective(multi_reach_bands["reach2"], "reach2").evaluate(multi_reach_system)
+        r3_score = iari_objective(multi_reach_bands["reach3"], "reach3").evaluate(multi_reach_system)
+        # weights normalized: reach1=3/5, reach2=1/5, reach3=1/5
+        # active: reach2=1/5, reach3=1/5, active_weight=2/5
+        # weighted_sum = (1/5)*r2 + (1/5)*r3, divided by 2/5 = (r2+r3)/2
+        expected = (r2_score + r3_score) / 2.0
+        assert score == pytest.approx(expected)
+
+    def test_empty_trace_reach_also_skipped(
+        self, multi_reach_system, multi_reach_bands
+    ) -> None:
+        real_iha_from_reach = iha_from_reach
+
+        def side_effect(system, rid, **kwargs):
+            if rid == "reach3":
+                raise EmptyReachTraceError(reach_id="reach3")
+            return real_iha_from_reach(system, rid, **kwargs)
+
+        with patch("fishy.iari.objective.iha_from_reach", side_effect=side_effect):
+            obj = composite_iari_objective(multi_reach_bands)
+            score = obj.evaluate(multi_reach_system)
+
+        assert isinstance(score, float)
+        assert score != float("inf")
+        # Should equal re-normalized reach1 + reach2
+        r1_score = iari_objective(multi_reach_bands["reach1"], "reach1").evaluate(multi_reach_system)
+        r2_score = iari_objective(multi_reach_bands["reach2"], "reach2").evaluate(multi_reach_system)
+        expected = (r1_score + r2_score) / 2.0
+        assert score == pytest.approx(expected)

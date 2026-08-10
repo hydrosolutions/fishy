@@ -1,7 +1,7 @@
 [project]
 name = "fishy"
 version = "0.1.6"
-description = "Add your description here"
+description = "Environmental-flow intelligence for taqsim, including naturalization, IHA metrics, IARI objectives, and DHRAM classification"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
@@ -32,7 +32,7 @@ dev = [
 [tool.ruff]
 line-length = 120
 target-version = "py312"
-extend-exclude = ["experiments/"]
+# extend-exclude = ["notebooks/", "experiments/"]
 
 [tool.ruff.lint]
 # Errors, warnings, naming, imports, modern py, bugbear, comprehensions, simplify
@@ -63,37 +63,12 @@ testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = [
-    "--strict-markers",
-    "--strict-config",
-    "-ra",
-    "--ignore=notebooks/",
-    "--ignore=experiments/",
-]
+addopts = ["--strict-markers", "--strict-config", "-ra"]
 
 [tool.uv]
-prerelease = "if-necessary"
+# Keep uv's cache inside the workspace: agent gate runners sandbox children to
+# workspace-write, and uv's default ~/.cache/uv is denied there.
+cache-dir = ".uv-cache"
 
 [tool.uv.sources]
-taqsim = { git = "https://github.com/hydrosolutions/taqsim.git", rev = "main" }
-# transfer-learning-publication = { git = "https://github.com/CooperBigFoot/transfer-learning-publication.git", rev = "main" }
-# ctrl-freak = { git = "https://github.com/hydrosolutions/ctrl-freak.git", rev = "main" }
-
-# -----------------------
-# Bump My Version
-# -----------------------
-[tool.bumpversion]
-current_version = "0.1.6"
-commit = false
-tag = false
-allow_dirty = true
-
-[[tool.bumpversion.files]]
-filename = "pyproject.toml"
-search = 'version = "{current_version}"'
-replace = 'version = "{new_version}"'
-
-[[tool.bumpversion.files]]
-filename = "src/fishy/__init__.py"
-search = '__version__ = "{current_version}"'
-replace = '__version__ = "{new_version}"'
+# ctrl-freak = { git = "https://github.com/hydrosolutions/ctrl-freak.git", rev = "main" } # example of how to add a git dependency

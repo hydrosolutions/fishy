@@ -1,10 +1,10 @@
 # Fishy
 
-Environmental flows intelligence layer for [taqsim](https://github.com/hydrosolutions/taqsim).
+Environmental-flow intelligence for [taqsim](https://github.com/hydrosolutions/taqsim), including naturalization, IHA metrics, IARI objectives, and DHRAM classification.
 
 ## Overview
 
-Fishy provides tools for environmental flow analysis of water systems simulated with taqsim. It supports calculating IHA (Indicators of Hydrological Alteration) indices, comparing current flow regimes against natural baselines, and classifying regime alteration using DHRAM.
+Fishy analyzes environmental flows in water systems modeled with taqsim. It can derive natural baseline systems, calculate the 33 Indicators of Hydrological Alteration (IHA), measure continuous alteration with the Index of Hydrological Regime Alteration (IARI), expose IARI as a taqsim optimization objective, and classify alteration with DHRAM.
 
 ## Installation
 
@@ -129,6 +129,21 @@ Compute the 33 IHA parameters (Richter et al., 1996) from daily flow timeseries.
 from fishy.iha import compute_iha, iha_from_reach
 ```
 
+### `iari`
+
+Measure continuous deviation from the natural IHA interquartile range. IARI can evaluate one or more reaches and can be used directly as a taqsim optimization objective.
+
+**Key exports:**
+- `compute_iari(natural, impacted)` — Compute alteration from two IHA results
+- `evaluate_iari(natural_system, impacted_system)` — Evaluate shared reaches in two simulated systems
+- `iari_objective(bands, reach_id)` — Build a taqsim minimization objective for one reach
+- `composite_iari_objective(bands_by_reach)` — Build an objective spanning multiple reaches
+- `IARIResult` — Continuous score, classification, and parameter-level audit data
+
+```python
+from fishy.iari import compute_iari, evaluate_iari, iari_objective
+```
+
 ### `dhram`
 
 Classify flow regime alteration using the Dundee Hydrological Regime Alteration Method (Black et al., 2005). Produces a 1–5 classification compatible with the EU Water Framework Directive.
@@ -164,9 +179,13 @@ make sync-docs
 
 ## Documentation
 
-- [Naturalize Module](docs/naturalize.md) — Detailed documentation with examples
-- [IHA Module](docs/iha.md) — IHA parameter computation
-- [DHRAM Module](docs/dhram.md) — Flow regime alteration classification
+- [Naturalization](src/fishy/documentation/naturalize.md)
+- [IHA parameter computation](src/fishy/documentation/iha.md)
+- [IARI scoring and optimization](src/fishy/documentation/iari.md)
+- [DHRAM classification](src/fishy/documentation/dhram.md)
+- [Consuming the packaged documentation](src/fishy/documentation/consuming_docs.md)
+
+Fishy ships these documents with the package. Use `fishy.get_docs_path()` to locate them in an installed environment.
 
 ## License
 

@@ -1,0 +1,35 @@
+{
+  "stated": {
+    "gates": {
+      "format": "uv run ruff format --check",
+      "lint": "uv run ruff check",
+      "typecheck": "uv run ty check",
+      "test": "uv run pytest",
+      "build": "uv build"
+    },
+    "version_policy": "NONE",
+    "branches": {
+      "default": "main",
+      "milestone": "pce/{vision}/milestone-{milestone}",
+      "step": "pce/{vision}/m{milestone}-s{step}"
+    },
+    "pull_requests": {
+      "step_base": "MILESTONE",
+      "milestone_base": "DEFAULT",
+      "merge_method": "SQUASH"
+    },
+    "workflows": []
+  },
+  "appendable": {
+    "environment_hazards": [
+      "Sandboxed gate runners cannot write outside the workspace. uv's default cache at ~/.cache/uv fails with `Operation not permitted (os error 1)` on .cache/uv/sdists-v9/.git, so pyproject.toml sets [tool.uv] cache-dir = \".uv-cache\". Do not remove it.",
+      "uv older than 0.12 panics under a macOS sandbox inside system-configuration 0.6.1 (SCDynamicStore, 'Attempted to create a NULL object'), which fails every `uv build` variant. Requires uv >= 0.12. Upstream: astral-sh/uv#18629.",
+      "Sandboxed gate runners have no network (DNS resolution fails). A fresh worktree has neither .venv nor a warm .uv-cache, so gates cannot bootstrap there. Before running gates in a new worktree, seed it by copying the primary checkout's warm .uv-cache into the worktree root; uv then builds .venv offline. Verified: seeded worktree passes all five gates offline.",
+      "Warm the primary cache with `uv sync --all-groups` before seeding. A .uv-cache created while .venv already exists stays nearly empty and is not a usable seed."
+    ],
+    "gate_orderings": [],
+    "lockfile_rules": [
+      "uv.lock is tracked; dependency changes must commit the updated lockfile alongside pyproject.toml."
+    ]
+  }
+}

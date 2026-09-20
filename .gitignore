@@ -1,0 +1,28 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Scratchpad (keep folder, ignore contents)
+scratchpad/*
+!scratchpad/.gitkeep
+
+# Orchestration planning artifacts: operator-local, and this is a template —
+# anything tracked here is inherited by every project created from it.
+planning/
+
+# pytest tmp bases when TMPDIR is unavailable
+pytest-of-*/
+
+# uv cache (kept in-workspace for sandboxed gate runners)
+.uv-cache/

@@ -31,6 +31,8 @@ The public modules separate stable responsibilities:
 - `fishy.duties`: independently supplied obligations, delivery shortfalls and
   deliverability checks. Requirements, floors and issued obligations stay distinct.
 - `fishy.physical`: optional explicit Taqsim physical-result exchange.
+- `fishy.diagnostics`: source-defined IHA and IARI on identified dated flows.
+  See [flow diagnostics](docs/flow-diagnostics.md) for profiles and an executable example.
 
 ## Use Taqsim results
 

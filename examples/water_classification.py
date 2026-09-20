@@ -1,5 +1,6 @@
 """Synthetic Order111 selected-row class matches, independent of Uzbek policy."""
 
+from dataclasses import replace
 from datetime import UTC, date, datetime
 
 from fishy.evidence import CorrectionState, ProductionMethod, Provenance
@@ -12,6 +13,7 @@ from fishy.water_classification import (
     Order111Profile,
     RangeMeaning,
     SourceValue,
+    UnitBasis,
     UseInterpretation,
     UseMapping,
     WaterClass,
@@ -70,6 +72,37 @@ def main() -> None:
         )
         result = assess_order111(profile, (sample,))
         print(value, "selected-row matches:", tuple(int(cls) for cls in result.supported_matches))
+    # Explicit scaled-count interpretation supplies meaning, not a source transcription repair.
+    bacteria = source_row("order111:68")
+    counts = UnitBasis.TOTAL_BACTERIA_MILLIONS_PER_ML
+    count_choice = CellInterpretation(
+        bacteria.identifier,
+        WaterClass.THREE,
+        "illustrative scaled count interpretation",
+        unit_basis=counts,
+        range_meaning=RangeMeaning.CLOSED,
+    )
+    count_profile = replace(
+        profile,
+        identifier="bacterial-count-candidate",
+        required_rows=(bacteria.identifier,),
+        interpretations=(count_choice,),
+    )
+    count_sample = ClassificationObservation(
+        bacteria.identifier,
+        SourceValue(2, 2, counts.value, bacteria.name),
+        location,
+        period,
+        "supplied study interval",
+        Presence.PRESENT,
+        provenance,
+    )
+    count_result = assess_order111(count_profile, (count_sample,))
+    print("interpreted2 million cells/ml, class3:", count_result.classes[2].summary.finding.value)
+    print(
+        "same sample without unit interpretation:",
+        assess_order111(replace(count_profile, interpretations=()), (count_sample,)).classes[2].summary.finding.value,
+    )
     for mapping in (None, UseMapping.DESCRIPTIVE, UseMapping.MATRIX):
         choice = None if mapping is None else UseInterpretation(mapping, "labelled scenario; not legal resolution")
         use = assess_order111_use(WaterClass.FOUR, WaterUse.DRINKING_INTENSIVE, choice)

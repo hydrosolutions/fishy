@@ -72,3 +72,17 @@ All numerical tests use exact fractions. Inputs are synthetic, not calibrated
 basin studies. Tests using `OBSERVED` emulate the observation route; that label
 does not claim field authenticity for their generated fixtures. Floodplain hydraulic corrections (paragraph 28) are a separate
 supplied-relation operation and cannot be inferred from these coefficients.
+
+### Daily observation trace
+
+`TimedCoefficient.supporting_observations` retains the immutable `FlowSample` records used to
+assess each active daily stage. Source, data version, coverage, presence and
+warm-up exclusions remain inspectable. Equal coefficient values produced from
+different observation versions remain distinct results. Failed or duplicate
+matching observations remain attached for diagnostics. Monthly and neutral
+outside-season coefficients have no daily observation dependencies.
+
+`required_support` preserves the exact timing and weighted-study evidence scopes
+required by construction. Consumers can detect missing required studies even if
+supporting findings are later removed. The expected timing scope remains the
+full biological period, including for neutral coefficients outside that period.

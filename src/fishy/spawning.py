@@ -202,6 +202,8 @@ class TimedCoefficient:
     presence: Presence = Presence.PRESENT
     reasons: tuple[str, ...] = ()
     supporting_evidence: tuple[EvidenceFindings, ...] = ()
+    supporting_observations: tuple[FlowSample, ...] = ()
+    required_support: tuple[EvidenceScope, ...] = ()
 
     def __post_init__(self) -> None:
         if (
@@ -229,6 +231,16 @@ class TimedCoefficient:
             not isinstance(f, EvidenceFindings) for f in self.supporting_evidence
         ):
             raise TypeError("supporting evidence requires immutable findings")
+        if not isinstance(self.supporting_observations, tuple) or any(
+            not isinstance(o, FlowSample) for o in self.supporting_observations
+        ):
+            raise TypeError("observations require immutable FlowSample records")
+        if not isinstance(self.required_support, tuple) or any(
+            not isinstance(scope, EvidenceScope) for scope in self.required_support
+        ):
+            raise TypeError("required support requires immutable EvidenceScope records")
+        if len(set(self.required_support)) != len(self.required_support):
+            raise ValueError("duplicate required support scopes")
 
 
 @dataclass(frozen=True)
@@ -418,6 +430,7 @@ def spawning_schedule(
             local.extend(_support(findings, scope, provenance))
         local.extend(warmup_restrictions(provenance, interval))
         value = Fraction(1)
+        observations: tuple[FlowSample, ...] = ()
         if timing is not None and eligibility is SpawningEligibility.ELIGIBLE:
             active = interval.start < timing.period.end and timing.period.start < interval.end
             if temporal_basis is TemporalBasis.DAILY_STAGE:
@@ -430,7 +443,9 @@ def spawning_schedule(
                 ):
                     local.append("daily-stage branch requires whole UTC days")
                 if active:
-                    observations = [o for o in daily_observations if o.interval == interval and o.location == location]
+                    observations = tuple(
+                        o for o in daily_observations if o.interval == interval and o.location == location
+                    )
                     if len(observations) != 1:
                         local.append("daily observation missing or duplicated")
                     else:
@@ -483,6 +498,8 @@ def spawning_schedule(
                 Presence.UNSUPPORTED if local else Presence.PRESENT,
                 tuple(local) + trace,
                 supporting_evidence,
+                observations,
+                tuple(finding.scope for finding in supporting_evidence),
             )
         )
     return tuple(outputs)

@@ -34,8 +34,14 @@ Inputs must match physical location, mapping, scenario, reference member and
 interval. No interpolation or calendar transfer is performed. Missing/partial
 bounds, warm-up exclusions and unsupported coefficients remain unresolved.
 Coefficient findings use `coefficient_scope`; findings must match both that exact
-scope and the coefficient's provenance. Numerical results and scientific-use
-findings are separate. A numerically valid candidate may have rejected scientific
+scope and the coefficient's provenance. `TimedCoefficient.required_support` declares the biological/study scopes used by
+the derivation. Missing required support prevents a scientific pass; an attached
+rejected or prohibited prerequisite retains its failure even when another
+prerequisite is missing. Declared biological periods can differ from the daily or
+monthly coefficient interval. Supporting scopes, use and provenance must bind the
+coefficient identity. A directly supplied arithmetic coefficient with no declared
+biological support can compute, but its scientific-use result is unknown.
+Numerical results and scientific-use findings are separate. A numerically valid candidate may have rejected scientific
 use. Annual numerical bounds remain usable without scientific findings, but their
 scientific-use check is then unknown. Official admissibility is never inferred.
 

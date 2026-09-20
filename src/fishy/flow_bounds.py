@@ -209,11 +209,9 @@ def _coefficient_support(coefficient: TimedCoefficient | None) -> tuple[bool, Ch
         return False, Check("coefficient_use", CheckFinding.UNKNOWN, ("timed coefficient missing",))
     scope = coefficient_scope(coefficient.location, coefficient.interval, coefficient.provenance)
     evidence = coefficient.findings
-    if evidence is None:
-        return False, Check("coefficient_use", CheckFinding.UNKNOWN, ("coefficient evidence missing",))
-    permission = permitted_use(evidence, scope)
     valid = (
-        coefficient.presence is Presence.PRESENT
+        evidence is not None
+        and coefficient.presence is Presence.PRESENT
         and coefficient.value is not None
         and evidence.scope == scope
         and evidence.provenance == coefficient.provenance
@@ -221,9 +219,51 @@ def _coefficient_support(coefficient: TimedCoefficient | None) -> tuple[bool, Ch
         and evidence.numerical_validity is NumericalValidity.VALID
         and not warmup_restrictions(coefficient.provenance, coefficient.interval)
     )
-    if evidence.provenance != coefficient.provenance:
-        permission = Check("coefficient_use", CheckFinding.UNKNOWN, ("finding version differs from coefficient",))
-    return valid, permission
+    if evidence is None:
+        main = Check("coefficient_use", CheckFinding.UNKNOWN, ("coefficient evidence missing",))
+    elif evidence.provenance != coefficient.provenance:
+        main = Check("coefficient_use", CheckFinding.UNKNOWN, ("finding version differs from coefficient",))
+    else:
+        main = permitted_use(evidence, scope)
+    checks = [Check("main", main.finding, main.reasons)]
+    required = coefficient.required_support
+    if not any(s.product == "spawning_timing" for s in required):
+        checks.append(
+            Check("required_biology", CheckFinding.UNKNOWN, ("required biological support scopes were not declared",))
+        )
+    for i, expected in enumerate(required):
+        matches = tuple(f for f in coefficient.supporting_evidence if f.scope == expected)
+        if len(matches) != 1:
+            checks.append(
+                Check(f"required_{i}", CheckFinding.UNKNOWN, ("required supporting evidence missing or duplicated",))
+            )
+    for i, support in enumerate(coefficient.supporting_evidence):
+        # Whole biological-season scopes can legitimately differ from monthly/daily
+        # coefficient intervals. The declared scope, not the finding's own scope,
+        # controls positive admission; every relied-upon rejection is retained.
+        aligned = (
+            support.provenance == coefficient.provenance
+            and support.scope.reach == scope.reach
+            and support.scope.member == scope.member
+            and support.scope.intended_use == scope.intended_use
+        )
+        if not aligned or warmup_restrictions(support.provenance, support.scope.period):
+            finding = Check(
+                f"support_{i}", CheckFinding.UNKNOWN, ("supporting evidence does not bind coefficient identity/use",)
+            )
+        else:
+            assessed = permitted_use(support, support.scope)
+            if support.scope not in required and assessed.finding is CheckFinding.PASS:
+                finding = Check(
+                    f"support_{i}", CheckFinding.UNKNOWN, ("supporting scope not declared by coefficient derivation",)
+                )
+            else:
+                finding = Check(f"support_{i}", assessed.finding, assessed.reasons)
+        checks.append(finding)
+    summary = aggregate_checks(tuple(c.check_id for c in checks), tuple(checks))
+    return valid, Check(
+        "coefficient_use", summary.finding, tuple(reason for check in checks for reason in check.reasons)
+    )
 
 
 def correct_schedule(

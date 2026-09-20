@@ -319,3 +319,45 @@ def test_evidence_only_version_change_cannot_validate_itself(field, operand):
         finding = replace(timing.findings, provenance=replace(timing.findings.provenance, **{field: "unrelated"}))
         result = run(timing=replace(timing, findings=finding))
     assert result[0].value is None
+
+
+def test_daily_observation_versions_remain_distinguishable_in_coefficients():
+    day = Interval(ONSET, ONSET + timedelta(days=1))
+    original = FlowSample(
+        LOCATION,
+        day,
+        Flow(8),
+        Presence.PRESENT,
+        replace(PROVENANCE, production_method=ProductionMethod.OBSERVED, source="observed gauge", data_version="1"),
+    )
+    revised = replace(original, provenance=replace(original.provenance, data_version="2"))
+    first = run((day,), temporal_basis=TemporalBasis.DAILY_STAGE, daily_observations=(original,))[0]
+    second = run((day,), temporal_basis=TemporalBasis.DAILY_STAGE, daily_observations=(revised,))[0]
+    assert first.value == second.value == Fraction("1.2")
+    assert first != second
+    assert first.supporting_observations == (original,)
+    assert second.supporting_observations == (revised,)
+
+
+def test_daily_observation_record_is_retained_when_unsupported():
+    day = Interval(ONSET, ONSET + timedelta(days=1))
+    unsupported = FlowSample(
+        LOCATION, day, Flow(8), Presence.PRESENT, replace(PROVENANCE, production_method=ProductionMethod.SIMULATED)
+    )
+    result = run((day,), temporal_basis=TemporalBasis.DAILY_STAGE, daily_observations=(unsupported,))[0]
+    assert result.value is None
+    assert result.supporting_observations == (unsupported,)
+    assert run()[0].supporting_observations == ()
+    with pytest.raises(TypeError, match="immutable FlowSample"):
+        replace(result, supporting_observations=[unsupported])
+
+
+def test_required_study_scopes_remain_when_supporting_findings_are_removed():
+    result = run()[0]
+    assert result.required_support == (biological_timing().findings.scope,)
+    removed = replace(result, supporting_evidence=())
+    assert removed.required_support == result.required_support
+    with pytest.raises(ValueError, match="duplicate required"):
+        replace(result, required_support=result.required_support * 2)
+    with pytest.raises(TypeError, match="immutable EvidenceScope"):
+        replace(result, required_support=list(result.required_support))

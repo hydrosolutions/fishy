@@ -38,6 +38,16 @@ class Flow:
 
 
 @dataclass(frozen=True, init=False)
+class Elevation:
+    """Signed elevation above sea level, canonically metres."""
+
+    metres: Fraction
+
+    def __init__(self, metres: Number) -> None:
+        object.__setattr__(self, "metres", finite_number(metres))
+
+
+@dataclass(frozen=True, init=False)
 class Volume:
     """Nonnegative water volume, canonically m3."""
 

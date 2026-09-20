@@ -20,7 +20,7 @@ from fishy.diagnostics.iari import (
     monthly_iari,
 )
 from fishy.diagnostics.iha import IHAProfile, annual_indicators
-from fishy.evidence import Provenance, ReferenceKind
+from fishy.evidence import CorrectionState, Provenance, ReferenceKind
 from fishy.flows import FlowSample, daily_discharge
 from fishy.spatial import Location
 from fishy.time import Interval
@@ -40,6 +40,32 @@ class IndicatorRecord:
     location: Location
     period: Interval
     profile: IHAProfile
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.source_samples, tuple) or not self.source_samples:
+            raise ValueError("Indicator record requires nonempty immutable source history")
+        if any(not isinstance(sample, FlowSample) for sample in self.source_samples):
+            raise TypeError("Source history requires FlowSample records")
+        if not isinstance(self.profile, IHAProfile):
+            raise TypeError("Indicator record requires IHAProfile")
+        # Reuse the real daily evidence boundary: no metadata-only qualification
+        # can restore excluded, missing or incompatible source samples.
+        dates = daily_discharge(self.source_samples)["date"].to_list()
+        ordered = sorted(self.source_samples, key=lambda sample: sample.interval.start)
+        if self.location != ordered[0].location:
+            raise ValueError("Indicator location contradicts source history")
+        if self.period != Interval(ordered[0].interval.start, ordered[-1].interval.end):
+            raise ValueError("Indicator period contradicts source history")
+        if any((right - left).days != 1 for left, right in zip(dates, dates[1:], strict=False)):
+            raise ValueError("Indicator source history must contain dense daily coverage")
+        if (dates[0].month, dates[0].day) != (1, 1) or (dates[-1].month, dates[-1].day) != (12, 31):
+            raise ValueError("Indicator source history requires complete calendar years")
+        if (
+            not isinstance(self.annual, pl.DataFrame)
+            or "year" not in self.annual.columns
+            or set(self.annual["year"].to_list()) != {day.year for day in dates}
+        ):
+            raise ValueError("Annual table years contradict source history")
 
     @property
     def provenance(self) -> Provenance:
@@ -153,6 +179,8 @@ class MonthlyIARIComparison:
 
 
 def _compatible_attribution(reference: RegimeAttribution, impacted: RegimeAttribution, basis: ComparisonBasis) -> None:
+    if any(item.provenance.correction_state is CorrectionState.MISSING for item in (reference, impacted)):
+        raise ValueError("Imported diagnostic evidence is marked missing")
     if not isinstance(basis, ComparisonBasis):
         raise TypeError("Comparison basis must be explicit")
     if reference.location != impacted.location:
@@ -184,6 +212,8 @@ def assess_dhram(
     calculation source remain explicit, including unresolved source limitations.
     """
     _compatible_attribution(reference, impacted, basis)
+    _admit_selected_period(reference, reference.period)
+    _admit_selected_period(impacted, impacted.period)
     return DHRAMComparison(classify_dhram(changes, evidence), reference, impacted, basis)
 
 
@@ -211,6 +241,20 @@ def compare_monthly_iari(
     result = monthly_iari(reference_monthly, impacted_monthly, summary=summary, quantile=quantile, spi=spi)
     _monthly_period(reference_monthly, reference)
     _monthly_period(impacted_monthly, impacted)
+    _admit_selected_period(reference, _year_period(result.reference_years))
+    _admit_selected_period(impacted, _year_period(result.impacted_years))
     return MonthlyIARIComparison(
         result, reference, impacted, reference_monthly.clone(), impacted_monthly.clone(), basis
     )
+
+
+def _admit_selected_period(attribution: RegimeAttribution, selected: Interval) -> None:
+    if any(
+        excluded.start < selected.end and selected.start < excluded.end
+        for excluded in attribution.provenance.excluded_warmup
+    ):
+        raise ValueError("Imported diagnostic selected evidence overlaps excluded warm-up")
+
+
+def _year_period(years: tuple[int, ...]) -> Interval:
+    return Interval(datetime(min(years), 1, 1, tzinfo=UTC), datetime(max(years) + 1, 1, 1, tzinfo=UTC))

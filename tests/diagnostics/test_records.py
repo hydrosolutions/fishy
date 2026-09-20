@@ -82,7 +82,8 @@ def test_missing_not_skipped_and_map_profile_comparison_rejected():
     with pytest.raises(ValueError, match="unavailable"):
         flow_indicators((*original[:10], missing, *original[11:]), profile())
     record = flow_indicators(original, profile())
-    mismatch = replace(record, location=replace(record.location, mapping_version="different"))
+    other_location = replace(record.location, mapping_version="different")
+    mismatch = flow_indicators(tuple(replace(sample, location=other_location) for sample in original), profile())
     with pytest.raises(ValueError, match="location/mapping"):
         compare_iari(
             record,
@@ -265,3 +266,120 @@ def test_monthly_attribution_retains_inputs_years_and_spi():
             quantile=QuantileEstimator.LINEAR,
             spi=spi,
         )
+
+
+@pytest.mark.parametrize("side", ["reference", "impacted"])
+@pytest.mark.parametrize("restriction", ["warmup", "missing"])
+@pytest.mark.parametrize("operation", ["monthly", "dhram"])
+def test_imported_diagnostics_do_not_bypass_excluded_or_missing_evidence(side, restriction, operation):
+    import polars as pl
+
+    from fishy.diagnostics.dhram import HydrologicalChanges, SupplementaryEvidence, SupplementaryFinding
+    from fishy.diagnostics.records import RegimeAttribution, assess_dhram, compare_monthly_iari
+
+    first = samples(2001, 2002)[0]
+    period = Interval(datetime(1980, 1, 1, tzinfo=UTC), datetime(2000, 1, 1, tzinfo=UTC))
+    reference = RegimeAttribution(first.location, period, first.provenance)
+    impacted = replace(reference, provenance=replace(first.provenance, reference_kind=ReferenceKind.MANAGED))
+    restricted = reference if side == "reference" else impacted
+    source = (
+        replace(restricted.provenance, excluded_warmup=(period,))
+        if restriction == "warmup"
+        else replace(restricted.provenance, correction_state=CorrectionState.MISSING)
+    )
+    if side == "reference":
+        reference = replace(reference, provenance=source)
+    else:
+        impacted = replace(impacted, provenance=source)
+    frame = pl.DataFrame(
+        [(year, month, 1.0) for year in range(1980, 2000) for month in range(1, 13)],
+        schema={"year": pl.Int32, "month": pl.Int32, "discharge_m3_s": pl.Float64},
+        orient="row",
+    )
+    with pytest.raises(ValueError, match="warm-up|missing"):
+        if operation == "monthly":
+            compare_monthly_iari(
+                frame,
+                frame,
+                reference=reference,
+                impacted=impacted,
+                basis=ComparisonBasis.MATCHED_PERIOD,
+                summary=SummaryStatistic.MEAN,
+                quantile=QuantileEstimator.LINEAR,
+            )
+        else:
+            assess_dhram(
+                HydrologicalChanges((0.0,) * 10, ("",) * 10, "supplied profile"),
+                SupplementaryEvidence(SupplementaryFinding.EXCLUDED, SupplementaryFinding.EXCLUDED, "source"),
+                reference=reference,
+                impacted=impacted,
+                basis=ComparisonBasis.MATCHED_PERIOD,
+            )
+
+
+def test_indicator_record_cannot_erase_authoritative_source_history():
+    record = flow_indicators(samples(), profile())
+    with pytest.raises(ValueError, match="source history"):
+        absent = replace(record, source_samples=())
+        compare_iari(
+            absent,
+            record,
+            basis=ComparisonBasis.MATCHED_PERIOD,
+            summary=SummaryStatistic.MEDIAN,
+            quantile=QuantileEstimator.LINEAR,
+        )
+
+
+@pytest.mark.parametrize("field", ["location", "period"])
+def test_indicator_record_cannot_contradict_source_location_or_period(field):
+    record = flow_indicators(samples(2001, 2002), profile())
+    value = (
+        replace(record.location, mapping_version="false-map")
+        if field == "location"
+        else Interval(datetime(2000, 1, 1, tzinfo=UTC), datetime(2001, 1, 1, tzinfo=UTC))
+    )
+    with pytest.raises(ValueError, match="source"):
+        replace(record, **{field: value})
+
+
+def test_imported_warmup_outside_selected_years_does_not_disable_supported_data():
+    import polars as pl
+
+    from fishy.diagnostics.dhram import HydrologicalChanges, SupplementaryEvidence, SupplementaryFinding
+    from fishy.diagnostics.records import RegimeAttribution, assess_dhram, compare_monthly_iari
+
+    first = samples(2001, 2002)[0]
+    period = Interval(datetime(1980, 1, 1, tzinfo=UTC), datetime(2000, 1, 1, tzinfo=UTC))
+    outside = Interval(datetime(1979, 1, 1, tzinfo=UTC), period.start)
+    reference = RegimeAttribution(first.location, period, replace(first.provenance, excluded_warmup=(outside,)))
+    impacted = replace(
+        reference,
+        provenance=replace(first.provenance, reference_kind=ReferenceKind.MANAGED, excluded_warmup=(outside,)),
+    )
+    result = assess_dhram(
+        HydrologicalChanges((0.0,) * 10, ("",) * 10, "supplied profile"),
+        SupplementaryEvidence(SupplementaryFinding.EXCLUDED, SupplementaryFinding.EXCLUDED, "source"),
+        reference=reference,
+        impacted=impacted,
+        basis=ComparisonBasis.MATCHED_PERIOD,
+    )
+    assert result.result.classification == 1
+    # Monthly current uses1995..1999, so earlier excluded1980..1995 is outside
+    # its actual operand even though retained in the full supplied history.
+    earlier = Interval(period.start, datetime(1995, 1, 1, tzinfo=UTC))
+    impacted = replace(impacted, provenance=replace(impacted.provenance, excluded_warmup=(earlier,)))
+    frame = pl.DataFrame(
+        [(year, month, 1.0) for year in range(1980, 2000) for month in range(1, 13)],
+        schema={"year": pl.Int32, "month": pl.Int32, "discharge_m3_s": pl.Float64},
+        orient="row",
+    )
+    result = compare_monthly_iari(
+        frame,
+        frame,
+        reference=reference,
+        impacted=impacted,
+        basis=ComparisonBasis.MATCHED_PERIOD,
+        summary=SummaryStatistic.MEAN,
+        quantile=QuantileEstimator.LINEAR,
+    )
+    assert result.result.total == 0 and result.result.impacted_years == tuple(range(1995, 2000))

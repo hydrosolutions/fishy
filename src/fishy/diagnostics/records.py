@@ -10,7 +10,6 @@ from enum import StrEnum
 
 import polars as pl
 
-from fishy.diagnostics.dhram import AlterationRisk, HydrologicalChanges, SupplementaryEvidence, classify_dhram
 from fishy.diagnostics.iari import (
     BasinPrecipitationSPI12,
     IARIResult,
@@ -161,14 +160,6 @@ class RegimeAttribution:
 
 
 @dataclass(frozen=True)
-class DHRAMComparison:
-    result: AlterationRisk
-    reference: RegimeAttribution
-    impacted: RegimeAttribution
-    basis: ComparisonBasis
-
-
-@dataclass(frozen=True)
 class MonthlyIARIComparison:
     result: IARIResult
     reference: RegimeAttribution
@@ -196,25 +187,6 @@ def _compatible_attribution(reference: RegimeAttribution, impacted: RegimeAttrib
         raise ValueError("Matched-period comparison requires identical exact coverage")
     if basis is ComparisonBasis.HISTORICAL_BASELINE and reference.period.end > impacted.period.start:
         raise ValueError("Historical baseline must precede the impacted assessment period")
-
-
-def assess_dhram(
-    changes: HydrologicalChanges,
-    evidence: SupplementaryEvidence,
-    *,
-    reference: RegimeAttribution,
-    impacted: RegimeAttribution,
-    basis: ComparisonBasis,
-) -> DHRAMComparison:
-    """Assess an attributed summary import, retaining all ten inputs and their basis.
-
-    This is not a daily descriptor calculation. The supplied profile and external
-    calculation source remain explicit, including unresolved source limitations.
-    """
-    _compatible_attribution(reference, impacted, basis)
-    _admit_selected_period(reference, reference.period)
-    _admit_selected_period(impacted, impacted.period)
-    return DHRAMComparison(classify_dhram(changes, evidence), reference, impacted, basis)
 
 
 def _monthly_period(frame: pl.DataFrame, attribution: RegimeAttribution) -> None:

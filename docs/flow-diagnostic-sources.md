@@ -7,7 +7,6 @@ Diagnostic scores describe hydrological alteration. They do not certify biologic
 - The Nature Conservancy, *Indicators of Hydrologic Alteration*, version 7.1, April 2009. [Official manual](https://www.conservationgateway.org/content/dam/tnc/conservation/cg-documents/i/n/indicators-of-hydrologic-alteration-iha.pdf). SHA-256 `512aabc7455ec153a2394ebf372ab29b8b1f7fb27f46421ae7698ad70b448841`.
 - ISPRA, *Implementazione della Direttiva 2000/60/CE. Analisi e valutazione degli aspetti idromorfologici*, version 1.1, August 2011. [Official original](https://www.isprambiente.gov.it/contentfiles/00010100/10147-analisi-e-valutazione-degli-aspetti-idromorfologici-agosto-2011.pdf). SHA-256 `102ad6211f55f9f9cc54d1a5253705efc9a0df9af85956470b35feaa670922d1`.
 - Greco, Michele; Arbia, Francesco; Giampietro, Raffaele (2021). *Definition of Ecological Flow Using IHA and IARI as an Operative Procedure for Water Management*. Environments 8(8), 77. [DOI](https://doi.org/10.3390/environments8080077). Supplied PDF SHA-256 `ed4e0cee87b1ec1797d57f82034dab2d770564a7353be8b9af435ad26413b398`.
-- Black, A. R.; Rowan, J. S.; Duck, R. W.; Bragg, O. M.; Clelland, B. E. (2005). *DHRAM: a method for classifying river flow regime alterations for the EC Water Framework Directive*. Aquatic Conservation 15, 427–446. [DOI](https://doi.org/10.1002/aqc.707). Supplied PDF SHA-256 `8ea9d281675cdd488bc463c451b309fc25f036d66e73d66a09584293db5e5d44`.
 
 Original papers and report material are not redistributed. The cited Richter et al. (1996) paper has not been verified in full; the official manual supplies the IHA definition coverage below.
 
@@ -28,13 +27,22 @@ Original papers and report material are not redistributed. The cited Richter et 
 | Monthly IARI | ISPRA §1.4.4.2.2 pp15–16, eqs4–5 | Twelve monthly-mean discharge parameters; last-five-year mean/median or single assessment year. Single-year final index receives basin twelve-month SPI correction. Not a proxy for daily IHA. |
 | IARI zero IQR | ISPRA eq1 | Exact equality is inside the band and scores zero. Outside a collapsed band has no supplied finite operator. |
 | IARI classification | ISPRA Table1.4 p18 | <=0.05 high; >0.05 and <=0.15 good; >0.15 not-good. Prose Phase2 triggers conflict at0.15 and require separate treatment. |
-| DHRAM summary scoring | Black pp432–434, Tables3–4 | Ten group mean/CV percentage changes; strict exceedance of each of three thresholds awards0–3 points. Points0,1–4,5–10,11–20,21–30 map classes1–5. |
-| DHRAM supplementary evidence | Black p434 | Each confirmed anthropogenic subdaily variation >25% reference Q95 or anthropogenic cessation adds one class, capped5. Unknown evidence is not false. |
 
 ## Unresolved source interpretations
 
-Black Table1 (p430) lists32 descriptors, including both numbers of rises and falls. Worked Tables5/6 (pp438/440) list31, omit falls, and compute group5 averages using three descriptors. Modern IHA33 membership must not silently replace either. Worked timing percentage changes use circular year distance, unlike ordinary percentage change of a reference date. A complete daily DHRAM profile needs authoritative resolution of those definitions.
-
-Black Table6 uses100% CV change for several undefined impacted CV values. This does not supply a general zero-reference-denominator rule. Undefined changes remain unsupported unless a source-supported operator is identified.
-
 Greco Table6 is not an exact numerical oracle: displayed July q25=1.00, q75=1.77, candidate=0.58 give0.54545 by its equation, not the printed0.13. The displayed monthly data imply an average around0.122264, not the reported0.05. Independent equation tests must not reproduce these inconsistencies.
+
+## Approved omission
+
+DHRAM is omitted, including supplied-summary scoring, under the
+[approved diagnostic scope revision](https://github.com/hydrosolutions/taqsim/blob/13d4b00b4dd4105312fc141cc3db53f69763fa71/planning/visions/2026-09-20-fishy-assessment-foundation.md).
+The supplied Black et al. (2005) paper was read and its tables visually checked:
+Table1 lists32 descriptors while worked Tables5–6 score31. Historical timing
+dispersion and general zero-denominator rules remained insufficiently specified.
+The original2000 SNIFFER manual SR(00)01/2F was identified, but no readable copy
+was obtained. This is not a claim that the2005 paper was unavailable or that no
+manual copy exists. Research and experimental tests remain in historical Git
+through`0b64901` and local source evidence, not as a supported feature. No author
+contact or undocumented interpretation is required for this delivery.
+
+- Black, A. R.; Rowan, J. S.; Duck, R. W.; Bragg, O. M.; Clelland, B. E. (2005). *DHRAM: a method for classifying river flow regime alterations for the EC Water Framework Directive*. Aquatic Conservation 15, 427–446. [DOI](https://doi.org/10.1002/aqc.707). Supplied PDF SHA-256 `8ea9d281675cdd488bc463c451b309fc25f036d66e73d66a09584293db5e5d44`.

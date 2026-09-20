@@ -181,38 +181,6 @@ def test_observed_production_with_explicit_natural_qualification_remains_support
     assert result.reference.provenance.production_method is ProductionMethod.OBSERVED
 
 
-def test_attributed_dhram_keeps_raw_changes_and_both_regimes():
-    from fishy.diagnostics.dhram import HydrologicalChanges, SupplementaryEvidence, SupplementaryFinding
-    from fishy.diagnostics.records import RegimeAttribution, assess_dhram
-
-    first = samples(2001, 2002)[0]
-    period = Interval(datetime(2001, 1, 1, tzinfo=UTC), datetime(2002, 1, 1, tzinfo=UTC))
-    reference = RegimeAttribution(first.location, period, first.provenance)
-    impacted = replace(
-        reference,
-        provenance=replace(
-            first.provenance, source="managed import", scenario="managed", reference_kind=ReferenceKind.MANAGED
-        ),
-    )
-    changes = HydrologicalChanges((1.0,) * 10, ("",) * 10, "external documented historical profile")
-    evidence = SupplementaryEvidence(SupplementaryFinding.UNKNOWN, SupplementaryFinding.EXCLUDED, "operational report")
-    result = assess_dhram(
-        changes, evidence, reference=reference, impacted=impacted, basis=ComparisonBasis.MATCHED_PERIOD
-    )
-    assert result.result.changes is changes
-    assert result.result.supplementary is evidence
-    assert result.reference is reference and result.impacted is impacted
-    assert result.result.classification is None
-    with pytest.raises(ValueError, match="location/mapping"):
-        assess_dhram(
-            changes,
-            evidence,
-            reference=reference,
-            impacted=replace(impacted, location=replace(first.location, mapping_version="v2")),
-            basis=ComparisonBasis.MATCHED_PERIOD,
-        )
-
-
 def test_monthly_attribution_retains_inputs_years_and_spi():
     import polars as pl
     from polars.testing import assert_frame_equal
@@ -270,12 +238,10 @@ def test_monthly_attribution_retains_inputs_years_and_spi():
 
 @pytest.mark.parametrize("side", ["reference", "impacted"])
 @pytest.mark.parametrize("restriction", ["warmup", "missing"])
-@pytest.mark.parametrize("operation", ["monthly", "dhram"])
-def test_imported_diagnostics_do_not_bypass_excluded_or_missing_evidence(side, restriction, operation):
+def test_imported_diagnostics_do_not_bypass_excluded_or_missing_evidence(side, restriction):
     import polars as pl
 
-    from fishy.diagnostics.dhram import HydrologicalChanges, SupplementaryEvidence, SupplementaryFinding
-    from fishy.diagnostics.records import RegimeAttribution, assess_dhram, compare_monthly_iari
+    from fishy.diagnostics.records import RegimeAttribution, compare_monthly_iari
 
     first = samples(2001, 2002)[0]
     period = Interval(datetime(1980, 1, 1, tzinfo=UTC), datetime(2000, 1, 1, tzinfo=UTC))
@@ -297,24 +263,15 @@ def test_imported_diagnostics_do_not_bypass_excluded_or_missing_evidence(side, r
         orient="row",
     )
     with pytest.raises(ValueError, match="warm-up|missing"):
-        if operation == "monthly":
-            compare_monthly_iari(
-                frame,
-                frame,
-                reference=reference,
-                impacted=impacted,
-                basis=ComparisonBasis.MATCHED_PERIOD,
-                summary=SummaryStatistic.MEAN,
-                quantile=QuantileEstimator.LINEAR,
-            )
-        else:
-            assess_dhram(
-                HydrologicalChanges((0.0,) * 10, ("",) * 10, "supplied profile"),
-                SupplementaryEvidence(SupplementaryFinding.EXCLUDED, SupplementaryFinding.EXCLUDED, "source"),
-                reference=reference,
-                impacted=impacted,
-                basis=ComparisonBasis.MATCHED_PERIOD,
-            )
+        compare_monthly_iari(
+            frame,
+            frame,
+            reference=reference,
+            impacted=impacted,
+            basis=ComparisonBasis.MATCHED_PERIOD,
+            summary=SummaryStatistic.MEAN,
+            quantile=QuantileEstimator.LINEAR,
+        )
 
 
 def test_indicator_record_cannot_erase_authoritative_source_history():
@@ -345,8 +302,7 @@ def test_indicator_record_cannot_contradict_source_location_or_period(field):
 def test_imported_warmup_outside_selected_years_does_not_disable_supported_data():
     import polars as pl
 
-    from fishy.diagnostics.dhram import HydrologicalChanges, SupplementaryEvidence, SupplementaryFinding
-    from fishy.diagnostics.records import RegimeAttribution, assess_dhram, compare_monthly_iari
+    from fishy.diagnostics.records import RegimeAttribution, compare_monthly_iari
 
     first = samples(2001, 2002)[0]
     period = Interval(datetime(1980, 1, 1, tzinfo=UTC), datetime(2000, 1, 1, tzinfo=UTC))
@@ -356,14 +312,6 @@ def test_imported_warmup_outside_selected_years_does_not_disable_supported_data(
         reference,
         provenance=replace(first.provenance, reference_kind=ReferenceKind.MANAGED, excluded_warmup=(outside,)),
     )
-    result = assess_dhram(
-        HydrologicalChanges((0.0,) * 10, ("",) * 10, "supplied profile"),
-        SupplementaryEvidence(SupplementaryFinding.EXCLUDED, SupplementaryFinding.EXCLUDED, "source"),
-        reference=reference,
-        impacted=impacted,
-        basis=ComparisonBasis.MATCHED_PERIOD,
-    )
-    assert result.result.classification == 1
     # Monthly current uses1995..1999, so earlier excluded1980..1995 is outside
     # its actual operand even though retained in the full supplied history.
     earlier = Interval(period.start, datetime(1995, 1, 1, tzinfo=UTC))

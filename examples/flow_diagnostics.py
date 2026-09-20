@@ -1,16 +1,10 @@
-"""Synthetic supplied flows → annual IHA, IARI and supplied-summary DHRAM (pure example).
+"""Synthetic supplied flows → annual IHA and IARI (pure example).
 
 Run with uv run python examples/flow_diagnostics.py. No basin validation claimed.
 """
 
 from datetime import UTC, datetime, timedelta
 
-from fishy.diagnostics.dhram import (
-    HydrologicalChanges,
-    SupplementaryEvidence,
-    SupplementaryFinding,
-    classify_dhram,
-)
 from fishy.diagnostics.iari import QuantileEstimator, SummaryStatistic
 from fishy.diagnostics.iha import CentralStatistic, IHAProfile, PulseThresholds, RateBoundary
 from fishy.diagnostics.records import ComparisonBasis, compare_iari, flow_indicators
@@ -67,16 +61,7 @@ def main() -> None:
         quantile=QuantileEstimator.LINEAR,
     )
     print(f"Annual IHA rows: {reference.annual.height}; IARI: {comparison.result.total}")
-    # Black2005 Table5 supplies already-computed summary indicators. This does
-    # NOT imply a supported daily-to-DHRAM path; historical membership is unresolved.
-    changes = HydrologicalChanges(
-        (21.7, 39.8, 31.0, 124.0, 30.9, 17.6, 46.3, 22.7, 34.2, 41.4), ("",) * 10, "Black2005 Table5 supplied summaries"
-    )
-    evidence = SupplementaryEvidence(SupplementaryFinding.EXCLUDED, SupplementaryFinding.EXCLUDED, "Table5 example")
-    risk = classify_dhram(changes, evidence)
-    print(f"Supplied-summary DHRAM points: {risk.points_lower}; class: {risk.classification}")
     assert reference.annual.height == 660 and comparison.result.total == 0
-    assert risk.points_lower == 7 and risk.classification == 3
 
 
 if __name__ == "__main__":

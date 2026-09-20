@@ -413,3 +413,21 @@ def test_account_mapping_location_version_cannot_certify_changed_boundary():
     args["boundary"] = replace(args["boundary"], location=replace(LOCATION, mapping_version="another"))
     with pytest.raises(ValueError, match="prepared location"):
         apply_quality_component(**args)
+
+
+def test_replaced_ledger_cannot_activate_with_stale_cached_residuals():
+    args = inputs()
+    ledger = args["accounts"][0]
+    with pytest.raises(ValueError, match="residual|derived|conservation"):
+        forged = replace(ledger, transfers=ledger.transfers[:1])
+        args["accounts"] = (forged,)
+        apply_quality_component(**args)
+
+
+def test_excluded_account_warmup_cannot_activate_quality():
+    args = inputs()
+    ledger = args["accounts"][0]
+    excluded = replace(ledger.accounts[0], provenance=replace(PROVENANCE, excluded_warmup=(PERIOD,)))
+    args["accounts"] = (assess_load_accounts((excluded,), ledger.transfers),)
+    with pytest.raises(ValueError, match="warm-up"):
+        apply_quality_component(**args)

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from fractions import Fraction
 
-from fishy.evidence import Provenance
+from fishy.evidence import Provenance, warmup_restrictions
 from fishy.quality import (
     ChemicalBehavior,
     ChemicalIdentity,
@@ -116,6 +116,10 @@ class FixedBoundary:
         names = [c.chemical.identifier for c in self.constituents]
         if len(names) != len(set(names)):
             raise ValueError("duplicate boundary constituent")
+
+    @property
+    def limitations(self) -> tuple[str, ...]:
+        return self.support.limitations + warmup_restrictions(self.provenance, self.interval)
 
 
 @dataclass(frozen=True)
@@ -329,7 +333,7 @@ def quality_constraints(
     boundary: FixedBoundary, targets: tuple[MixingTarget, ...]
 ) -> tuple[tuple[LinearConstraint, ...], tuple[str, ...]]:
     _targets(targets)
-    constraints, missing = [], list(boundary.support.limitations)
+    constraints, missing = [], list(boundary.limitations)
     for target in targets:
         terms = _terms(boundary, target)
         if isinstance(terms, str):
@@ -387,14 +391,14 @@ def recheck_mixing(
             for c in boundary.constituents
             if c.chemical.behavior is not ChemicalBehavior.PROCESS
         )
-        if total.value
+        if total.value and not boundary.limitations
         else ()
     )
     checks = []
     for target in targets:
         terms = _terms(boundary, target)
-        if boundary.support.limitations or isinstance(terms, str) or total.value == 0:
-            reason = "; ".join(boundary.support.limitations) or (
+        if boundary.limitations or isinstance(terms, str) or total.value == 0:
+            reason = "; ".join(boundary.limitations) or (
                 terms if isinstance(terms, str) else "zero total flow: concentration undefined"
             )
             checks.append(CandidateCheck(target.identifier, None, CheckOutcome.INDETERMINATE, reason))
@@ -426,7 +430,7 @@ def solve_mixing(
     )
     combined = intersect_constraints(physical + constraints + _flow_constraints(boundary, bounds))
     reasons = ()
-    if boundary.support.limitations:
+    if boundary.limitations:
         status, reasons = Feasibility.INDETERMINATE, ("unsupported fixed-boundary assumptions",)
     elif raw.empty:
         individually_impossible = any(intersect_constraints(physical + (c,)).empty for c in constraints)

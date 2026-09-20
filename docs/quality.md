@@ -39,6 +39,9 @@ supplied interval passes, fails only if the entire interval fails, and is otherw
 indeterminate. Non-detects retain their reporting limits and censoring. Without a
 reporting limit they are missing, never zero. Numerical accounting precision is not
 measurement or model uncertainty.
+Supplied excluded warm-up intervals cannot support quality assessment, mixing or
+drain sizing, or account-based activation. Unrelated supported observations remain
+available. Source account changes cannot retain stale derived residuals.
 
 ## Fixed-boundary mathematics
 

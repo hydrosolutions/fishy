@@ -98,3 +98,11 @@ def test_common_factor_intersects_independent_group_and_range():
     combined = solve_drain_control(base, (*selected, stricter))
     assert (combined.factor_interval.lower, combined.factor_interval.upper) == (Fraction(1, 4), Fraction(3, 8))
     assert combined.factor_interval.upper_binding == ("group",)
+
+
+def test_excluded_warmup_cannot_size_or_recheck_drain_control():
+    blocked = replace(drain(), provenance=replace(PROVENANCE, excluded_warmup=(PERIOD,)))
+    result = solve_drain_control(blocked, (target(),))
+    assert result.outcome is CheckOutcome.INDETERMINATE
+    assert "warm-up" in " ".join(result.unresolved)
+    assert recheck_drain_control(blocked, (target(),), Fraction(0))[0].outcome is CheckOutcome.INDETERMINATE

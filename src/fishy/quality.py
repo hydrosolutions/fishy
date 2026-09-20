@@ -19,6 +19,7 @@ from fishy.evidence import (
     _text,
     _texts,
     aggregate_checks,
+    warmup_restrictions,
 )
 from fishy.flows import Presence
 from fishy.physical import ConstituentSample
@@ -399,13 +400,19 @@ class QualityObservation:
             raise TypeError("admission requires ObservationAdmission")
         if self.kind in (ObservationKind.MEASUREMENT, ObservationKind.AGGREGATE) and self.admission is None:
             raise ValueError("public observations require an admission record, including missing fields")
-        if self.kind in (
-            ObservationKind.MEASUREMENT,
-            ObservationKind.AGGREGATE,
-        ) and self.provenance.production_method not in (ProductionMethod.OBSERVED, ProductionMethod.IMPORTED):
-            raise ValueError("measurement/aggregate kind conflicts with provenance production method")
-        if self.kind is ObservationKind.MODEL and self.provenance.production_method is ProductionMethod.OBSERVED:
-            raise ValueError("model kind conflicts with observed provenance production method")
+        supported_methods = {
+            ObservationKind.MEASUREMENT: (ProductionMethod.OBSERVED, ProductionMethod.IMPORTED),
+            ObservationKind.AGGREGATE: (ProductionMethod.OBSERVED, ProductionMethod.IMPORTED),
+            ObservationKind.MODEL: (
+                ProductionMethod.SIMULATED,
+                ProductionMethod.RECONSTRUCTED,
+                ProductionMethod.IMPORTED,
+                ProductionMethod.ILLUSTRATIVE,
+            ),
+            ObservationKind.SYNTHETIC: (ProductionMethod.ILLUSTRATIVE, ProductionMethod.IMPORTED),
+        }
+        if self.provenance.production_method not in supported_methods[self.kind]:
+            raise ValueError("observation kind conflicts with provenance production method")
         if (
             self.censoring is Censoring.NON_DETECT
             and self.bounds is not None
@@ -501,7 +508,7 @@ def _match(
 ) -> tuple[str, ...]:
     if observation is None:
         return ("required chemical/reference observation missing",)
-    reasons = []
+    reasons = list(warmup_restrictions(observation.provenance, observation.interval))
     if observation.chemical != chemical:
         reasons.append("chemical form, fraction or reporting basis mismatch; no supported conversion")
     if observation.location != profile.location or observation.provenance.scenario != profile.scenario:

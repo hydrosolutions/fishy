@@ -354,3 +354,14 @@ def test_inclusive_singleton_and_strict_upper_at_same_bounds():
     assert result.quality_interval.empty
     assert result.status is Feasibility.INDETERMINATE
     assert not result.unresolved
+
+
+def test_excluded_warmup_cannot_size_or_recheck_mixing():
+    blocked = replace(boundary(), provenance=replace(PROVENANCE, excluded_warmup=(PERIOD,)))
+    result = solve_mixing(blocked, (target(),))
+    assert result.status is Feasibility.INDETERMINATE
+    assert result.candidate is None and result.quality_total is None
+    assert "warm-up" in " ".join(result.unresolved)
+    checked = recheck_mixing(blocked, (target(),), Flow(8))
+    assert checked.outcome is CheckOutcome.INDETERMINATE
+    assert not checked.predictions

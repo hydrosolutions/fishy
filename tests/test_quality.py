@@ -1,7 +1,7 @@
 """Configured quality tests use synthetic evidence, not national policy defaults."""
 
 from dataclasses import FrozenInstanceError, replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from fractions import Fraction
 
 import pytest
@@ -477,3 +477,69 @@ def test_supplied_supported_conversion_is_explicit_scoped_and_attributable():
         convert_quality(converted, conversion)
     with pytest.raises(ValueError, match="positive"):
         replace(conversion, factor=Fraction(0))
+
+
+@pytest.mark.parametrize("kind", ["individual", "group", "reference"])
+def test_excluded_warmup_cannot_pass_quality_checks(kind):
+    blocked = replace(observation(10, A), provenance=replace(PROVENANCE, excluded_warmup=(PERIOD,)))
+    if kind == "individual":
+        selected = profile((target(100, A), target(100, B, identifier="independent")))
+        result = assess_quality(selected, (blocked, observation(10, B)))
+        assert result.results[1].check.finding is CheckFinding.PASS
+    elif kind == "group":
+        result = assess_quality(profile((group(),)), (blocked, observation(10, B)))
+    else:
+        reference = replace(blocked, identifier="reference")
+        relative = RelativeTarget(
+            "relative", A, Comparison.LE, value(100), "interval mean", "source", "reference", "interval mean", PERIOD
+        )
+        result = assess_quality(profile((relative,)), (observation(20, A),), references=(reference,))
+    assert result.summary.finding is CheckFinding.UNKNOWN
+    assert result.summary.completeness is Completeness.INCOMPLETE
+    assert "warm-up" in " ".join(result.results[0].check.reasons)
+
+
+def test_synthetic_kind_cannot_claim_observed_production():
+    with pytest.raises(ValueError, match="production method"):
+        replace(observation(100), provenance=replace(PROVENANCE, production_method=ProductionMethod.OBSERVED))
+
+
+@pytest.mark.parametrize("kind", list(ObservationKind))
+@pytest.mark.parametrize("method", list(ProductionMethod))
+def test_observation_kind_and_production_method_consistency(kind, method):
+    permitted = {
+        ObservationKind.MEASUREMENT: {ProductionMethod.OBSERVED, ProductionMethod.IMPORTED},
+        ObservationKind.AGGREGATE: {ProductionMethod.OBSERVED, ProductionMethod.IMPORTED},
+        ObservationKind.MODEL: {
+            ProductionMethod.SIMULATED,
+            ProductionMethod.RECONSTRUCTED,
+            ProductionMethod.IMPORTED,
+            ProductionMethod.ILLUSTRATIVE,
+        },
+        ObservationKind.SYNTHETIC: {ProductionMethod.ILLUSTRATIVE, ProductionMethod.IMPORTED},
+    }
+    changes = {
+        "kind": kind,
+        "provenance": replace(PROVENANCE, production_method=method),
+        "admission": ObservationAdmission(),
+    }
+    if method in permitted[kind]:
+        assert replace(observation(100), **changes).provenance.production_method is method
+    else:
+        with pytest.raises(ValueError, match="production method"):
+            replace(observation(100), **changes)
+
+
+@pytest.mark.parametrize(
+    "start,end,expected",
+    [
+        (-24, 0, CheckFinding.PASS),
+        (24, 48, CheckFinding.PASS),
+        (12, 48, CheckFinding.UNKNOWN),
+        (-12, 12, CheckFinding.UNKNOWN),
+    ],
+)
+def test_warmup_overlap_uses_half_open_actual_intervals(start, end, expected):
+    exclusion = Interval(PERIOD.start + timedelta(hours=start), PERIOD.start + timedelta(hours=end))
+    obs = replace(observation(100), provenance=replace(PROVENANCE, excluded_warmup=(exclusion,)))
+    assert assess_quality(profile((target(),)), (obs,)).summary.finding is expected

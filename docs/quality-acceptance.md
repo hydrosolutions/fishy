@@ -30,7 +30,7 @@ Validated on 2026-09-20 with the locked optional simulator environment:
 
 | Command | Actual result |
 |---|---|
-| `uv run --all-extras pytest -q` | **467 passed in 21.15s** |
+| `uv run --all-extras pytest -q` | **504 passed in 23.88s** |
 | `uv run --all-extras ruff check` | All checks passed |
 | `uv run --all-extras ruff format --check` | 51 files already formatted |
 | `uv run --all-extras ty check` | All checks passed |
@@ -41,10 +41,15 @@ validation uses `git -c core.whitespace=cr-at-eol diff --check` rather than modi
 source bytes. The local uv-cache build warning was checked: neither the wheel nor
 source distribution includes `.uv-cache` or local validation records.
 
-Two activation bugs found during implementation received failing real-path tests
+Activation bugs found during implementation received failing real-path tests
 before repair: unrelated empty accounts could certify a loaded wet boundary, and
 an account mapping could ignore a changed prepared location version. The same tests
-now refuse both paths. Regression receipts are retained locally with the delivery
+now refuse both paths. Independent review then found stale account residual caches and
+ignored warm-up exclusions. Real-path red tests preceded those repairs. Construction
+now verifies account caches against their source ledger. Exclusions now restrict
+individual/group/relative observations, mixing, drain control and account activation.
+A full observation-kind/production-method matrix prevents synthetic observations
+from claiming observed provenance. Regression receipts are retained locally with the delivery
 validation record; no physical numbers or policy thresholds were changed.
 
 ### Exact compatible source revisions

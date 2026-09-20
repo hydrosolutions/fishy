@@ -6,7 +6,7 @@ Diagnostic fixed-water load reduction, not permits or allocation among polluters
 from dataclasses import dataclass
 from fractions import Fraction
 
-from fishy.evidence import Provenance
+from fishy.evidence import Provenance, warmup_restrictions
 from fishy.mixing import (
     BoundarySupport,
     CandidateCheck,
@@ -103,6 +103,10 @@ class DrainBoundary:
         if len({c.chemical.identifier for c in self.loads}) != len(self.loads):
             raise ValueError("duplicate drain constituent")
 
+    @property
+    def limitations(self) -> tuple[str, ...]:
+        return self.support.limitations + warmup_restrictions(self.provenance, self.interval)
+
 
 @dataclass(frozen=True)
 class DrainControlResult:
@@ -144,7 +148,7 @@ def solve_drain_control(boundary: DrainBoundary, targets: tuple[MixingTarget, ..
     _targets(targets)
     background = _background(boundary)
     constraints = [LinearConstraint("whole-drain-factor", Fraction(1), Fraction(1))]
-    missing = list(boundary.support.limitations)
+    missing = list(boundary.limitations)
     if boundary.discharge.value == 0:
         missing.append("zero discharge: concentration undefined")
     for target in targets:
@@ -163,7 +167,7 @@ def solve_drain_control(boundary: DrainBoundary, targets: tuple[MixingTarget, ..
             )
         )
     interval = intersect_constraints(tuple(constraints))
-    if boundary.support.limitations or boundary.discharge.value == 0:
+    if boundary.limitations or boundary.discharge.value == 0:
         outcome = CheckOutcome.INDETERMINATE
     elif interval.empty:
         outcome = CheckOutcome.FAIL
@@ -193,8 +197,8 @@ def recheck_drain_control(
     checks = []
     for target in targets:
         terms = _terms(background, target)
-        if boundary.support.limitations or boundary.discharge.value == 0 or isinstance(terms, str):
-            reason = "; ".join(boundary.support.limitations) or (
+        if boundary.limitations or boundary.discharge.value == 0 or isinstance(terms, str):
+            reason = "; ".join(boundary.limitations) or (
                 terms if isinstance(terms, str) else "zero discharge: concentration undefined"
             )
             checks.append(CandidateCheck(target.identifier, None, CheckOutcome.INDETERMINATE, reason))

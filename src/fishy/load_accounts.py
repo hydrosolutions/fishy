@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from fractions import Fraction
 
-from fishy.evidence import Provenance
+from fishy.evidence import Provenance, warmup_restrictions
 from fishy.quality import ChemicalIdentity
 from fishy.quantities import Number, Volume, finite_number
 from fishy.time import Interval
@@ -186,6 +186,11 @@ class AccountAssessment:
     basin: AccountResidual
     internal_transfer_ids: tuple[str, ...]
 
+    def __post_init__(self) -> None:
+        expected = _derive_accounts(self.accounts, self.transfers)
+        if (self.local, self.basin, self.internal_transfer_ids) != expected:
+            raise ValueError("account residuals and internal transfers must equal their derived source relationships")
+
     @property
     def state(self) -> ConservationState:
         # Opposite local errors cannot cancel into a valid basin assessment.
@@ -212,12 +217,17 @@ class AccountAssessment:
         """Invalidate dependent assessment, rather than downgrade closure to a warning."""
         if self.state is ConservationState.INVALID:
             raise ValueError("conservation failure invalidates the affected quality assessment")
+        restrictions = tuple(
+            reason for account in self.accounts for reason in warmup_restrictions(account.provenance, account.interval)
+        )
+        if restrictions:
+            raise ValueError("; ".join(restrictions))
 
 
-def assess_load_accounts(
+def _derive_accounts(
     accounts: tuple[LoadAccount, ...], transfers: tuple[AccountTransfer, ...]
-) -> AccountAssessment:
-    """Check one constituent, scenario and interval; independent constituents run separately."""
+) -> tuple[tuple[AccountResidual, ...], AccountResidual, tuple[str, ...]]:
+    """Derive validated local/basin residuals and internal-transfer identity."""
     _tuple(accounts, LoadAccount)
     _tuple(transfers, AccountTransfer)
     if not accounts:
@@ -264,13 +274,19 @@ def assess_load_accounts(
     basin = AccountResidual(
         "basin", sum((r.water_m3 for r in residuals), Fraction()), sum((r.mass_kg for r in residuals), Fraction())
     )
-    return AccountAssessment(
-        accounts,
-        transfers,
+    return (
         tuple(residuals),
         basin,
         tuple(t.identifier for t in transfers if t.origin is not None and t.destination is not None),
     )
+
+
+def assess_load_accounts(
+    accounts: tuple[LoadAccount, ...], transfers: tuple[AccountTransfer, ...]
+) -> AccountAssessment:
+    """Check one constituent, scenario and interval; independent constituents run separately."""
+    local, basin, internal = _derive_accounts(accounts, transfers)
+    return AccountAssessment(accounts, transfers, local, basin, internal)
 
 
 class ControlState(StrEnum):

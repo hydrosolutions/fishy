@@ -189,3 +189,25 @@ def test_supplied_uncertainty_survives_without_waiving_exact_residual():
     )
     with pytest.raises(ValueError, match="invalidates"):
         result.require_valid()
+
+
+@pytest.mark.parametrize("field", ["local", "basin", "internal_transfer_ids", "accounts", "transfers"])
+def test_assessment_source_and_derived_fields_cannot_disagree(field):
+    from dataclasses import replace
+
+    from fishy.load_accounts import AccountResidual
+
+    result = assess_load_accounts(
+        (account("section", (0, 0), (1, 2)),),
+        (AccountTransfer("in", None, "section", inventory(1, 2)),),
+    )
+    changes = {
+        "local": (AccountResidual("section", Fraction(0), Fraction(1)),),
+        "basin": AccountResidual("basin", Fraction(0), Fraction(1)),
+        "internal_transfer_ids": ("invented",),
+        "accounts": (replace(result.accounts[0], final=inventory(1, 3)),),
+        "transfers": (),
+    }
+    with pytest.raises(ValueError, match="derived"):
+        replace(result, **{field: changes[field]})
+    assert replace(result) == result

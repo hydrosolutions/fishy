@@ -83,7 +83,9 @@ The component documents above map source clauses to public operations and tests.
 
 The full connected test is
 `tests/test_swiss_prescription_example.py::test_complete_supported_swiss_scenario`.
-The same file tests a duty with no historical sizing and configuration isolation.
+The same file tests a duty with no historical sizing and executes a changed
+identified Swiss study (180→240 l/s). It then reruns the original scenario,
+statutory table and independent supplied-duty operation, preserving their results.
 The delivery suite tests gains/losses, failed balances, missing proof, differing
 condition findings and unchanged nominal duties. All literal flow assertions use
 exact rational arithmetic, with zero numerical tolerance.

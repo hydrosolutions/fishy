@@ -743,3 +743,44 @@ def test_scoped_exception_and_normal_protection_beyond_reach_remain_separate():
     assert missing.summary.finding is CheckFinding.UNKNOWN
     assert missing.schedule[0].presence is Presence.UNSUPPORTED
     assert missing.numerical_schedule[0].value == Flow(130, "l/s")
+
+
+def test_missing_third_mapping_preserves_known_shared_lower_bound_contradiction():
+    first, second, third = sample(180, "first"), sample(300, "second"), sample(100, "third")
+    result = derive(
+        (sample(130),),
+        (first, second, third),
+        (relationship(first), relationship(second)),
+        downstream_assessments=(balanced_need(first, upper=200), balanced_need(second), balanced_need(third)),
+    )
+    assert result.summary.finding is CheckFinding.FAIL
+    assert result.summary.completeness is Completeness.INCOMPLETE
+    assert result.schedule[0].presence is Presence.UNSUPPORTED
+    assert result.numerical_schedule[0].presence is Presence.UNSUPPORTED
+    assert result.numerical_schedule[0].value is None
+
+
+def test_unmapped_large_need_cannot_invent_a_supported_lower_bound_failure():
+    first, second, third = sample(180, "first"), sample(300, "second"), sample(100, "third")
+    result = derive(
+        (sample(130),),
+        (first, second, third),
+        (relationship(first),),
+        downstream_assessments=(balanced_need(first, upper=200), balanced_need(second), balanced_need(third)),
+    )
+    assert result.summary.finding is CheckFinding.UNKNOWN
+    assert result.summary.completeness is Completeness.INCOMPLETE
+    assert not any(":lower_bound:" in c.check_id and c.finding is CheckFinding.FAIL for c in result.summary.checks)
+
+
+def test_missing_mapping_cannot_erase_known_intake_minimum_upper_domain_conflict():
+    first, missing = sample(180, "first"), sample(100, "missing")
+    result = derive(
+        (sample(300),),
+        (first, missing),
+        (relationship(first),),
+        downstream_assessments=(balanced_need(first, upper=200), balanced_need(missing)),
+    )
+    assert result.summary.finding is CheckFinding.FAIL
+    assert result.summary.completeness is Completeness.INCOMPLETE
+    assert result.numerical_schedule[0].presence is Presence.UNSUPPORTED

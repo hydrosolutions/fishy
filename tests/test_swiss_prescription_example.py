@@ -103,3 +103,50 @@ def test_scenario_configuration_does_not_mutate_issued_values():
     assert changed.schedule[0].sample.value == Flow(300, "l/s")
     assert issued.schedule[0].sample.value == Flow(220, "l/s")
     assert result.starting.value == Flow(130, "l/s")
+
+
+def test_changed_swiss_configuration_executes_without_changing_independent_operations():
+    from fishy.duties import assess_duty
+    from fishy.residual_flow import statutory_minimum
+    from fishy.swiss_safeguards import Safeguard, assess_safeguards, safeguard_study_scope
+
+    original = scenario()
+    issued = original.delivery.nominal_duty
+    actual = original.delivery.delivery.intervals[0].delivery
+    assert isinstance(actual, Delivery)
+    independent_before = assess_duty(issued, (actual,))
+    table_before = statutory_minimum(Flow(160, "l/s"))
+    original_row = original.safeguards.sites[0]
+    alternative_provenance = replace(
+        original_row.site.starting_minimum.provenance,
+        scenario="alternative passage study",
+        configuration_version="scenario-v2",
+    )
+    alternative_site = replace(
+        original_row.site,
+        starting_minimum=replace(original_row.site.starting_minimum, provenance=alternative_provenance),
+    )
+    alternative_studies = []
+    for study in original_row.studies:
+        need = study.flow_need
+        assert need is not None
+        if study.safeguard is Safeguard.FISH_PASSAGE:
+            need = replace(need, total=Flow(240, "l/s"))
+        findings = replace(
+            study.findings,
+            provenance=alternative_provenance,
+            scope=safeguard_study_scope(
+                alternative_site, study.safeguard, study.treatment, need, study.measure, study.replacement
+            ),
+        )
+        alternative_studies.append(replace(study, flow_need=need, findings=findings))
+    changed = assess_safeguards((alternative_site,), tuple(alternative_studies), use=original.safeguards.use)
+    assert changed.summary.finding is CheckFinding.PASS
+    assert changed.sites[0].minimum.value == Flow(240, "l/s")
+    assert changed.sites[0].minimum.provenance.configuration_version == "scenario-v2"
+    assert original.safeguards.sites[0].minimum.value == Flow(180, "l/s")
+    assert scenario() == original
+    assert statutory_minimum(Flow(160, "l/s")) == table_before == Flow(130, "l/s")
+    assert assess_duty(issued, (actual,)) == independent_before
+    assert issued.schedule[0].sample.value == Flow(220, "l/s")
+    assert original.delivery.delivery.intervals[0].shortfall == Flow(30, "l/s")

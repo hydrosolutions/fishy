@@ -405,7 +405,7 @@ def derive_intake_schedule(
         checks.extend(local)
     numerical_schedule = tuple(rows)
     downstream_checks, reviewed, projected = _assess_projected_needs(
-        downstream_needs, relationships, tuple(rows), tuple(downstream_assessments)
+        downstream_needs, relationships, tuple(rows), tuple(downstream_assessments), intake_minima
     )
     checks.extend(downstream_checks.checks)
     summary = CheckSummary(tuple(checks))
@@ -437,6 +437,7 @@ def _assess_projected_needs(
     relationships: tuple[IntakeRelationship, ...],
     intake_schedule: tuple[FlowSample, ...],
     assessments: tuple[BalancingAssessment, ...],
+    intake_minima: tuple[FlowSample, ...],
 ) -> tuple[CheckSummary, tuple[BalancingAssessment, ...], tuple[FlowSample, ...]]:
     """Recompute decisions and recheck actual downstream quantities, never cached passes."""
     if any(not isinstance(a, BalancingAssessment) for a in assessments):
@@ -526,7 +527,116 @@ def _assess_projected_needs(
             checks.extend(
                 replace(c, check_id=f"downstream:{index}:projected:{c.check_id}") for c in projected_checks.checks
             )
+    checks.extend(_known_lower_bound_conflicts(required, relations, tuple(reviewed), intake_minima))
     return CheckSummary(tuple(checks)), tuple(reviewed), tuple(projected_by_key.values())
+
+
+def _known_lower_bound_conflicts(
+    required: dict[tuple[Location, Interval], FlowSample],
+    relations: dict[tuple[Location, Interval], IntakeRelationship],
+    reviewed: tuple[BalancingAssessment, ...],
+    intake_minima: tuple[FlowSample, ...],
+) -> tuple[Check, ...]:
+    """Retain guaranteed contradictions without pretending a partial schedule is complete.
+
+    Positive transmission makes each accepted downstream requirement a lower bound
+    on shared intake flow. An additional unknown requirement can only raise that
+    bound, so it cannot repair a known upper-domain violation at another point.
+    """
+    supported_relations = {
+        key: relation
+        for key, relation in relations.items()
+        if relation.balance is not None
+        and relation.balance.check.finding is CheckFinding.PASS
+        and permitted_use(relation.evidence, relation.scope).finding is CheckFinding.PASS
+        and all(
+            _support(sample, "operand").finding is CheckFinding.PASS
+            for sample in (relation.downstream, *(e.sample for e in relation.exchanges))
+        )
+    }
+    lower_bounds: dict[Interval, Flow] = {
+        sample.interval: sample.value
+        for sample in intake_minima
+        if sample.value is not None and _support(sample, "minimum").finding is CheckFinding.PASS
+    }
+    for assessment in reviewed:
+        for need in assessment.supported_final_total:
+            key = (need.location, need.interval)
+            relation = supported_relations.get(key)
+            if required.get(key) != need or relation is None or need.value is None:
+                continue
+            bound = max(
+                relation.intake_domain.lower.value, (need.value.value - _net_exchange(relation)) / relation.transmission
+            )
+            prior = lower_bounds.get(need.interval)
+            lower_bounds[need.interval] = Flow(max(bound, prior.value if prior is not None else Fraction()))
+    checks: list[Check] = []
+    for index, assessment in enumerate(reviewed):
+        if assessment.safeguards is None:
+            continue
+        bounds_at_sites: dict[tuple[Location, Interval], FlowSample] = {}
+        for row in assessment.safeguards.sites:
+            site_sample = row.site.starting_minimum
+            key = (site_sample.location, site_sample.interval)
+            relation = supported_relations.get(key)
+            bound = lower_bounds.get(site_sample.interval)
+            if relation is None or bound is None:
+                continue
+            if bound.value > relation.intake_domain.upper.value:
+                checks.append(
+                    Check(
+                        f"downstream:{index}:lower_bound:{row.site.identifier}:routing_domain",
+                        CheckFinding.FAIL,
+                        (f"required intake lower bound {bound.value} m3/s exceeds supported routing domain",),
+                    )
+                )
+                continue
+            projected_bound = relation.transmission * max(
+                bound.value, relation.intake_domain.lower.value
+            ) + _net_exchange(relation)
+            if projected_bound < 0:
+                # A negative affine lower bound cannot violate a nonnegative upper domain.
+                continue
+            value = Flow(projected_bound)
+            bounds_at_sites[key] = replace(
+                required[key],
+                value=value,
+                uncertainty=None,
+                presence=Presence.PRESENT,
+                provenance=replace(site_sample.provenance, production_method=ProductionMethod.RECONSTRUCTED),
+                reasons=(
+                    *site_sample.reasons,
+                    "mathematical downstream lower bound only, not a completed projected flow",
+                ),
+            )
+        bound_checks = assess_safeguard_candidate(assessment.safeguards, tuple(bounds_at_sites.values()))
+        findings = {check.check_id: check for check in bound_checks.checks}
+        for row in assessment.safeguards.sites:
+            key = (row.site.starting_minimum.location, row.site.starting_minimum.interval)
+            sample = bounds_at_sites.get(key)
+            if sample is None or sample.value is None:
+                continue
+            for study in row.studies:
+                need = study.flow_need
+                check = findings.get(row.site.identifier + ":candidate:" + study.safeguard.value)
+                if (
+                    need is not None
+                    and sample.value.value > need.domain_upper.value
+                    and check is not None
+                    and check.finding is CheckFinding.FAIL
+                ):
+                    checks.append(
+                        Check(
+                            f"downstream:{index}:lower_bound:{check.check_id}",
+                            CheckFinding.FAIL,
+                            (
+                                *check.reasons,
+                                f"required downstream lower bound {sample.value.value} m3/s exceeds upper domain "
+                                f"{need.domain_upper.value} m3/s; unknown additional needs cannot repair this contradiction",
+                            ),
+                        )
+                    )
+    return tuple(checks)
 
 
 def _net_exchange(relation: IntakeRelationship) -> Fraction:

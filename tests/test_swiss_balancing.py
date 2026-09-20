@@ -159,19 +159,34 @@ def test_supported_final_is_total_not_added_and_hypothetical_stays_hypothetical(
 @pytest.mark.parametrize("interest", tuple(AbstractionInterest))
 def test_every_enumerated_interest_is_required(interest):
     minimum, summary, decision = inputs()
-    result = assess_supported(
-        minimum,
-        summary,
-        replace(decision, interests=tuple(i for i in decision.interests if i.interest is not interest)),
+    incomplete = replace(decision, interests=tuple(i for i in decision.interests if i.interest is not interest))
+    assert decision.evidence is not None
+    incomplete = replace(
+        incomplete, evidence=replace(decision.evidence, scope=balancing_decision_scope(minimum, incomplete))
     )
+    result = assess_supported(minimum, summary, incomplete)
+    checks = {check.check_id: check for check in result.balancing_summary.checks}
+    assert checks["decision"].finding is CheckFinding.PASS
+    assert checks[interest.value].finding is CheckFinding.UNKNOWN
     assert result.summary.finding is CheckFinding.UNKNOWN
     assert result.supported_final_total == ()
 
 
 def test_report_and_decision_required_even_after_exception():
     minimum, summary, decision = inputs((35,))
-    for supplied in (None, replace(decision, applicant_report=None)):
+    missing_report = replace(decision, applicant_report=None)
+    assert decision.evidence is not None
+    missing_report = replace(
+        missing_report, evidence=replace(decision.evidence, scope=balancing_decision_scope(minimum, missing_report))
+    )
+    for supplied in (None, missing_report):
         result = assess_supported(minimum, summary, supplied)
+        checks = {check.check_id: check for check in result.balancing_summary.checks}
+        if supplied is None:
+            assert checks["decision"].finding is CheckFinding.UNKNOWN
+        else:
+            assert checks["decision"].finding is CheckFinding.PASS
+            assert checks["applicant_report"].finding is CheckFinding.UNKNOWN
         assert result.summary.finding is CheckFinding.UNKNOWN
         assert not result.supported_final_total
 
@@ -224,6 +239,8 @@ def test_wrong_location_or_interval_cannot_transfer():
 def test_missing_schedule_interval_and_empty_preceding_checks_cannot_pass():
     minimum, summary, decision = inputs((180, 180))
     result = assess_supported(minimum, summary, replace(decision, final_total=decision.final_total[:1]))
+    checks = {check.check_id: check for check in result.balancing_summary.checks}
+    assert checks["minimum:1"].finding is CheckFinding.UNKNOWN
     assert result.summary.finding is CheckFinding.UNKNOWN
     assert assess_supported(minimum, CheckSummary(()), decision).summary.finding is CheckFinding.UNKNOWN
 

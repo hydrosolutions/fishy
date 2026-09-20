@@ -270,7 +270,11 @@ def test_perennial_intake_and_mixed_downstream(scope):
     assert result.route is PermitRoute.ARTICLE_30
     assert result.article_30_sections == (inputs.downstream[0].scope.location,)
     assert result.summary.finding is CheckFinding.PASS
-    assert assess_permit_scope(replace(inputs, downstream=())).summary.finding is CheckFinding.UNKNOWN
+    missing = assess_permit_scope(accepted_context(replace(inputs, downstream=())))
+    checks = {check.check_id: check for check in missing.summary.checks}
+    assert checks["applicability_evidence"].finding is CheckFinding.PASS
+    assert checks["affected_sections"].finding is CheckFinding.UNKNOWN
+    assert missing.summary.finding is CheckFinding.UNKNOWN
 
 
 def test_nonperennial_intake_requires_nature_fisheries_evidence(scope):

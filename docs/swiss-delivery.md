@@ -51,6 +51,16 @@ numerical mapping. For two needs 180/300 l/s, a shared release of 300 remains in
 fails. Missing an assessment for a farther normal-protection point cannot extend
 an exception to that point.
 
+An incomplete mapping does not erase a supported contradiction. Individually
+supported positive-transmission relations and recomputed accepted requirements
+can establish a shared intake lower bound. If its projected downstream lower
+bound already exceeds an accepted site upper domain, the result stays failed
+with incomplete coverage, even when another relationship is missing. A lower
+bound below a minimum is not treated as underdelivery: unresolved constraints
+could raise it. Unsupported relations cannot establish such a bound. Incomplete
+`numerical_schedule` and final projections remain unsupported; the guaranteed
+contradiction is retained as a separately attributed check.
+
 The result retains downstream needs, minima, relationships, measures, schedule and
 checks. Unsupported intervals carry `Presence.UNSUPPORTED`, not zero. There is no
 Uzbek deliverability cap. A supported schedule is a mathematical candidate, not
@@ -151,6 +161,7 @@ integration revision pins are recorded in the aggregate Swiss acceptance report.
 | Failed balance and omitted affected point | physical account residual 1 m³ plus absent relation | failure plus incomplete coverage | `test_missing_relationship_and_failed_balance_survive_incomplete_coverage` |
 | Independent scientific coverage | required upstream checks / measures | failed, missing or empty checks cannot support candidate | `test_upstream_coverage_cannot_be_laundered_into_complete_prescription`, `test_required_measure_rejection_or_wrong_use_cannot_pass_prescription` |
 | Actual post-routing safeguards / scoped exceptions | `downstream_assessments` and projected point flows | shared 300 exceeds first point upper 200: final fail, numerical 300 retained; missing farther normal study stays unknown | `test_shared_release_rechecks_actual_downstream_safeguard_domain`, `test_cached_balancing_pass_cannot_replace_actual_studies_or_need`, `test_scoped_exception_and_normal_protection_beyond_reach_remain_separate` |
+| Known failure plus missing routing | needs 180/300/100; first upper domain 200; third relation missing | fail plus incomplete; incomplete numerical schedule remains unsupported; if the 300 relation is also missing, unknown rather than invented failure | `test_missing_third_mapping_preserves_known_shared_lower_bound_contradiction`, `test_unmapped_large_need_cannot_invent_a_supported_lower_bound_failure` |
 | Full proof-subject acceptance | change balance tolerance 0→1 with previous accepted findings | evidence mismatch, no relief | `test_proof_balance_tolerance_cannot_change_under_existing_findings` |
 | Art. 36(2) | `assess_swiss_delivery`: 220/150/120 | nominal 220; duty 150; shortfall 30 l/s = 2592 m³/day | `test_art36_exact_low_inflow_preserves_nominal_and_shortfall` |
 | Art. 36(1–2) | balance and measurement-burden evidence | relief only with justified, closing, flow-linked account | `test_water_balance_relief_requires_unreasonable_measurement_and_closure`, `test_unrelated_closed_balance_cannot_prove_low_inflow_or_delivery` |

@@ -275,7 +275,15 @@ def test_single_design_class_carrier_and_invalid_domain():
 
 
 def test_receiving_parent_transfer_success_missing_and_incompatible():
-    from fishy.basin import Basin, DonorRelation, PreparedTopology, River, RiverConnection, SectionContext
+    from fishy.basin import (
+        Basin,
+        DonorReference,
+        DonorRelation,
+        PreparedTopology,
+        River,
+        RiverConnection,
+        SectionContext,
+    )
     from fishy.kazakh_allocation import DonorChoice, InitialCoefficient, transfer_allocation
 
     main = River("main", "v1", 0)
@@ -289,7 +297,9 @@ def test_receiving_parent_transfer_success_missing_and_incompatible():
         (SectionContext(main, donor, None), SectionContext(tributary, LOCATION, donor)),
     )
     ref = reference(route=ObservationRoute.ABSENT)
-    relation = DonorRelation(tributary, main, evidence("receiving_parent_transfer"))
+    relation = DonorRelation(
+        tributary, main, evidence("receiving_parent_transfer"), DonorReference(PROVENANCE, HISTORY)
+    )
     coefficient = InitialCoefficient(
         DesignClass.MEDIUM,
         Fraction(4, 5),
@@ -365,3 +375,137 @@ def test_scaled_observed_pattern_cannot_become_observed_discharge():
     assert any("accepted as indicative" in reason for reason in result.samples[0].provenance.limitations)
     report = appendix1_report(initial, YEAR, result.samples, ScheduleStage.INITIAL)
     assert any("synthetic only" in reason for reason in report.samples[0].provenance.limitations)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"scenario": "unaccepted-other-scenario"},
+        {"data_version": "unaccepted-other-data"},
+        {"configuration_version": "unaccepted-other-configuration"},
+        {"reference_kind": ReferenceKind.FUTURE_CLIMATE_STRESS},
+    ],
+)
+def test_unaccepted_coefficient_basis_cannot_transfer(change):
+    from fishy.basin import (
+        Basin,
+        DonorReference,
+        DonorRelation,
+        PreparedTopology,
+        River,
+        RiverConnection,
+        SectionContext,
+    )
+    from fishy.kazakh_allocation import DonorChoice, InitialCoefficient, transfer_allocation
+
+    main, tributary = River("main", "v1", 0), River("tributary", "v1", 1)
+    donor = Location(Reach("main-reach", "v1", WaterBody("main-body", "v1")), CalculationSection("mouth", "v1"), "map1")
+    topology = PreparedTopology(
+        Basin("basin", "v1"),
+        "topology1",
+        (main, tributary),
+        (RiverConnection(tributary, main),),
+        (SectionContext(main, donor, None), SectionContext(tributary, LOCATION, donor)),
+    )
+    ref = reference(route=ObservationRoute.ABSENT)
+    relation = DonorRelation(
+        tributary, main, evidence("receiving_parent_transfer"), DonorReference(PROVENANCE, HISTORY)
+    )
+    support = evidence("initial_coefficient_P50", use="initial_allocation_transfer", location=donor)
+    support = replace(support, provenance=replace(support.provenance, **change))
+    coefficient = InitialCoefficient(DesignClass.MEDIUM, Fraction(4, 5), donor, support)
+    result = transfer_allocation(
+        ref, DesignClass.MEDIUM, topology, tributary, relation, coefficient, DonorChoice.RECEIVING_PARENT
+    )
+    assert result.status is not AllocationStatus.SUPPORTED, result
+
+
+def test_initial_transfer_coefficient_cannot_exceed_median():
+    from fishy.basin import (
+        Basin,
+        DonorReference,
+        DonorRelation,
+        PreparedTopology,
+        River,
+        RiverConnection,
+        SectionContext,
+    )
+    from fishy.kazakh_allocation import DonorChoice, InitialCoefficient, transfer_allocation
+
+    main, tributary = River("main", "v1", 0), River("tributary", "v1", 1)
+    donor = Location(Reach("main-reach", "v1", WaterBody("main-body", "v1")), CalculationSection("mouth", "v1"), "map1")
+    topology = PreparedTopology(
+        Basin("basin", "v1"),
+        "topology1",
+        (main, tributary),
+        (RiverConnection(tributary, main),),
+        (SectionContext(main, donor, None), SectionContext(tributary, LOCATION, donor)),
+    )
+    ref = reference(route=ObservationRoute.ABSENT)
+    relation = DonorRelation(
+        tributary, main, evidence("receiving_parent_transfer"), DonorReference(PROVENANCE, HISTORY)
+    )
+    support = evidence("initial_coefficient_P50", use="initial_allocation_transfer", location=donor)
+    coefficient = InitialCoefficient(DesignClass.MEDIUM, Fraction(2), donor, support)
+    result = transfer_allocation(
+        ref, DesignClass.MEDIUM, topology, tributary, relation, coefficient, DonorChoice.RECEIVING_PARENT
+    )
+    assert result.status is not AllocationStatus.SUPPORTED, result
+
+
+def test_transfer_accepts_explicit_distinct_donor_reference_but_not_undeclared_changes():
+    from fishy.basin import (
+        Basin,
+        DonorReference,
+        DonorRelation,
+        PreparedTopology,
+        River,
+        RiverConnection,
+        SectionContext,
+    )
+    from fishy.kazakh_allocation import DonorChoice, InitialCoefficient, transfer_allocation
+
+    main, tributary = River("main", "v1", 0), River("tributary", "v1", 1)
+    donor = Location(Reach("main-reach", "v1", WaterBody("main-body", "v1")), CalculationSection("mouth", "v1"), "map1")
+    topology = PreparedTopology(
+        Basin("basin", "v1"),
+        "topology1",
+        (main, tributary),
+        (RiverConnection(tributary, main),),
+        (SectionContext(main, donor, None), SectionContext(tributary, LOCATION, donor)),
+    )
+    ref = reference(route=ObservationRoute.ABSENT)
+    donor_provenance = replace(
+        PROVENANCE, scenario="accepted-donor-study", reference_member="donor-member", data_version="donor-data-v2"
+    )
+    donor_period = Interval(datetime(1980, 1, 1, tzinfo=UTC), datetime(2010, 1, 1, tzinfo=UTC))
+    accepted = DonorReference(donor_provenance, donor_period)
+    relation = DonorRelation(tributary, main, evidence("receiving_parent_transfer"), accepted)
+    support = evidence(
+        "initial_coefficient_P50",
+        period=donor_period,
+        use="initial_allocation_transfer",
+        location=donor,
+        provenance=donor_provenance,
+    )
+    coefficient = InitialCoefficient(DesignClass.MEDIUM, Fraction(4, 5), donor, support)
+
+    def run(rel, coeff):
+        return transfer_allocation(
+            ref, DesignClass.MEDIUM, topology, tributary, rel, coeff, DonorChoice.RECEIVING_PARENT
+        )
+
+    assert run(relation, coefficient).volume == Volume(80_000_000)
+    assert run(replace(relation, donor_reference=None), coefficient).status is AllocationStatus.FURTHER_STUDY
+    wrong_period = replace(coefficient, evidence=replace(support, scope=replace(support.scope, period=HISTORY)))
+    assert run(relation, wrong_period).status is AllocationStatus.FURTHER_STUDY
+    wrong_member = replace(
+        coefficient, evidence=replace(support, provenance=replace(donor_provenance, reference_member="unaccepted"))
+    )
+    assert run(relation, wrong_member).status is AllocationStatus.FURTHER_STUDY
+    future = replace(donor_provenance, reference_kind=ReferenceKind.FUTURE_CLIMATE_STRESS)
+    future_relation = replace(relation, donor_reference=DonorReference(future, donor_period))
+    future_coefficient = replace(coefficient, evidence=replace(support, provenance=future))
+    assert run(future_relation, future_coefficient).status is AllocationStatus.FURTHER_STUDY
+    assert run(relation, replace(coefficient, value=Fraction(0))).volume == Volume(0)
+    assert run(relation, replace(coefficient, value=Fraction(1))).volume == Volume(100_000_000)

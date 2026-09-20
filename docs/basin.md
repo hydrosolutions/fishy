@@ -36,7 +36,11 @@ numerically higher-order tributary.
 
 Call `verify_donor_relation(topology, recipient, relation, scope)` only under the
 explicitly selected receiving-parent interpretation. `DonorRelation` stores the
-recipient, donor and `EvidenceFindings`. Verification requires the actual parent
+recipient, donor and `EvidenceFindings`. Its optional `donor_reference` stores
+`DonorReference(provenance, period)`: the exact donor basis accepted for annual
+coefficient transfer. Relation-only topology checks do not require this field,
+but annual transfer does; omission cannot authorise an arbitrary coefficient basis.
+Verification requires the actual parent
 and accepted evidence for the exact requested product, recipient reach, member,
 period and use. Unknown support or missing topology/relation remains unknown and
 requires further study. Wrong connectivity or prohibited use fails. Excluded

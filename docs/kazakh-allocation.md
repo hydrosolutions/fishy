@@ -23,11 +23,20 @@ these initial volumes, not reduce them a second time.
   sufficiency by length. The `annual_monthly_reconstruction` finding identifies
   the preparation evidence; monthly distribution still needs its own shape.
 - Absent observations use `transfer_allocation`. Supply a `PreparedTopology`,
-  recipient `River`, `DonorRelation`, `InitialCoefficient` and explicit
+  recipient `River`, `DonorRelation` with an explicit `DonorReference`,
+  `InitialCoefficient` and explicit
   `DonorChoice.RECEIVING_PARENT`. The actual receiving parent must own the donor
-  section. Missing relation, coefficient, acceptance or choice yields further study,
+  section. The accepted relation binds the donor provenance and historical period
+  separately from the recipient reference. A different donor member or period is
+  permitted only when identified in that accepted relation. Undeclared donor
+  scenario/member/period changes cannot qualify; future-stress references cannot
+  enter this initial conditionally-natural route. Missing relation, coefficient,
+  donor reference, acceptance or choice yields further study,
   never a guessed zero or nearest gauge. Coefficients need initial-stage derivation
   evidence; a post-adjustment coefficient cannot use that product identity.
+  Initial median-normalised coefficients must lie in [0,1]; values outside this
+  interval remain further-study results rather than being clipped or admitted
+  through the distinct Uzbek donor-ratio rules.
 - `seasonal_schedule(initial, year, choice, shape)` consumes a supported imported
   `SeasonalShape` and explicitly selects design-class or shifted-class shape. The
   receiving calendar is separate from the historical reference period. Shapes must
@@ -49,7 +58,7 @@ The product provenance must match the reference or shape provenance.
 | `natural_annual_reference` | `initial_allocation` | Historical reference |
 | `annual_monthly_reconstruction` | `initial_allocation` | Historical reference |
 | `receiving_parent_transfer` | `initial_allocation` | Recipient historical reference |
-| `initial_coefficient_P25` (also P50/P75/P95) | `initial_allocation_transfer` | Supported donor derivation period |
+| `initial_coefficient_P25` (also P50/P75/P95) | `initial_allocation_transfer` | Donor derivation period identified by accepted relationship |
 | `seasonal_shape_P50` (selected natural exceedance) | `seasonal_allocation` | Receiving calendar year |
 
 Scientific acceptance for the stated use may be indicative. Official admissibility
@@ -102,6 +111,14 @@ repair. Calculated schedules are never labelled observed readings. Generated
 provenance retains attributed scientific/official statuses, reasons, prohibited uses
 and input limitations. The complete pattern evidence also remains in the seasonal
 result.
+
+Independent review also reproduced three failing transfer regressions before repair:
+unaccepted donor scenario, future-stress reference, and initial coefficient 2.
+`test_unaccepted_coefficient_basis_cannot_transfer` and
+`test_initial_transfer_coefficient_cannot_exceed_median` now reject those inputs.
+`test_transfer_accepts_explicit_distinct_donor_reference_but_not_undeclared_changes`
+proves a legitimate separately identified donor member/period still transfers,
+while stale periods/members remain unresolved and coefficients zero/one remain valid.
 
 All numerical expectations use exact rational arithmetic, with no tolerance. The
 example formats only displayed percentages. This capability does not by itself

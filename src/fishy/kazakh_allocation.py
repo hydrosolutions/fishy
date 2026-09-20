@@ -299,17 +299,30 @@ def transfer_allocation(
             and not any(s.river == relation.donor and s.location == coefficient.donor for s in topology.sections)
         ):
             raise ValueError("coefficient donor location differs from receiving parent")
-        donor_scope = EvidenceScope(
-            f"initial_coefficient_P{design.value}",
-            coefficient.donor.reach.identifier,
-            coefficient.evidence.provenance.reference_member,
-            coefficient.evidence.scope.period,
-            "initial_allocation_transfer",
-        )
-        check = permitted_use(coefficient.evidence, donor_scope)
-        if check.finding is not CheckFinding.PASS:
-            reasons += check.reasons
-        reasons += warmup_restrictions(coefficient.evidence.provenance, donor_scope.period)
+        if coefficient.value > 1:
+            reasons += ("initial median-normalised donor coefficient must lie in [0, 1]",)
+        accepted = relation.donor_reference if relation is not None else None
+        if accepted is None:
+            reasons += ("accepted relationship does not identify a donor reference basis",)
+        else:
+            if coefficient.evidence.provenance != accepted.provenance:
+                reasons += ("coefficient provenance differs from accepted donor reference basis",)
+            if accepted.provenance.reference_kind not in (
+                ReferenceKind.PRESENT_CLIMATE_NATURAL,
+                ReferenceKind.NATURALISED_HISTORICAL,
+            ):
+                reasons += ("initial donor coefficient requires a conditionally-natural reference",)
+            donor_scope = EvidenceScope(
+                f"initial_coefficient_P{design.value}",
+                coefficient.donor.reach.identifier,
+                accepted.provenance.reference_member,
+                accepted.period,
+                "initial_allocation_transfer",
+            )
+            check = permitted_use(coefficient.evidence, donor_scope)
+            if check.finding is not CheckFinding.PASS:
+                reasons += check.reasons
+            reasons += warmup_restrictions(coefficient.evidence.provenance, donor_scope.period)
     median = reference.volume(NaturalExceedance.P50)
     if median is None:
         reasons += ("recipient natural annual median missing",)

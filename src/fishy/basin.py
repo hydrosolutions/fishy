@@ -13,11 +13,13 @@ from fishy.evidence import (
     CheckSummary,
     EvidenceFindings,
     EvidenceScope,
+    Provenance,
     permitted_use,
     warmup_restrictions,
 )
 from fishy.quantities import Volume
 from fishy.spatial import Location
+from fishy.time import Interval
 
 
 def _text(value: str) -> None:
@@ -232,16 +234,31 @@ def mouth_to_source(topology: PreparedTopology) -> tuple[SectionContext, ...]:
 
 
 @dataclass(frozen=True)
+class DonorReference:
+    """The explicit donor reference accepted for transfer to the recipient scope."""
+
+    provenance: Provenance
+    period: Interval
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.provenance, Provenance) or not isinstance(self.period, Interval):
+            raise TypeError("donor reference requires provenance and historical period")
+
+
+@dataclass(frozen=True)
 class DonorRelation:
     recipient: River
     donor: River
     evidence: EvidenceFindings
+    donor_reference: DonorReference | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.recipient, River) or not isinstance(self.donor, River):
             raise TypeError("Donor relation requires River identities")
         if not isinstance(self.evidence, EvidenceFindings):
             raise TypeError("Donor relation requires scoped EvidenceFindings")
+        if self.donor_reference is not None and not isinstance(self.donor_reference, DonorReference):
+            raise TypeError("declared donor reference requires DonorReference")
 
 
 def verify_donor_relation(

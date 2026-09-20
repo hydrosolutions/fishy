@@ -303,3 +303,19 @@ def test_simulated_daily_flow_cannot_select_observed_daily_branch():
         LOCATION, day, Flow(8), Presence.PRESENT, replace(PROVENANCE, production_method=ProductionMethod.SIMULATED)
     )
     assert run((day,), temporal_basis=TemporalBasis.DAILY_STAGE, daily_observations=(simulated,))[0].value is None
+
+
+@pytest.mark.parametrize(
+    "field", ["source", "scenario", "reference_member", "data_version", "configuration_version", "software_version"]
+)
+@pytest.mark.parametrize("operand", ["coefficient", "biological_timing"])
+def test_evidence_only_version_change_cannot_validate_itself(field, operand):
+    if operand == "coefficient":
+        finding = evidence(coefficient_scope(LOCATION, MONTH, PROVENANCE))
+        finding = replace(finding, provenance=replace(finding.provenance, **{field: "unrelated"}))
+        result = run(coefficient_findings=(finding,))
+    else:
+        timing = biological_timing()
+        finding = replace(timing.findings, provenance=replace(timing.findings.provenance, **{field: "unrelated"}))
+        result = run(timing=replace(timing, findings=finding))
+    assert result[0].value is None

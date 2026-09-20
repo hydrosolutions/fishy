@@ -310,3 +310,34 @@ def test_supplied_biological_monthly_schedule_enters_bounds_and_changes_annual_v
     assert result.actual_volume == Volume(8 * YEAR.seconds + Fraction("1.44") * 30 * 86400)
     assert result.actual_volume.value > 8 * YEAR.seconds
     assert result.status is CandidateStatus.INTERPRETED
+
+
+@pytest.mark.parametrize(
+    "field", ["source", "scenario", "reference_member", "data_version", "configuration_version", "software_version"]
+)
+def test_coefficient_evidence_only_version_change_cannot_validate_itself(field):
+    c = coefficient()
+    assert c.findings is not None
+    changed = replace(c.findings, provenance=replace(c.findings.provenance, **{field: "unrelated"}))
+    result = correct_schedule(
+        (sample(8),), bounds(), (replace(c, findings=changed),), CorrectionOrder.CORRECTION_THEN_BOUNDS, RESULT
+    )
+    assert result.samples[0].value is None
+
+
+def test_future_reference_bound_cannot_validate_itself():
+    from fishy.evidence import ReferenceKind
+
+    b = bounds()
+    future = replace(b.natural_p99[0], provenance=replace(P, reference_kind=ReferenceKind.FUTURE_CLIMATE_STRESS))
+    b = replace(b, natural_p99=(future,))
+    with pytest.raises(ValueError, match="reference"):
+        correct_schedule((sample(8),), b, (coefficient(),), CorrectionOrder.CORRECTION_THEN_BOUNDS, RESULT)
+
+
+def test_lower_bound_override_of_supported_reduction_remains_a_conflict():
+    result = correct_schedule(
+        (sample(8),), bounds(), (coefficient("0.5"),), CorrectionOrder.CORRECTION_THEN_BOUNDS, RESULT
+    )
+    assert result.samples[0].value == Flow(5)
+    assert "lower_bound_overrides_correction" in tuple(c.value for c in result.intervals[0].conflicts)

@@ -137,7 +137,7 @@ is included.
 
 Executed on the supplied-duty branch:
 
-- `uv run --all-extras pytest -q`: **158 passed**.
+- `uv run --all-extras pytest -q`: **160 passed**.
 - `uv run --all-extras ruff format --check`, `ruff check`, `ty check`: passed.
 - Both maintained examples: exact 43,200 m³ shortfall asserted.
 - `uv run --isolated --no-dev --locked python examples/supplied_duty.py`: passed.
@@ -149,3 +149,9 @@ Executed on the supplied-duty branch:
 The physical performance regression instrumented the real source digest getter:
 four full serialisations for repeated two-step reads before the fix, one after.
 Source projections remain immutable; the cached attribution does not alter data.
+
+Independent review added two actual-model regressions, each executed failing before
+repair. Aggregated simulated/imported inputs cannot be relabelled as observations,
+including nested component histories. A constituent range overlapping excluded
+warm-up retains its numeric mass/water and requested interval but has unsupported
+concentration evidence. `tests/test_physical.py` maintains both witnesses.

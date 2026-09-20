@@ -355,3 +355,35 @@ def test_global_physical_domain_support_cannot_pass_duty(tmp_path):
         result = assess_samples(samples, (0, 0))
         assert result.summary.finding is CheckFinding.UNKNOWN
         assert result.summary.completeness is Completeness.INCOMPLETE
+
+
+def test_simulation_aggregation_cannot_become_observed_even_through_imported_aggregate():
+    from fishy.flows import aggregate_flow
+
+    simulated = projection(model().physical).flows()
+    observed_provenance = replace(simulated[0].provenance, production_method=ProductionMethod.OBSERVED)
+    with pytest.raises(ValueError, match="non-observed contributors"):
+        aggregate_flow(simulated, provenance=observed_provenance)
+    imported = aggregate_flow(
+        simulated, provenance=replace(simulated[0].provenance, production_method=ProductionMethod.IMPORTED)
+    )
+    with pytest.raises(ValueError, match="non-observed contributors"):
+        aggregate_flow((imported,), provenance=observed_provenance)
+    with pytest.raises(ValueError, match="non-observed contributors"):
+        replace(imported, provenance=observed_provenance)
+
+
+def test_excluded_warmup_constituent_retains_amounts_but_cannot_be_supported():
+    adapter = projection(model().physical)
+    adapter = replace(adapter, provenance=replace(adapter.provenance, excluded_warmup=(adapter.interval(0),)))
+    salt = adapter.constituent("salt", chemical_form="NaCl", reporting_basis="as NaCl")
+    assert salt.presence is Presence.UNSUPPORTED
+    assert salt.concentration_kg_m3 is None
+    assert salt.mass_kg == 216000
+    assert salt.water is not None and salt.water.value == 432000
+    assert salt.interval.start == adapter.interval(0).start
+    assert salt.interval.end == adapter.interval(1).end
+    assert "warm-up" in " ".join(salt.reasons)
+    later = adapter.constituent("salt", chemical_form="NaCl", reporting_basis="as NaCl", start=1)
+    assert later.presence is Presence.PRESENT
+    assert later.concentration_kg_m3 == Fraction(1, 2)

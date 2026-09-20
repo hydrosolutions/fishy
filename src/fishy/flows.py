@@ -8,7 +8,7 @@ from fractions import Fraction
 
 import polars as pl
 
-from fishy.evidence import CorrectionState, Provenance
+from fishy.evidence import CorrectionState, ProductionMethod, Provenance
 from fishy.quantities import Flow, FlowBounds, Volume, interval_volume, mean_discharge
 from fishy.spatial import Location
 from fishy.time import Interval
@@ -56,6 +56,13 @@ class FlowSample:
         object.__setattr__(self, "reasons", tuple(self.reasons))
         if not isinstance(self.components, tuple) or any(not isinstance(item, FlowSample) for item in self.components):
             raise TypeError("aggregate components require immutable FlowSample records")
+        if self.provenance.production_method is ProductionMethod.OBSERVED:
+            contributors = list(self.components)
+            while contributors:
+                contributor = contributors.pop()
+                if contributor.provenance.production_method is not ProductionMethod.OBSERVED:
+                    raise ValueError("non-observed contributors cannot become observed through aggregation")
+                contributors.extend(contributor.components)
         if self.presence is Presence.PRESENT and self.value is None:
             raise ValueError("present flow needs a value, including explicit zero")
         if (

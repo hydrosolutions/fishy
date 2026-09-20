@@ -240,6 +240,12 @@ class PhysicalProjection:
             presence = Presence.DRY if water is not None and water.value == 0 else Presence.UNSUPPORTED
         if presence is not Presence.PRESENT and not reasons:
             reasons = (f"physical constituent {presence.value}",)
+        if any(
+            interval.start < period.end and period.start < interval.end for period in self.provenance.excluded_warmup
+        ):
+            presence = Presence.UNSUPPORTED
+            concentration = None
+            reasons += ("requested interval includes excluded warm-up",)
         if stop - start > 1:
             reasons += ("aggregate loses within-interval resolution",)
         return ConstituentSample(

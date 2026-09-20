@@ -99,10 +99,11 @@ support; a flow schedule alone cannot establish these processes.
 | `test_partial_annual_missing_shape_and_reconstruction` | Supported initial80 million m³ survives missing shape; no fabricated monthly/actual annual total; missing reconstruction blocks dependent initial result |
 | `test_unsupported_biology_and_infeasible_bounds_preserve_initial` | Eligibility affected by unexplained stars stays unsupported; crossed source bounds calculate no candidate; initial40 remains available |
 | `test_required_failure_survives_missing_condition` | Floodplain depth0.05 <0.2 m yields FAIL plus INCOMPLETE despite missing duration/velocity; missing study yields UNKNOWN |
-| `test_configuration_isolation_and_review_triggers` | Scenario/config/data revisions stay separate; changing the listed basin row2→3 gives dry-class40,000,000 ×309/305 m³ while earlier outputs remain unchanged; changed basin plus missing evidence requires review with incomplete coverage; unrelated caller Uzbek settings have no operand path |
+| `test_configuration_isolation_and_review_triggers` | Scenario/config/data revisions stay separate; changing the listed basin row2→3 gives dry-class40,000,000 ×309/305 m³ while earlier outputs remain unchanged; changed basin plus missing evidence requires review with incomplete coverage; native coefficient override changes only the revised result; no Uzbek policy operand enters the operations |
 | `test_use_mapping_keeps_conflict_and_replica_restrictions` | Class4 drinking: unresolved / conditional intensive treatment / not permitted under no selection / descriptive / matrix; both attributed findings retained |
 | `test_prepared_basin_context_and_attributed_account_do_not_sum_repeated_sections` | Mouth→upstream→tributaries; all context kinds retained; exact sum; absent accounting unknown; duplicate river accounts rejected |
 | `test_historical_2024_leap_shape_keeps_volume_but_quality_cannot_backdate` | February29/366 shares; annual100 million preserved; pre-commencement quality unknown despite later calculation date |
+| `test_supplied_kazakh_duty_is_not_generated_or_capped_by_deliverability` | Actual corrected April requirement remains separate from supplied availability8, deliverability6, hypothetical duty10 and delivery5 m³/s; feasibility shortfall4, duty shortfall5 with incomplete hydraulic coverage; later11 leaves prior result and duty unchanged |
 | `test_supplied_hydraulic_relation_changes_actual_report_without_renormalising` | Supported relation +0.1 before April1.18 correction gives exact additional305,856 m³, retaining initial40 million |
 
 ## Source clause → operation → result → executed test crosswalk
@@ -185,10 +186,14 @@ This is not a field basin pilot. No reconstruction engine, routing solver, therm
 reactive-process simulator, optimisation or legal duty issuance is implied. No
 available/deliverable water or actual delivery is invented from a requirement. The
 Uzbek deliverability cap, quality-activation gate and advisory spawning semantics are
-not used. Foundation duty assessment remains separate under its supplied duty basis.
+not used. `test_supplied_kazakh_duty_is_not_generated_or_capped_by_deliverability` calls native
+`assess_feasibility` and `assess_duty` with an independently supplied hypothetical
+Kazakh duty. Discharge failure survives missing hydraulic coverage. Duty10 is never
+replaced by deliverability6; later delivery11 does not rewrite either duty or prior
+shortfall5. Its monthly delivered amount does not establish within-month performance.
 
 Common acceptance: C1 physical identities/context do not infer a track from water use;
 C2 scenario/version isolation; C3 failure plus incomplete and unknown required checks;
-C4 separate prescribed-duty semantics, **not** the Uzbek capped-duty formula;
+C4 native supplied-duty test above, **not** the Uzbek capped-duty formula;
 C5 exact calendar/units/support and zero-versus-missing tests; C6 independently runnable
 supplied example with useful annual-only results and external comparisons.

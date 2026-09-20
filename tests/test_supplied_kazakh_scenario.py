@@ -202,9 +202,8 @@ def test_configuration_isolation_and_review_triggers():
     assert second.actual_volume == Volume(Fraction(40_000_000 * 309, 305))
     assert first.actual_volume != second.actual_volume
     assert report.samples[0].provenance.scenario != new_report.samples[0].provenance.scenario
-    # A caller's Uzbek settings are not operands to any Kazakh operation.
-    hypothetical_uzbek = {"coefficient": Fraction(1), "quality_limit": 1}
-    hypothetical_uzbek.update(coefficient=Fraction(99), quality_limit=999)
+    # The native scenario/configuration and listed-row override above changes results.
+    # Re-running the original supplied configuration preserves its issued evidence.
     assert corrected_design(initial) == (first, report)
     review = review_inventory(PROVENANCE)
     changed = assess_review(
@@ -426,3 +425,55 @@ def test_supplied_hydraulic_relation_changes_actual_report_without_renormalising
     actual = appendix1_report(initial, YEAR, result.samples, ScheduleStage.CORRECTED, IDENTITY)
     assert actual.annual.volume == result.actual_volume
     assert initial.volume == Volume(40_000_000)
+
+
+def test_supplied_kazakh_duty_is_not_generated_or_capped_by_deliverability():
+    from fishy.duties import (
+        Availability,
+        ComparisonKind,
+        Deliverability,
+        Delivery,
+        DutyApplicability,
+        Obligation,
+        Requirement,
+        SuppliedDuty,
+        assess_duty,
+        assess_feasibility,
+    )
+
+    initial = initial_allocation(
+        natural_reference(ObservationRoute.ADEQUATE), DesignClass.DRY, AllocationRoute.PROBABILITY_SHIFT
+    )
+    corrected, report = corrected_design(initial)
+    sample = corrected.samples[3]
+    requirement = Requirement(sample, "candidate-v1")
+    available = Availability(replace(sample, value=Flow(8)), "availability-v1")
+    deliverable = Deliverability(replace(sample, value=Flow(6)), "capacity-v1")
+    issued = Obligation(replace(sample, value=Flow(10)), "issued-v1")
+    delivered = Delivery(replace(sample, value=Flow(5)), "delivery-v1")
+    duty = SuppliedDuty(
+        "independent supplied Kazakh duty",
+        "issued-v1",
+        "separately supplied illustrative duty, not derived from annual allocation",
+        DutyApplicability.HYPOTHETICAL,
+        (issued,),
+        "synthetic instrument search",
+        required_components=("discharge", "hydraulic"),
+    )
+    feasibility = assess_feasibility(duty, (deliverable,))
+    result = assess_duty(duty, (delivered,))
+    assert feasibility.intervals[0].shortfall == Flow(4)
+    assert result.intervals[0].shortfall == Flow(5)
+    assert result.known_shortfall_volume == Volume(5 * sample.interval.seconds)
+    assert result.summary.finding is CheckFinding.FAIL
+    assert result.summary.completeness is Completeness.INCOMPLETE
+    assert result.interpretation is ComparisonKind.PREDICTION
+    assert duty.schedule[0].sample.value == Flow(10)
+    assert requirement.sample.value == report.monthly[3].flow
+    assert available.sample.value == Flow(8)
+    assert report.initial.volume == initial.volume
+    later = assess_duty(duty, (Delivery(replace(delivered.sample, value=Flow(11)), "delivery-v2"),))
+    assert later.intervals[0].shortfall == Flow(0)
+    assert later.summary.finding is CheckFinding.UNKNOWN
+    assert result.intervals[0].shortfall == Flow(5)
+    assert duty.schedule[0].sample.value == Flow(10)

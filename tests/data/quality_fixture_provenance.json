@@ -1,0 +1,11 @@
+{
+  "source": "report_snapshot/quality_support/quality_fixtures.json",
+  "sha256": "a65d18cf5074c15ae6366af2faf50c91dfb5af1b62deb578fb663d0d141513fe",
+  "status": "Synthetic arithmetic and behavior cases, not observations or policy thresholds",
+  "governing_sources": [
+    "report_snapshot/part4_quality_calculation.qmd#sec-quality-mixing",
+    "report_snapshot/part4_quality_calculation.qmd#sec-quality-parameters",
+    "ACCEPTANCE.md sections 5\u20136"
+  ],
+  "adaptation": "Original bytes retained. Current public operations and explicit synthetic input completions are in tests/test_quality_acceptance.py; no historical software interfaces are recreated."
+}

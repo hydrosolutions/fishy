@@ -112,9 +112,11 @@ def main() -> None:
         )
         seasonal = seasonal_schedule(initial, year, ShapeChoice.SHIFTED_CLASS, pattern)
         report = appendix1_report(initial, year, seasonal.samples, ScheduleStage.INITIAL, identity)
+        february_share = report.monthly[1].annual_share_percent
+        assert february_share is not None
         print(
             f"P{design.value}: alpha={initial.coefficient}; annual={report.annual.million_m3} million m3; "
-            f"February share={float(report.monthly[1].annual_share_percent):.6f}%"
+            f"February share={float(february_share):.6f}%"
         )
     print("These initial schedules still need applicable ecological/bounds and source-interpretation assessments.")
 

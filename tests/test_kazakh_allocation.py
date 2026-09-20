@@ -161,7 +161,11 @@ def test_explicit_shape_operators(choice, probability, values, expected):
     ref = replace(reference(), quantiles=(AnnualQuantile(NaturalExceedance.P50, Volume(10 * YEAR.seconds)),))
     initial = initial_allocation(ref, DesignClass.WET, AllocationRoute.PROBABILITY_SHIFT)
     result = seasonal_schedule(initial, YEAR, choice, shape(probability, values))
-    assert tuple(s.value.value for s in result.samples) == expected
+    values = []
+    for sample in result.samples:
+        assert sample.value is not None
+        values.append(sample.value.value)
+    assert tuple(values) == expected
     report = appendix1_report(initial, YEAR, result.samples, ScheduleStage.INITIAL)
     assert report.annual.volume == initial.volume
     assert report.annual.flow == Flow(10)
@@ -205,7 +209,11 @@ def test_appendix1_leap_months_corrected_volume_no_renormalisation():
     assert report.annual.volume == Volume(10 * 366 * 86400)
     assert report.annual.million_m3 == Fraction(10 * 366 * 86400, 1_000_000)
     assert report.annual.volume != report.initial.volume
-    assert sum(c.annual_share_percent for c in report.monthly) == 100
+    shares = []
+    for cell in report.monthly:
+        assert cell.annual_share_percent is not None
+        shares.append(cell.annual_share_percent)
+    assert sum(shares) == 100
     assert report.location == LOCATION
     assert report.design is DesignClass.WET
 
@@ -263,7 +271,7 @@ def test_single_design_class_carrier_and_invalid_domain():
     with pytest.raises(ValueError):
         DesignClass(90)
     with pytest.raises(TypeError):
-        initial_allocation(reference(), 25, AllocationRoute.PROBABILITY_SHIFT)
+        initial_allocation(reference(), 25, AllocationRoute.PROBABILITY_SHIFT)  # ty: ignore[invalid-argument-type]
 
 
 def test_receiving_parent_transfer_success_missing_and_incompatible():
@@ -351,6 +359,7 @@ def test_scaled_observed_pattern_cannot_become_observed_discharge():
     result = seasonal_schedule(initial, YEAR, ShapeChoice.SHIFTED_CLASS, pattern)
     assert result.samples
     assert all(s.provenance.production_method is not ProductionMethod.OBSERVED for s in result.samples)
+    assert result.shape is not None
     assert result.shape.provenance.production_method is ProductionMethod.OBSERVED
     assert any("synthetic only" in reason for reason in result.samples[0].provenance.limitations)
     assert any("accepted as indicative" in reason for reason in result.samples[0].provenance.limitations)

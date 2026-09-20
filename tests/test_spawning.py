@@ -55,6 +55,7 @@ PROVENANCE = Provenance(
 ONSET = datetime(2024, 4, 15, tzinfo=UTC)
 MONTH = Interval(datetime(2024, 4, 1, tzinfo=UTC), datetime(2024, 5, 1, tzinfo=UTC))
 PERIOD = Interval(ONSET, ONSET + timedelta(days=6))
+APPLICABILITY = Interval(datetime(2024, 1, 1, tzinfo=UTC), datetime(2025, 1, 1, tzinfo=UTC))
 
 
 def evidence(scope):
@@ -84,6 +85,8 @@ def biological_timing():
         SignedState(StateVariable.TEMPERATURE, 15, "degC", "species onset threshold"),
         evidence(study_scope("spawning_timing")),
         LOCATION,
+        APPLICABILITY,
+        evidence(study_scope("spawning_timing_applicability", APPLICABILITY)),
     )
 
 
@@ -354,10 +357,130 @@ def test_daily_observation_record_is_retained_when_unsupported():
 
 def test_required_study_scopes_remain_when_supporting_findings_are_removed():
     result = run()[0]
-    assert result.required_support == (biological_timing().findings.scope,)
+    timing = biological_timing()
+    assert timing.applicability_findings is not None
+    assert result.required_support == (timing.findings.scope, timing.applicability_findings.scope)
     removed = replace(result, supporting_evidence=())
     assert removed.required_support == result.required_support
     with pytest.raises(ValueError, match="duplicate required"):
         replace(result, required_support=result.required_support * 2)
     with pytest.raises(TypeError, match="immutable EvidenceScope"):
         replace(result, required_support=list(result.required_support))
+
+
+def test_previous_year_biology_cannot_establish_neutral_current_year():
+    months = tuple(
+        Interval(
+            datetime(2025, m, 1, tzinfo=UTC),
+            datetime(2025, m + 1, 1, tzinfo=UTC) if m < 12 else datetime(2026, 1, 1, tzinfo=UTC),
+        )
+        for m in range(1, 13)
+    )
+    result = run(months)
+    assert all(c.value is None for c in result), "2024 biology cannot establish absence of spawning in 2025"
+
+
+@pytest.mark.parametrize("missing", ["applicability", "findings"])
+def test_missing_explicit_applicability_does_not_infer_neutral_month(missing):
+    timing = biological_timing()
+    timing = replace(
+        timing, **({"applicability": None} if missing == "applicability" else {"applicability_findings": None})
+    )
+    january = Interval(APPLICABILITY.start, datetime(2024, 2, 1, tzinfo=UTC))
+    assert run((january,), timing=timing)[0].value is None
+
+
+def test_current_year_offseason_has_explicit_supported_neutral_value():
+    january = Interval(APPLICABILITY.start, datetime(2024, 2, 1, tzinfo=UTC))
+    result = run((january,))[0]
+    assert result.value == 1
+    assert any(
+        s.product == "spawning_timing_applicability" and s.period == APPLICABILITY for s in result.required_support
+    )
+
+
+@pytest.mark.parametrize(
+    "shift,expected", [(15, (Fraction(1), Fraction("1.18"))), (-15, (Fraction("1.18"), Fraction(1)))]
+)
+def test_explicit_cross_year_single_cycle_preserves_shifted_season(shift, expected):
+    application = Interval(datetime(2024, 12, 1, tzinfo=UTC), datetime(2025, 2, 1, tzinfo=UTC))
+    onset = datetime(2024, 12, 27, tzinfo=UTC)
+    timing = replace(
+        biological_timing(),
+        baseline_onset=onset,
+        annual_shift_days=shift,
+        applicability=application,
+        applicability_findings=evidence(study_scope("spawning_timing_applicability", application)),
+    )
+    timing = replace(timing, findings=evidence(study_scope("spawning_timing", timing.period)))
+    months = (
+        Interval(application.start, datetime(2025, 1, 1, tzinfo=UTC)),
+        Interval(datetime(2025, 1, 1, tzinfo=UTC), application.end),
+    )
+    result = run(months, timing=timing)
+    assert tuple(c.value for c in result) == expected
+    assert timing.period.seconds == 6 * 86400
+
+
+def test_current_horizon_cannot_relabel_a_previous_year_season():
+    timing = replace(biological_timing(), baseline_onset=ONSET.replace(year=2023))
+    timing = replace(timing, findings=evidence(study_scope("spawning_timing", timing.period)))
+    assert run(timing=timing)[0].value is None
+
+
+def test_stretching_single_cycle_into_multiple_years_is_invalid():
+    extended = Interval(APPLICABILITY.start, datetime(2026, 1, 1, tzinfo=UTC))
+    with pytest.raises(ValueError, match="one annual cycle"):
+        replace(
+            biological_timing(),
+            applicability=extended,
+            applicability_findings=evidence(study_scope("spawning_timing_applicability", extended)),
+        )
+
+
+@pytest.mark.parametrize("change", ["period", "scenario", "data_version", "configuration_version", "rejected"])
+def test_temporal_applicability_findings_bind_actual_horizon_and_version(change):
+    timing = biological_timing()
+    assert timing.applicability_findings is not None
+    findings = timing.applicability_findings
+    if change == "period":
+        findings = replace(findings, scope=replace(findings.scope, period=PERIOD))
+    elif change == "rejected":
+        findings = replace(findings, scientific_adequacy=ScientificAdequacy.NOT_ACCEPTED)
+    else:
+        findings = replace(findings, provenance=replace(findings.provenance, **{change: "unrelated"}))
+    assert run(timing=replace(timing, applicability_findings=findings))[0].value is None
+
+
+@pytest.mark.parametrize("days", [365, 366])
+def test_supported_single_cycle_365_and_366_day_horizons(days):
+    application = Interval(APPLICABILITY.start, APPLICABILITY.start + timedelta(days=days))
+    timing = replace(
+        biological_timing(),
+        applicability=application,
+        applicability_findings=evidence(study_scope("spawning_timing_applicability", application)),
+    )
+    assert run(timing=timing)[0].value == Fraction("1.18")
+
+
+def test_one_second_over_single_cycle_ceiling_is_invalid():
+    application = Interval(APPLICABILITY.start, APPLICABILITY.start + timedelta(days=366, seconds=1))
+    with pytest.raises(ValueError, match="one annual cycle"):
+        replace(biological_timing(), applicability=application)
+
+
+@pytest.mark.parametrize(
+    "start,end",
+    [
+        (datetime(2024, 4, 2, tzinfo=UTC), datetime(2024, 5, 1, tzinfo=UTC)),
+        (datetime(2024, 4, 1, tzinfo=UTC), datetime(2024, 4, 20, tzinfo=UTC)),
+    ],
+)
+def test_horizon_must_contain_whole_requested_month_and_whole_season(start, end):
+    application = Interval(start, end)
+    timing = replace(
+        biological_timing(),
+        applicability=application,
+        applicability_findings=evidence(study_scope("spawning_timing_applicability", application)),
+    )
+    assert run(timing=timing)[0].value is None

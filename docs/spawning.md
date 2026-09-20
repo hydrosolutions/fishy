@@ -15,6 +15,42 @@ shift is limited to ±15 whole days. It moves the complete season without
 shortening any stage. Appendix 4 dates are retained as source metadata, never
 used to infer biological onset.
 
+The biological evidence also needs an explicit **single-cycle applicability**
+interval and matching `applicability_findings`. The interval must contain the
+complete shifted season and every requested coefficient interval. It is at most
+366 elapsed days, the longest Gregorian annual cycle. It can cross 31 December;
+no calendar-year equality test is used. It is not a recurring seasonal template.
+A multi-year run supplies separate annual biological cycles rather than extending
+one dated season across later years. A neutral `K=1` outside the season is supported
+only within that explicitly evidenced applicability, never from non-overlap alone.
+
+### Supplying applicability to an existing timing record
+
+Calls without the new fields return unsupported coefficients. No compatibility
+rule invents temporal support. Supply the receiving cycle and evidence explicitly:
+
+```python
+applicability = Interval(cycle_start, cycle_end)
+applicability_scope = EvidenceScope(
+    "spawning_timing_applicability",
+    location.reach.identifier,
+    provenance.reference_member,
+    applicability,
+    "spawning_correction",
+)
+# Caller supplies actual findings for this exact scope and provenance.
+timing = replace(
+    timing,
+    applicability=applicability,
+    applicability_findings=accepted_applicability_findings,
+)
+```
+
+The findings must match `applicability_scope`; simply changing their period is not
+scientific acceptance of another cycle. The complete executable construction is
+in `examples/spawning.py`. For a December–January season, explicitly supply a
+single-cycle interval covering the whole shifted season and requested months.
+
 * Daily-stage requests need complete daily observations (`ProductionMethod.OBSERVED`) at the same location,
   scenario and reference. Each day must fit one biological stage.
 * Monthly requests use the printed seasonal coefficient for each complete

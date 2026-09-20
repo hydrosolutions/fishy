@@ -46,6 +46,7 @@ def main() -> None:
     onset = datetime(2024, 4, 15, tzinfo=UTC)
     period = Interval(onset, onset + timedelta(days=6))
     month = Interval(datetime(2024, 4, 1, tzinfo=UTC), datetime(2024, 5, 1, tzinfo=UTC))
+    applicability = Interval(datetime(2024, 1, 1, tzinfo=UTC), datetime(2025, 1, 1, tzinfo=UTC))
 
     def evidence(scope: EvidenceScope) -> EvidenceFindings:
         return EvidenceFindings(
@@ -72,6 +73,16 @@ def main() -> None:
             )
         ),
         location,
+        applicability,
+        evidence(
+            EvidenceScope(
+                "spawning_timing_applicability",
+                location.reach.identifier,
+                provenance.reference_member,
+                applicability,
+                "spawning_correction",
+            )
+        ),
     )
     coefficients = spawning_schedule(
         location,

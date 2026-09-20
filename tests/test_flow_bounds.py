@@ -93,7 +93,7 @@ def test_discriminator_real_volume_and_unresolved_priority(order, expected, preb
     assert result.bounds.natural_p99[0].value == Flow(5)
     assert result.annual_checks.finding is (CheckFinding.PASS if expected == 10 else CheckFinding.FAIL)
     assert result.annual_scientific_use[0].finding is CheckFinding.UNKNOWN
-    assert result.intervals[0].scientific_use.finding is CheckFinding.PASS
+    assert result.intervals[0].scientific_use.finding is CheckFinding.UNKNOWN
     assert result.samples[0].components[0] == sample(8)
 
 
@@ -341,3 +341,52 @@ def test_lower_bound_override_of_supported_reduction_remains_a_conflict():
     )
     assert result.samples[0].value == Flow(5)
     assert "lower_bound_overrides_correction" in tuple(c.value for c in result.intervals[0].conflicts)
+
+
+def test_supporting_biological_rejection_cannot_be_promoted_to_scientific_pass():
+    c = coefficient()
+    assert c.findings is not None
+    failed = replace(
+        c.findings,
+        scope=replace(c.findings.scope, product="spawning_timing"),
+        scientific_adequacy=ScientificAdequacy.NOT_ACCEPTED,
+        reasons=("biological timing study rejected for spawning correction",),
+    )
+    c = replace(c, supporting_evidence=(failed,))
+    result = correct_schedule((sample(8),), bounds(), (c,), CorrectionOrder.CORRECTION_THEN_BOUNDS, RESULT)
+    assert result.samples[0].value == Flow(10)
+    assert result.intervals[0].scientific_use.finding is CheckFinding.FAIL
+
+
+def test_missing_biological_support_is_not_scientific_pass():
+    c = coefficient()
+    result = correct_schedule((sample(8),), bounds(), (c,), CorrectionOrder.CORRECTION_THEN_BOUNDS, RESULT)
+    assert result.samples[0].value == Flow(10)
+    assert result.intervals[0].scientific_use.finding is CheckFinding.UNKNOWN
+
+
+@pytest.mark.parametrize(
+    "alteration", ["missing", "scenario", "reference_member", "data_version", "configuration_version", "period", "use"]
+)
+def test_required_biological_support_binds_declared_derivation_scope(alteration):
+    c = coefficient()
+    assert c.findings is not None
+    scope = replace(c.findings.scope, product="spawning_timing")
+    support = replace(c.findings, scope=scope)
+    accepted = replace(c, required_support=(scope,), supporting_evidence=(support,))
+    result = correct_schedule((sample(8),), bounds(), (accepted,), CorrectionOrder.CORRECTION_THEN_BOUNDS, RESULT)
+    assert result.intervals[0].scientific_use.finding is CheckFinding.PASS
+    if alteration == "missing":
+        altered = replace(accepted, supporting_evidence=())
+    elif alteration == "period":
+        support = replace(support, scope=replace(scope, period=Interval(YEAR.start, datetime(2024, 2, 1, tzinfo=UTC))))
+        altered = replace(accepted, supporting_evidence=(support,))
+    elif alteration == "use":
+        support = replace(support, scope=replace(scope, intended_use="other_use"))
+        altered = replace(accepted, supporting_evidence=(support,))
+    else:
+        support = replace(support, provenance=replace(support.provenance, **{alteration: "unrelated"}))
+        altered = replace(accepted, supporting_evidence=(support,))
+    result = correct_schedule((sample(8),), bounds(), (altered,), CorrectionOrder.CORRECTION_THEN_BOUNDS, RESULT)
+    assert result.samples[0].value == Flow(10)
+    assert result.intervals[0].scientific_use.finding is CheckFinding.UNKNOWN

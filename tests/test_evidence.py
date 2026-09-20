@@ -311,6 +311,7 @@ def test_evidence_gate_and_real_duty_arithmetic_remain_independent(
 ) -> None:
     evidence = replace(
         accepted_evidence,
+        provenance=replace(accepted_evidence.provenance, excluded_warmup=()),
         restrictions=(UseRestriction("rating range excludes screening", ("screening",)),) if restricted else (),
     )
     location = Location(

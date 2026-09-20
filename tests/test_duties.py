@@ -68,7 +68,7 @@ def test_supplied_schedule_shortfall_does_not_cancel_and_versions_stay_immutable
     prescribed = duty()
     delivered = tuple(Delivery(s, "delivery-v1") for s in samples((1.5, 3.5)))
     result = assess_duty(prescribed, delivered)
-    assert tuple(row.shortfall.value for row in result.intervals) == (Fraction(1, 2), 0)
+    assert tuple(row.shortfall for row in result.intervals) == (Flow(Fraction(1, 2)), Flow(0))
     assert result.known_shortfall_volume == Volume(43200)
     assert result.summary.finding is CheckFinding.FAIL
     assert result.summary.completeness is Completeness.COMPLETE
@@ -95,6 +95,7 @@ def test_missing_unknown_and_unsupported_never_become_zero_or_cancel_known_failu
     assert result.summary.completeness is Completeness.INCOMPLETE
     assert result.known_shortfall_volume == Volume(43200)
     assert result.intervals[1].shortfall is None
+    assert result.intervals[1].delivery is not None
     assert result.intervals[1].delivery.sample.presence is presence
 
 
@@ -128,6 +129,9 @@ def test_quantity_roles_are_distinct_and_no_foreign_duty_cap_is_applied():
     issued = Obligation(replace(sample, value=Flow(6)), "v1")
     delivered = Delivery(replace(sample, value=Flow(5)), "v1")
     # The later Uzbek assembly owns selecting/issuing 6 from 10/6. Here 6 is supplied.
+    assert requirement.sample.value is not None
+    assert issued.sample.value is not None
+    assert delivered.sample.value is not None
     assert requirement.sample.value.value - issued.sample.value.value == 4
     assert issued.sample.value.value - delivered.sample.value.value == 1
     assert floor.sample.value == Flow(2) and available.sample.value == Flow(8)
@@ -136,7 +140,7 @@ def test_quantity_roles_are_distinct_and_no_foreign_duty_cap_is_applied():
     assert infeasible.duty.schedule[0].sample.value == Flow(10)
     assert infeasible.interpretation is ComparisonKind.FEASIBILITY
     with pytest.raises(TypeError, match="actual Delivery"):
-        assess_duty(duty((10,)), (deliverable,))
+        assess_duty(duty((10,)), (deliverable,))  # ty: ignore[invalid-argument-type] -- runtime role refusal
 
 
 def test_uncertainty_is_separate_and_daily_means_do_not_certify_within_day():
@@ -217,3 +221,47 @@ def test_import_refuses_invalid_domains_units_nonfinite_duplicates_and_mappings(
     assert SignedState(StateVariable.VELOCITY, "-0.2", "m/s", "downstream-positive").value == Fraction(-1, 5)
     assert Flow(1000, "l/s") == Flow(1)
     assert Volume(1000, "l") == Volume(1)
+
+
+def test_excluded_warmup_cannot_enter_supported_assessment():
+    sample = samples((3,))[0]
+    excluded = replace(sample, provenance=replace(sample.provenance, excluded_warmup=(sample.interval,)))
+    result = assess_duty(duty((2,)), (Delivery(excluded, "1"),))
+    assert result.summary.finding is CheckFinding.UNKNOWN
+    assert result.intervals[0].shortfall is None
+
+
+def test_missing_observation_correction_status_cannot_carry_present_value():
+    sample = samples((3,))[0]
+    with pytest.raises(ValueError, match="missing observation"):
+        replace(sample, provenance=replace(sample.provenance, correction_state=CorrectionState.MISSING))
+
+
+def test_heterogeneous_observation_corrections_and_source_history_remain_attributable():
+    original, corrected = samples((1, 3))
+    corrected = replace(
+        corrected,
+        provenance=replace(
+            corrected.provenance,
+            source="replacement gauge",
+            data_version="corrected-v2",
+            correction_state=CorrectionState.CORRECTED,
+        ),
+    )
+    readings = (original, corrected)
+    result = assess_duty(duty(), tuple(Delivery(s, "1") for s in readings))
+    assert result.intervals[0].delivery is not None
+    assert result.intervals[1].delivery is not None
+    assert result.intervals[0].delivery.sample.provenance.correction_state is CorrectionState.ORIGINAL
+    assert result.intervals[1].delivery.sample.provenance.correction_state is CorrectionState.CORRECTED
+    assert result.intervals[1].delivery.sample.provenance.source == "replacement gauge"
+    assert daily_discharge(readings).height == 2
+    aggregate_provenance = replace(
+        provenance(ProductionMethod.IMPORTED), source="documented weighted aggregation", data_version="aggregation-v1"
+    )
+    aggregate = aggregate_flow(readings, provenance=aggregate_provenance)
+    assert aggregate.value == Flow(2)
+    assert aggregate.components == readings
+    assert aggregate.provenance == aggregate_provenance
+    with pytest.raises(ValueError, match="aggregate provenance"):
+        aggregate_flow(readings)

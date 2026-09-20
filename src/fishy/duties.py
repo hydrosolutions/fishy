@@ -5,7 +5,7 @@ from enum import StrEnum
 from fractions import Fraction
 
 from fishy.evidence import Check, CheckFinding, CheckSummary, ProductionMethod, aggregate_checks
-from fishy.flows import Coverage, FlowSample, Presence, check_flow_intervals
+from fishy.flows import Coverage, FlowSample, IntervalUse, Presence, check_flow_intervals, interval_use
 from fishy.quantities import Flow, Volume
 from fishy.time import Interval
 
@@ -209,6 +209,11 @@ def _assess(
         uncertainty = Check(check_id, CheckFinding.UNKNOWN, ("supported uncertainty comparison unavailable",))
         if actual is None:
             reasons = ("required delivery interval omitted",)
+        elif (
+            interval_use(target) is IntervalUse.EXCLUDED_WARMUP
+            or interval_use(actual.sample) is IntervalUse.EXCLUDED_WARMUP
+        ):
+            reasons = ("excluded warm-up interval cannot establish satisfaction",)
         elif target.presence is not Presence.PRESENT or actual.sample.presence is not Presence.PRESENT:
             reasons = (
                 f"duty {target.presence.value}; delivery {actual.sample.presence.value}",

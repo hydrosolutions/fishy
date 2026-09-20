@@ -35,7 +35,10 @@ scenario runner, comparison service or report framework.
   annual design-condition hydrographs, not discharge percentiles of daily samples.
 - Explicit dry-year-wording eligibility, monthly-average temporal basis, listed-value
   interpretation and correction-then-bounds order. Synthetic biological evidence
-  supplies carp, 15 °C onset on April 15, and three two-day stages. Appendix4 row2's
+  supplies carp, 15 °C onset on April 15, three two-day stages, and explicit
+  applicability to the full receiving2028 interval with separate scoped evidence.
+  Neither a past season nor absent applicability evidence can authorise neutral
+  coefficients in2028. Appendix4 row2's
   printed seasonal coefficient 1.18 applies to April in design75/95 only. The unexplained
   stars are retained but not relied upon for this illustrative eligibility decision.
 - Eighty supplied ecological assessments per class. Specialist interval extrema,
@@ -96,6 +99,7 @@ support; a flow schedule alone cannot establish these processes.
 |---|---|
 | `test_complete_supplied_regime` | 16 combinations: four classes × two annual variants × adequate/insufficient observations; exact table above, complete numerical bounds and studies, interpreted status retained |
 | `test_absent_observations_supported_parent_enters_same_complete_chain` | Four accepted donor coefficients 1/.8/.6/.4 enter corrected reports; missing coefficient returns further study |
+| `test_prior_year_biology_cannot_produce_complete_receiving_year_report` | Same receiving2028 chain with stale2027 biological period: unsupported coefficients/schedule, no actual annual report or scientific PASS; initial40 million and prior valid report remain intact. This test failed before the temporal-support repair and passes after it. |
 | `test_partial_annual_missing_shape_and_reconstruction` | Supported initial80 million m³ survives missing shape; no fabricated monthly/actual annual total; missing reconstruction blocks dependent initial result |
 | `test_unsupported_biology_and_infeasible_bounds_preserve_initial` | Eligibility affected by unexplained stars stays unsupported; crossed source bounds calculate no candidate; initial40 remains available |
 | `test_required_failure_survives_missing_condition` | Floodplain depth0.05 <0.2 m yields FAIL plus INCOMPLETE despite missing duration/velocity; missing study yields UNKNOWN |
@@ -149,7 +153,7 @@ Test prefixes below identify files: **I**=`test_supplied_kazakh_scenario.py`,
 | 25 | `CorrectionOrder` and timed coefficients | q8,L5,U10,K1.5→10 or12; suppressed correction versus upper exceedance; interpreted candidate remains | F `test_discriminator_real_volume_and_unresolved_priority` |
 | 26 | Published stages / separately weighted study | Published1.18 not recalculated; weighted study1.2 separate | S `test_all_published_values_not_reaveraged_or_clamped`, `test_study_average_separate_weights_and_period` |
 | 27(1) | `spawning_eligibility`, explicit interpretation | At50/75/95: true,true,false vs false,true,true; missing selection unknown | S `test_eligibility_both_readings_equality` |
-| 27(2) | `BiologicalTiming`, species/water onset/durations | Missing or inadequate onset unsupported, not calendar guess | S `test_missing_and_unresolved`, `test_scoped_support_not_generic_check_passthrough` |
+| 27(2) | `BiologicalTiming`, species/water onset/durations | Missing or inadequate onset unsupported, not calendar guess | S `test_missing_and_unresolved`, `test_scoped_support_not_generic_check_passthrough`; I `test_prior_year_biology_cannot_produce_complete_receiving_year_report` |
 | 27(3) | Daily observations, `DAILY_STAGE` | 1.2,1.2,1.25,1.25,1.1,1.1,1; simulated daily input not observed route | S `test_daily_stages_and_explicit_neutral_outside_season`, `test_simulated_daily_flow_cannot_select_observed_daily_branch`, `test_daily_observation_versions_remain_distinguishable_in_coefficients` |
 | 27(4) | `MONTHLY_AVERAGE` and biological period | April1.18 changes actual dry-class annual volume, neutral elsewhere | I complete; F `test_supplied_biological_monthly_schedule_enters_bounds_and_changes_annual_volume` |
 | 27(5) | Annual ±15-day shift, same biological duration | ±15 allowed with revised evidence;16 invalid; duration unchanged | S `test_shift_preserves_duration_and_requires_annual_evidence`, `test_invalid_biology` |

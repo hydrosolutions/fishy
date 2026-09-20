@@ -167,6 +167,8 @@ def biological_timing(provenance: Provenance) -> BiologicalTiming:
         temperature,
         scoped_support("spawning_timing", period, "spawning_correction", provenance),
         LOCATION,
+        YEAR,
+        scoped_support("spawning_timing_applicability", YEAR, "spawning_correction", provenance),
     )
 
 

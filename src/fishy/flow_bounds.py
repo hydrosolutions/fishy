@@ -20,6 +20,7 @@ from fishy.evidence import (
     NumericalValidity,
     ProductionMethod,
     Provenance,
+    ReferenceKind,
     aggregate_checks,
     permitted_use,
     warmup_restrictions,
@@ -44,12 +45,13 @@ class CandidateStatus(StrEnum):
 class BoundConflict(StrEnum):
     CROSSED = "crossed_bounds"
     SUPPRESSED_CORRECTION = "suppressed_correction"
+    RAISED_CORRECTION = "lower_bound_overrides_correction"
     LOWER_EXCEEDED = "below_lower_bound"
     UPPER_EXCEEDED = "above_upper_bound"
 
 
-def _identity(provenance: Provenance) -> tuple[str, str | None]:
-    return provenance.scenario, provenance.reference_member
+def _identity(provenance: Provenance) -> tuple[str, str | None, ReferenceKind | None]:
+    return provenance.scenario, provenance.reference_member, provenance.reference_kind
 
 
 def annual_bound_scope(location: Location, interval: Interval, provenance: Provenance) -> EvidenceScope:
@@ -364,8 +366,11 @@ def correct_schedule(
             else Flow(after_high.value * coefficient.value)
         )
         conflicts: list[BoundConflict] = []
-        if order is CorrectionOrder.CORRECTION_THEN_BOUNDS and result.value < prebound.value:
-            conflicts.append(BoundConflict.SUPPRESSED_CORRECTION)
+        if order is CorrectionOrder.CORRECTION_THEN_BOUNDS:
+            if result.value < prebound.value:
+                conflicts.append(BoundConflict.SUPPRESSED_CORRECTION)
+            elif result.value > prebound.value:
+                conflicts.append(BoundConflict.RAISED_CORRECTION)
         if result.value < lower.value:
             conflicts.append(BoundConflict.LOWER_EXCEEDED)
         if result.value > upper.value:

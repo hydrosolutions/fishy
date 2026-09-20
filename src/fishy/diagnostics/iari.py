@@ -9,7 +9,7 @@ No-data spot measurements and expert Phase 2 judgments are not computed here.
 """
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from math import floor, isfinite
 from statistics import mean, median
@@ -61,6 +61,10 @@ class IARIResult:
     summary: SummaryStatistic
     quantile: QuantileEstimator
     source_profile: str
+    correction_factor: float = 1.0
+    precipitation_spi: BasinPrecipitationSPI12 | None = None
+    reference_years: tuple[int, ...] = ()
+    impacted_years: tuple[int, ...] = ()
 
 
 def classify_iari(value: float) -> HydrologicalRegimeClass:
@@ -249,7 +253,13 @@ def monthly_iari(
         )
         for month in range(1, 13)
     ]
-    return _result(rows, summary, quantile, "ISPRA_2011_v1.1_monthly", correction)
+    return replace(
+        _result(rows, summary, quantile, "ISPRA_2011_v1.1_monthly", correction),
+        correction_factor=correction,
+        precipitation_spi=spi,
+        reference_years=tuple(_years(reference, 20)),
+        impacted_years=tuple(_years(impacted, 1)),
+    )
 
 
 # ISPRA Table 1.2 parameter membership; IDs shared with annual_indicators.
@@ -423,4 +433,8 @@ def iari(
         reasons.extend(input_reasons)
         row["reason"] = "; ".join(reasons) if reasons else None
         rows.append(row)
-    return _result(rows, summary, quantile, "ISPRA_2011_v1.1_daily")
+    return replace(
+        _result(rows, summary, quantile, "ISPRA_2011_v1.1_daily"),
+        reference_years=tuple(_years(reference, 20)),
+        impacted_years=tuple(selected_years),
+    )

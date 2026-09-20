@@ -97,3 +97,12 @@ def test_source_and_required_membership():
 def test_summary_carrier_cannot_retain_mutable_lists():
     with pytest.raises(TypeError, match="immutable"):
         HydrologicalChanges([0.0] * 10, [""] * 10, "source")  # ty: ignore[invalid-argument-type]
+
+
+def test_different_summary_inputs_remain_distinguishable_after_scoring():
+    first, second = changes([0.0] * 10), changes([1.0] * 10)
+    result = classify_dhram(first, evidence())
+    other = classify_dhram(second, evidence())
+    assert result != other
+    assert result.changes is first
+    assert other.changes is second

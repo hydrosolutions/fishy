@@ -21,7 +21,18 @@ from fishy.diagnostics.iari import (
     monthly_iari,
 )
 from fishy.diagnostics.iha import CentralStatistic, IHAProfile, PulseThresholds, RateBoundary, annual_indicators
-from fishy.diagnostics.records import ComparisonBasis, IARIComparison, IndicatorRecord, compare_iari, flow_indicators
+from fishy.diagnostics.records import (
+    ComparisonBasis,
+    DHRAMComparison,
+    IARIComparison,
+    IndicatorRecord,
+    MonthlyIARIComparison,
+    RegimeAttribution,
+    assess_dhram,
+    compare_iari,
+    compare_monthly_iari,
+    flow_indicators,
+)
 from fishy.diagnostics.statistics import DispersionConvention, summarize_indicators
 
 __all__ = [
@@ -29,6 +40,11 @@ __all__ = [
     "BasinPrecipitationSPI12",
     "CentralStatistic",
     "ComparisonBasis",
+    "DHRAMComparison",
+    "MonthlyIARIComparison",
+    "RegimeAttribution",
+    "assess_dhram",
+    "compare_monthly_iari",
     "DispersionConvention",
     "HydrologicalChanges",
     "HydrologicalRegimeClass",

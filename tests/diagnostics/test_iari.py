@@ -323,3 +323,16 @@ def test_real_annual_indicators_to_daily_iari_path():
     )
     assert result.total == 0
     assert result.classification is HydrologicalRegimeClass.ELEVATO
+
+
+def test_monthly_result_preserves_spi_correction_and_selected_years():
+    reference = monthly(range(1, 21))
+    impacted = monthly([25], 2000)
+    spi = BasinPrecipitationSPI12(-2)
+    result = monthly_iari(
+        reference, impacted, summary=SummaryStatistic.MEAN, quantile=QuantileEstimator.LINEAR, spi=spi
+    )
+    assert result.precipitation_spi is spi
+    assert result.correction_factor == 0.5
+    assert result.reference_years == tuple(range(1980, 2000))
+    assert result.impacted_years == (2000,)

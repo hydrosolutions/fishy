@@ -65,6 +65,7 @@ class HydrologicalChanges:
 class AlterationRisk:
     """Source risk class bounds preserve missing computation and evidence."""
 
+    changes: HydrologicalChanges
     impact_points: tuple[int | None, ...]
     points_lower: int
     points_upper: int
@@ -127,6 +128,7 @@ def classify_dhram(changes: HydrologicalChanges, evidence: SupplementaryEvidence
     if unknown:
         reasons += ("supplementary_evidence_incomplete",)
     return AlterationRisk(
+        changes,
         points,
         lower,
         upper,

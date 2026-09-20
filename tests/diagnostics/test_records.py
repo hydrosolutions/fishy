@@ -148,3 +148,120 @@ def test_corrected_observation_history_remains_attributable_per_day():
     assert record.source_samples[39].provenance.correction_state is CorrectionState.ORIGINAL
     with pytest.raises(ValueError, match="Heterogeneous"):
         _ = record.provenance
+
+
+@pytest.mark.parametrize("kind", [ReferenceKind.MANAGED, ReferenceKind.OBSERVED, None])
+def test_unqualified_series_cannot_be_used_as_natural_reference(kind):
+    original = samples()
+    source = replace(original[0].provenance, reference_kind=kind)
+    record = flow_indicators(tuple(replace(sample, provenance=source) for sample in original), profile())
+    with pytest.raises(ValueError, match="natural reference"):
+        compare_iari(
+            record,
+            record,
+            basis=ComparisonBasis.MATCHED_PERIOD,
+            summary=SummaryStatistic.MEDIAN,
+            quantile=QuantileEstimator.LINEAR,
+        )
+
+
+def test_observed_production_with_explicit_natural_qualification_remains_supported():
+    original = samples()
+    source = replace(original[0].provenance, production_method=ProductionMethod.OBSERVED)
+    record = flow_indicators(tuple(replace(sample, provenance=source) for sample in original), profile())
+    result = compare_iari(
+        record,
+        record,
+        basis=ComparisonBasis.MATCHED_PERIOD,
+        summary=SummaryStatistic.MEDIAN,
+        quantile=QuantileEstimator.LINEAR,
+    )
+    assert result.result.total == 0
+    assert result.reference.provenance.production_method is ProductionMethod.OBSERVED
+
+
+def test_attributed_dhram_keeps_raw_changes_and_both_regimes():
+    from fishy.diagnostics.dhram import HydrologicalChanges, SupplementaryEvidence, SupplementaryFinding
+    from fishy.diagnostics.records import RegimeAttribution, assess_dhram
+
+    first = samples(2001, 2002)[0]
+    period = Interval(datetime(2001, 1, 1, tzinfo=UTC), datetime(2002, 1, 1, tzinfo=UTC))
+    reference = RegimeAttribution(first.location, period, first.provenance)
+    impacted = replace(
+        reference,
+        provenance=replace(
+            first.provenance, source="managed import", scenario="managed", reference_kind=ReferenceKind.MANAGED
+        ),
+    )
+    changes = HydrologicalChanges((1.0,) * 10, ("",) * 10, "external documented historical profile")
+    evidence = SupplementaryEvidence(SupplementaryFinding.UNKNOWN, SupplementaryFinding.EXCLUDED, "operational report")
+    result = assess_dhram(
+        changes, evidence, reference=reference, impacted=impacted, basis=ComparisonBasis.MATCHED_PERIOD
+    )
+    assert result.result.changes is changes
+    assert result.result.supplementary is evidence
+    assert result.reference is reference and result.impacted is impacted
+    assert result.result.classification is None
+    with pytest.raises(ValueError, match="location/mapping"):
+        assess_dhram(
+            changes,
+            evidence,
+            reference=reference,
+            impacted=replace(impacted, location=replace(first.location, mapping_version="v2")),
+            basis=ComparisonBasis.MATCHED_PERIOD,
+        )
+
+
+def test_monthly_attribution_retains_inputs_years_and_spi():
+    import polars as pl
+    from polars.testing import assert_frame_equal
+
+    from fishy.diagnostics.iari import BasinPrecipitationSPI12
+    from fishy.diagnostics.records import RegimeAttribution, compare_monthly_iari
+
+    first = samples(2001, 2002)[0]
+    reference_frame = pl.DataFrame(
+        [(year, month, float(year - 1979)) for year in range(1980, 2000) for month in range(1, 13)],
+        schema={"year": pl.Int32, "month": pl.Int32, "discharge_m3_s": pl.Float64},
+        orient="row",
+    )
+    impacted_frame = pl.DataFrame(
+        [(2000, month, 25.0) for month in range(1, 13)], schema=reference_frame.schema, orient="row"
+    )
+    reference = RegimeAttribution(
+        first.location, Interval(datetime(1980, 1, 1, tzinfo=UTC), datetime(2000, 1, 1, tzinfo=UTC)), first.provenance
+    )
+    impacted = RegimeAttribution(
+        first.location,
+        Interval(datetime(2000, 1, 1, tzinfo=UTC), datetime(2001, 1, 1, tzinfo=UTC)),
+        replace(first.provenance, source="current monthly import", reference_kind=ReferenceKind.MANAGED),
+    )
+    spi = BasinPrecipitationSPI12(-2)
+    result = compare_monthly_iari(
+        reference_frame,
+        impacted_frame,
+        reference=reference,
+        impacted=impacted,
+        basis=ComparisonBasis.HISTORICAL_BASELINE,
+        summary=SummaryStatistic.MEAN,
+        quantile=QuantileEstimator.LINEAR,
+        spi=spi,
+    )
+    assert result.result.precipitation_spi is spi and result.result.correction_factor == 0.5
+    assert result.result.total == pytest.approx((25 - 15.25) / 9.5 * 0.5)
+    assert result.reference is reference and result.impacted is impacted
+    assert_frame_equal(result.reference_monthly, reference_frame)
+    assert_frame_equal(result.impacted_monthly, impacted_frame)
+    with pytest.raises(ValueError, match="coverage"):
+        compare_monthly_iari(
+            reference_frame,
+            impacted_frame,
+            reference=reference,
+            impacted=replace(
+                impacted, period=Interval(datetime(2000, 1, 1, tzinfo=UTC), datetime(2002, 1, 1, tzinfo=UTC))
+            ),
+            basis=ComparisonBasis.HISTORICAL_BASELINE,
+            summary=SummaryStatistic.MEAN,
+            quantile=QuantileEstimator.LINEAR,
+            spi=spi,
+        )

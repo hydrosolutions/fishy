@@ -54,8 +54,12 @@ Ambiguous dominant-quarter ties and undefined ratios retain unsupported values.
 Use `records.compare_iari(reference, impacted, basis=..., summary=..., quantile=...)`.
 `ComparisonBasis.MATCHED_PERIOD` requires identical exact intervals.
 `HISTORICAL_BASELINE` requires the reference to precede the impacted interval.
-Locations, mapping versions and annual definitions must agree. A future-climate
-stress series cannot serve as a natural reference.
+Locations, mapping versions and annual definitions must agree. A reference must
+explicitly identify present-climate natural or naturalised-historical meaning.
+Observed production is supported when its natural-reference qualification is supplied;
+observed production alone does not establish that qualification. Managed, future
+and unspecified reference kinds are rejected. Numerical calculations do not confer
+scientific or official acceptance.
 
 The original daily ISPRA profile uses at least20 reference years and the last five
 impacted years. Each current annual parameter is summarized **before** measuring
@@ -68,7 +72,11 @@ Choose `SummaryStatistic.MEAN` or `MEDIAN`, and `QuantileEstimator.LINEAR`
 historical IMSL equivalence. A constant reference band gives zero for exact equality;
 a value outside a zero-width band remains unsupported.
 
-`iari.monthly_iari` separately accepts year/month/monthly-mean-discharge tables.
+`records.compare_monthly_iari` accepts located and dated reference/impacted
+`RegimeAttribution` records together with year/month/monthly-mean-discharge tables.
+It retains both original input tables, their source/member/version/period, SPI,
+correction factor and selected years. Input years must match attributed intervals.
+`iari.monthly_iari` is the lower-level numerical primitive.
 It requires20 reference years and either five impacted years or one year with a
 supplied `BasinPrecipitationSPI12`. The single-year correction applies to the final
 index, not to discharge. Two to four years are not silently averaged. The monthly
@@ -77,7 +85,13 @@ expert assessment or spot-measurement route is implemented here.
 
 ## DHRAM: supported summary scoring, daily path blocked
 
-`dhram.classify_dhram` applies Black2005 Tables3–4 to ten explicitly supplied
+`records.assess_dhram` assesses a supplied summary import together with separate
+located, dated and versioned reference/impacted `RegimeAttribution` records. It
+retains all ten raw changes, their descriptor profile, supplementary evidence and
+both source contexts. It checks natural-reference qualification, mapping and the
+selected temporal comparison basis.
+
+`dhram.classify_dhram` is the numerical primitive. It applies Black2005 Tables3–4 to ten explicitly supplied
 source-profile summary indicators. It retains point contributions and class bounds
 when required indicators or supplementary evidence are unknown. Subdaily variation
 and anthropogenic cessation require explicit evidence; daily means do not prove
@@ -114,3 +128,6 @@ asserted; structural tables use `polars.testing.assert_frame_equal`.
 | Unknown evidence | Zero points +two unknown supplementary findings →classes1..3, no asserted unique class | `test_unknown_is_not_false_and_two_confirmed_adjustments` |
 
 | Live/saved physical diagnostic boundary |366 daily volumes172800m³ →January2m³/s, BFI1, zero-days0; leap day retained and empty rise rate undefined | `test_physical_indicators.py::test_live_saved_calendar_year_physical_path` |
+
+| Reference qualification | Managed/observed-only/unspecified reference kinds rejected; observed production with explicit natural qualification supported | `test_records.py::test_unqualified_series_cannot_be_used_as_natural_reference`, `test_observed_production_with_explicit_natural_qualification_remains_supported` |
+| Imported diagnostic attribution | Raw DHRAM changes and both located regimes retained; monthly SPI−2 factor0.5 and exact input years retained | `test_attributed_dhram_keeps_raw_changes_and_both_regimes`, `test_monthly_attribution_retains_inputs_years_and_spi` |

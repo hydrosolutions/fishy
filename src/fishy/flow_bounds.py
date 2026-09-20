@@ -235,6 +235,15 @@ def _coefficient_support(coefficient: TimedCoefficient | None) -> tuple[bool, Ch
     )
     required = coefficient.required_support
     applicability = tuple(s for s in required if s.product == "spawning_timing_applicability")
+    if len(applicability) != 1 or any(a.period.seconds > 366 * 86400 for a in applicability):
+        checks.append(
+            Check(
+                "single_biological_cycle",
+                CheckFinding.UNKNOWN,
+                ("one explicit biological applicability cycle of at most 366 days is required",),
+            )
+        )
+        applicability = ()
     if not any(
         a.period.start <= coefficient.interval.start and coefficient.interval.end <= a.period.end for a in applicability
     ):

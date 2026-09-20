@@ -411,3 +411,31 @@ def test_unavailable_coefficient_cannot_claim_scientific_pass():
     )
     result = correct_schedule((sample(8),), bounds(), (c,), CorrectionOrder.CORRECTION_THEN_BOUNDS, RESULT)
     assert result.intervals[0].scientific_use.finding is CheckFinding.UNKNOWN
+
+
+@pytest.mark.parametrize("route", ["stretched", "multiple_cycles"])
+def test_direct_coefficient_cannot_join_biology_and_flow_through_different_cycles(route):
+    c = coefficient()
+    assert c.findings is not None
+    biology = replace(c.findings, scope=replace(c.findings.scope, product="spawning_timing"))
+    if route == "stretched":
+        horizon = Interval(YEAR.start, datetime(2026, 1, 1, tzinfo=UTC))
+        applications = (
+            replace(
+                c.findings, scope=replace(c.findings.scope, product="spawning_timing_applicability", period=horizon)
+            ),
+        )
+    else:
+        oldyear = Interval(datetime(2023, 1, 1, tzinfo=UTC), YEAR.start)
+        biology = replace(biology, scope=replace(biology.scope, period=oldyear))
+        applications = tuple(
+            replace(
+                c.findings, scope=replace(c.findings.scope, product="spawning_timing_applicability", period=horizon)
+            )
+            for horizon in (oldyear, YEAR)
+        )
+    supporters = (biology, *applications)
+    c = replace(c, supporting_evidence=supporters, required_support=tuple(f.scope for f in supporters))
+    result = correct_schedule((sample(8),), bounds(), (c,), CorrectionOrder.CORRECTION_THEN_BOUNDS, RESULT)
+    assert result.samples[0].value == Flow(10)
+    assert result.intervals[0].scientific_use.finding is CheckFinding.UNKNOWN

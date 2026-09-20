@@ -4,7 +4,7 @@ A rule appears in this file only if (a) it encodes a project choice that cannot 
 
 ## 0. Project Overview
 
-SHORT PROJECT DESCRIPTION
+fishy
 
 ## 1. Python Environment
 

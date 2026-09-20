@@ -1,7 +1,7 @@
 """Smoke test: the package imports. Replace with real tests."""
 
-import mypackage
+import fishy
 
 
 def test_package_imports() -> None:
-    assert mypackage is not None
+    assert fishy is not None

@@ -90,7 +90,7 @@ wheels = [
 ]
 
 [[package]]
-name = "mypackage"
+name = "fishy"
 version = "0.1.2"
 source = { editable = "." }
 

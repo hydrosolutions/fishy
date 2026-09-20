@@ -34,6 +34,20 @@ The public modules separate stable responsibilities:
 - `fishy.diagnostics`: source-defined IHA and IARI on identified dated flows.
   See [flow diagnostics](docs/flow-diagnostics.md) for profiles and an executable example.
 
+## Swiss residual flows
+
+Run the independently supported Swiss example without a simulator:
+
+```sh
+uv run python examples/swiss_prescription.py
+```
+
+It preserves Q347 160 → table 130 → safeguards 180 → final 220 l/s.
+Proven inflow 150 and delivery 120 yield a time-specific 150 l/s duty and 30 l/s
+shortfall, without changing the nominal 220 l/s prescription.
+See the [Swiss workflow](docs/swiss-workflow.md) for public inputs, scope,
+source clauses, exceptions and evidence limits.
+
 ## Use Taqsim results
 
 ```sh

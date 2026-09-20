@@ -16,6 +16,7 @@ from fishy.evidence import (
     Check,
     CheckFinding,
     CheckSummary,
+    CorrectionState,
     Provenance,
     _text,
     _texts,
@@ -37,6 +38,7 @@ SOURCE_LIMITATIONS = (
     "Selected-profile numerical matches do not establish a unique overall class or national compliance",
     "Scientific adequacy and official admissibility require separately scoped evidence findings",
     "No treatment adequacy, sanitary compliance, or oxygen/thermal physics inferred",
+    "Scenario interpretations do not resolve missing operators, units, typography or source-table conflicts",
 )
 
 
@@ -80,6 +82,33 @@ class RatioTypography(StrEnum):
     POWERS_OF_TEN = "scenario_powers_10_cubed_10_squared"
 
 
+class BackgroundArithmetic(StrEnum):
+    ADDITIVE_INCREMENT = "scenario_background_plus_10_despite_missing_source_plus"
+
+
+class UnitBasis(StrEnum):
+    TEMPERATURE_CELSIUS = "degC"
+    TOTAL_BACTERIA_MILLIONS_PER_ML = "10^6 cells/ml"
+    SAPROPHYTES_THOUSANDS_PER_ML = "10^3 cells/ml"
+    DISSOLVED_ARSENIC_MG_PER_L = "mg/l"
+
+
+class TemperatureSeason(StrEnum):
+    SUMMER = "summer_20_to_28"
+    WINTER = "winter_5_to_8"
+
+
+class QualitativeMeaning(StrEnum):
+    EXACT_STATE = "match_printed_absence_or_traces_state"
+
+
+class QualitativeState(StrEnum):
+    ABSENT = "absent"
+    TRACES = "traces"
+    OTHER_PRESENT = "present_other_than_traces"
+    UNKNOWN = "unknown"
+
+
 @dataclass(frozen=True)
 class CellInterpretation:
     row_id: str
@@ -89,6 +118,10 @@ class CellInterpretation:
     range_meaning: RangeMeaning | None = None
     qualified_cell: QualifiedCell | None = None
     ratio_typography: RatioTypography | None = None
+    unit_basis: UnitBasis | None = None
+    temperature_season: TemperatureSeason | None = None
+    qualitative_meaning: QualitativeMeaning | None = None
+    background_arithmetic: BackgroundArithmetic | None = None
 
     def __post_init__(self) -> None:
         _text(self.row_id, "row_id")
@@ -99,6 +132,10 @@ class CellInterpretation:
             (self.range_meaning, RangeMeaning),
             (self.qualified_cell, QualifiedCell),
             (self.ratio_typography, RatioTypography),
+            (self.unit_basis, UnitBasis),
+            (self.temperature_season, TemperatureSeason),
+            (self.qualitative_meaning, QualitativeMeaning),
+            (self.background_arithmetic, BackgroundArithmetic),
         ):
             if value is not None:
                 _enum(value, kind)
@@ -106,6 +143,28 @@ class CellInterpretation:
             raise ValueError("choose a supported bare-number operator or leave it unresolved")
         row = source_row(self.row_id)
         raw = row.cells[self.water_class - 1]
+        if self.background_arithmetic is not None and (self.row_id, self.water_class) != (
+            "order111:12",
+            WaterClass.SIX,
+        ):
+            raise ValueError("missing-plus interpretation belongs only to suspended-matter class6")
+        if self.unit_basis is not None:
+            units = {
+                "order111:01": UnitBasis.TEMPERATURE_CELSIUS,
+                "order111:58-dissolved": UnitBasis.DISSOLVED_ARSENIC_MG_PER_L,
+                "order111:68": UnitBasis.TOTAL_BACTERIA_MILLIONS_PER_ML,
+                "order111:69": UnitBasis.SAPROPHYTES_THOUSANDS_PER_ML,
+            }
+            if self.row_id not in units or self.unit_basis is not units[self.row_id]:
+                raise ValueError("unit interpretation does not apply to this source row")
+        if self.temperature_season is not None:
+            if self.row_id != "order111:01":
+                raise ValueError("seasonal interpretation belongs only to merged temperature row1")
+            raw = "20-28" if self.temperature_season is TemperatureSeason.SUMMER else "5-8"
+        if self.qualitative_meaning is not None and raw not in ("отс.", "следы"):
+            raise ValueError("qualitative interpretation requires a printed absence/traces cell")
+        if self.row_id == "order111:64-ratio" and self.water_class is WaterClass.SIX:
+            raw = raw.split(" или ")[0]
         qualified = (row.printed_row, self.water_class)
         if self.qualified_cell is not None:
             allowed = {
@@ -122,6 +181,10 @@ class CellInterpretation:
             if not (bare or relative or qualified in (("18", WaterClass.SIX), ("32", WaterClass.THREE))):
                 raise ValueError("bare-number interpretation cannot replace an explicit or unsupported source cell")
         if self.range_meaning is not None:
+            if re.fullmatch(r">=?[0-9]+(?:[.,][0-9]+)?-<[0-9]+(?:[.,][0-9]+)?", raw.replace(" ", "")):
+                raise ValueError("endpoint interpretation is unused: both source inequalities are printed")
+            if qualified == ("8", WaterClass.SIX) and self.range_meaning is not RangeMeaning.OUTSIDE:
+                raise ValueError("pH class6 requires the outside-disjunction interpretation, not an ordered range")
             if not re.fullmatch(r"[<>≤≥]?[0-9]+(?:[.,][0-9]+)?-[<>≤≥]?[0-9]+(?:[.,][0-9]+)?", raw.replace(" ", "")):
                 raise ValueError("range interpretation requires a numerical source range")
             if self.range_meaning is RangeMeaning.OUTSIDE and qualified != ("8", WaterClass.SIX):
@@ -145,8 +208,9 @@ def source_row(identifier: str) -> SourceRow:
 
 @dataclass(frozen=True, init=False)
 class SourceValue:
-    """A value in the EXACT printed source unit and determinand/reporting form.
+    """A value in the printed or explicitly interpreted unit and exact determinand.
 
+    A CellInterpretation must name any supported missing/ambiguous-unit reading.
     No implicit ion/element, total/dissolved, concentration or bacterial-unit conversion.
     Negative values remain possible for signed potential and temperature only.
     """
@@ -169,6 +233,12 @@ class SourceValue:
         object.__setattr__(self, "determinand", determinand)
 
 
+class MacroBenthos(StrEnum):
+    PRESENT = "present"
+    ABSENT = "absent"
+    UNKNOWN = "unknown"
+
+
 @dataclass(frozen=True)
 class ClassificationObservation:
     row_id: str
@@ -180,6 +250,8 @@ class ClassificationObservation:
     provenance: Provenance
     reasons: tuple[str, ...] = ()
     background: SourceValue | None = None
+    macro_benthos: MacroBenthos = MacroBenthos.UNKNOWN
+    qualitative: QualitativeState = QualitativeState.UNKNOWN
 
     def __post_init__(self) -> None:
         row = source_row(self.row_id)
@@ -197,8 +269,32 @@ class ClassificationObservation:
                 _enum(value, SourceValue)
                 if value.lower < 0 and str(row.printed_row) not in ("1", "15"):
                     raise ValueError("negative value outside signed temperature/potential domain")
-        if self.presence is Presence.PRESENT and self.value is None:
-            raise ValueError("present observation requires a value")
+        _enum(self.macro_benthos, MacroBenthos)
+        _enum(self.qualitative, QualitativeState)
+        if self.qualitative is not QualitativeState.UNKNOWN:
+            if self.row_id not in ("order111:66", "order111:67"):
+                raise ValueError("absence/traces observation belongs only to rows66/67")
+            if self.value is not None:
+                raise ValueError("qualitative absence/traces is not a numerical value")
+        if self.provenance.correction_state is CorrectionState.MISSING and (
+            self.value is not None
+            or self.macro_benthos is not MacroBenthos.UNKNOWN
+            or self.qualitative is not QualitativeState.UNKNOWN
+        ):
+            raise ValueError("missing observation status cannot carry numerical or qualitative evidence")
+        if self.row_id == "order111:64-ratio" and self.value is not None and self.value.upper > 100:
+            raise ValueError("subset-to-total macro-benthos percentage cannot exceed 100")
+        if self.macro_benthos is not MacroBenthos.UNKNOWN and self.row_id != "order111:64-ratio":
+            raise ValueError("macro-benthos evidence belongs only to the ratio row64")
+        if self.macro_benthos is MacroBenthos.ABSENT and self.value is not None:
+            raise ValueError("absent macro-benthos cannot supply a defined abundance ratio")
+        if (
+            self.presence is Presence.PRESENT
+            and self.value is None
+            and self.macro_benthos is MacroBenthos.UNKNOWN
+            and self.qualitative is QualitativeState.UNKNOWN
+        ):
+            raise ValueError("present observation requires a value or explicit macro-benthos evidence")
         if self.presence is not Presence.PRESENT and not self.reasons:
             raise ValueError("unavailable observation requires reasons")
         if self.background is not None and str(row.printed_row) != "12":
@@ -283,7 +379,10 @@ def _scope_reasons(profile: Order111Profile) -> tuple[str, ...]:
 
 
 def _observation_reasons(
-    profile: Order111Profile, row: SourceRow, sample: ClassificationObservation | None
+    profile: Order111Profile,
+    row: SourceRow,
+    sample: ClassificationObservation | None,
+    choice: CellInterpretation | None,
 ) -> tuple[str, ...]:
     if sample is None:
         return ("required source-row observation missing",)
@@ -294,7 +393,8 @@ def _observation_reasons(
         reasons += ("scenario or sampling basis mismatch",)
     if sample.presence is not Presence.PRESENT:
         reasons += sample.reasons
-    if sample.value is not None and (sample.value.unit != row.unit or sample.value.determinand != row.name):
+    expected_unit = row.unit if choice is None or choice.unit_basis is None else choice.unit_basis.value
+    if sample.value is not None and (sample.value.unit != expected_unit or sample.value.determinand != row.name):
         reasons += ("source unit or determinand/form/reporting basis mismatch; no implicit conversion",)
     if sample.background is not None and (
         sample.background.unit != row.unit or sample.background.determinand != row.name
@@ -310,16 +410,44 @@ _NUMBER = r"[0-9]+(?:[.,][0-9]+)?"
 def _cell_test(
     row: SourceRow, water_class: WaterClass, sample: ClassificationObservation, choice: CellInterpretation | None
 ) -> tuple[CheckFinding, tuple[str, ...]]:
+    raw = row.cells[water_class - 1]
+    if raw in ("отс.", "следы"):
+        if choice is None or choice.qualitative_meaning is None or sample.qualitative is QualitativeState.UNKNOWN:
+            return CheckFinding.UNKNOWN, (
+                "printed qualitative state requires supplied absence/traces and explicit exact-state interpretation",
+            )
+        expected = QualitativeState.ABSENT if raw == "отс." else QualitativeState.TRACES
+        return (CheckFinding.PASS if sample.qualitative is expected else CheckFinding.FAIL), ()
+    alternative = row.identifier == "order111:64-ratio" and water_class is WaterClass.SIX
+    if alternative and sample.macro_benthos is MacroBenthos.ABSENT:
+        return CheckFinding.PASS, ("supplied macro-benthos absence satisfies the printed qualitative alternative",)
+    if sample.value is None:
+        return CheckFinding.UNKNOWN, ("required numerical ratio missing; absence is not a numeric zero",)
+    finding, reasons = _numeric_cell_test(row, water_class, sample, choice)
+    if alternative and finding is CheckFinding.FAIL and sample.macro_benthos is MacroBenthos.UNKNOWN:
+        return CheckFinding.UNKNOWN, ("numeric alternative fails; macro-benthos absence alternative unassessed",)
+    return finding, reasons
+
+
+def _numeric_cell_test(
+    row: SourceRow, water_class: WaterClass, sample: ClassificationObservation, choice: CellInterpretation | None
+) -> tuple[CheckFinding, tuple[str, ...]]:
     assert sample.value is not None
     lo, hi = sample.value.lower, sample.value.upper
     raw = row.cells[water_class - 1]
+    if row.identifier == "order111:64-ratio" and water_class is WaterClass.SIX:
+        raw = raw.split(" или ")[0]
     text = re.sub(r"\s+", "", raw).replace("−", "-").replace("–", "-")
     number = str(row.printed_row)
     if number == "1":
-        return CheckFinding.UNKNOWN, ("merged summer/winter source cells do not define six class-specific tests",)
-    if number == "58" and row.unit == "-":
+        if choice is None or choice.temperature_season is None or choice.unit_basis is None:
+            return CheckFinding.UNKNOWN, (
+                "merged temperature cells require explicit shared-seasonal-condition and Celsius typography interpretation",
+            )
+        text = "20-28" if choice.temperature_season is TemperatureSeason.SUMMER else "5-8"
+    if number == "58" and row.unit == "-" and (choice is None or choice.unit_basis is None):
         return CheckFinding.UNKNOWN, ("dissolved arsenic source unit missing; mg/l not inherited",)
-    if number in ("68", "69"):
+    if number in ("68", "69") and (choice is None or choice.unit_basis is None):
         return CheckFinding.UNKNOWN, ("bacterial count unit/exponent and glossary transcription unresolved",)
     if number == "70":
         if choice is None or choice.ratio_typography is None:
@@ -341,13 +469,13 @@ def _cell_test(
             return CheckFinding.UNKNOWN, ("phosphate Astana qualification requires explicit selection",)
         text = "3.5" if choice.qualified_cell is QualifiedCell.ASTANA_PHOSPHATE else "0.7"
     if number == "12":
-        if water_class is WaterClass.SIX:
+        if water_class is WaterClass.SIX and (choice is None or choice.background_arithmetic is None):
             return CheckFinding.UNKNOWN, ("source >Сфон.10,0 omits arithmetic operator; no plus inferred",)
         if sample.background is None:
             return CheckFinding.UNKNOWN, ("suspended matter requires supported same-scope background",)
         lo -= sample.background.upper
         hi -= sample.background.lower
-        text = text.split("+")[-1]
+        text = ">10.0" if water_class is WaterClass.SIX else text.split("+")[-1]
     text = text.replace("%", "")
     comparison = re.fullmatch(rf"([<>≤≥])({_NUMBER})", text)
     if comparison:
@@ -432,7 +560,7 @@ def assess_order111(profile: Order111Profile, observations: tuple[Classification
         for row_id in profile.required_rows:
             row, sample = source_row(row_id), by_row.get(row_id)
             choice = choices.get((row_id, water_class))
-            reasons = _scope_reasons(profile) + _observation_reasons(profile, row, sample)
+            reasons = _scope_reasons(profile) + _observation_reasons(profile, row, sample, choice)
             finding = CheckFinding.UNKNOWN
             if not reasons:
                 assert sample is not None

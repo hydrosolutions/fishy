@@ -366,3 +366,359 @@ def test_class5_industrial_settling_qualification_not_silently_scoped():
     assert "settling" in " ".join(result.descriptive.conditions)
     assert result.matrix.finding is UseFinding.PERMITTED
     assert result.finding is UseFinding.UNRESOLVED
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("source", "distinct supplied laboratory source"),
+        ("reference_member", "separate reference member"),
+        ("data_version", "revised laboratory dataset"),
+        ("configuration_version", "revised observation configuration"),
+        ("software_version", "revised producer software"),
+    ],
+)
+def test_lineage_changes_retained_without_false_acceptance(field, value):
+    sample = observation("order111:02", 6)
+    changed = replace(sample, provenance=replace(sample.provenance, **{field: value}))
+    result = assess_order111(profile(sample.row_id), (changed,))
+    assert result.classes[0].summary.finding is CheckFinding.PASS
+    used = result.classes[0].cells[0].observation
+    assert used is not None
+    assert used.provenance == changed.provenance
+    assert (
+        "Scientific adequacy and official admissibility require separately scoped evidence findings"
+        in result.limitations
+    )
+
+
+def test_future_reference_is_attributed_numerical_scenario_not_present_climate_acceptance():
+    from fishy.evidence import ReferenceKind
+
+    sample = observation("order111:02", 6)
+    future = replace(
+        sample,
+        provenance=replace(
+            sample.provenance,
+            reference_kind=ReferenceKind.FUTURE_CLIMATE_STRESS,
+            limitations=("future stress illustration, not observed present-climate evidence",),
+        ),
+    )
+    result = assess_order111(profile(sample.row_id), (future,))
+    assert result.classes[0].summary.finding is CheckFinding.PASS
+    assert result.classes[0].cells[0].observation == future
+    assert "future stress illustration, not observed present-climate evidence" in result.limitations
+
+
+def test_payload_scope_and_scenario_are_checked_against_independent_profile():
+    sample = observation("order111:02", 6)
+    incompatible = (
+        replace(sample, provenance=replace(sample.provenance, scenario="unrelated scenario")),
+        replace(sample, location=replace(LOCATION, section=CalculationSection("unrelated-section", "1"))),
+        replace(sample, interval=Interval(datetime(2026, 1, 2, tzinfo=UTC), datetime(2026, 1, 3, tzinfo=UTC))),
+    )
+    for changed in incompatible:
+        result = assess_order111(profile(sample.row_id), (changed,))
+        assert result.supported_matches == ()
+        assert result.unknown_classes == tuple(WaterClass)
+        assert all(item.cells[0].check.reasons for item in result.classes)
+
+
+def test_macrobenthos_numeric_alternative_is_evaluable():
+    c = choice("order111:64-ratio", 6, range_meaning=RangeMeaning.CLOSED)
+    result = cell("order111:64-ratio", 6, 90, c)
+    assert result.check.finding is CheckFinding.PASS
+    assert "или макробентос отсутствует" in result.raw_cell
+
+
+@pytest.mark.parametrize(
+    "value,meaning,expected",
+    [
+        (86, RangeMeaning.CLOSED, CheckFinding.PASS),
+        (100, RangeMeaning.CLOSED, CheckFinding.PASS),
+        (86, RangeMeaning.OPEN, CheckFinding.FAIL),
+        (100, RangeMeaning.OPEN, CheckFinding.FAIL),
+        (85, RangeMeaning.CLOSED, CheckFinding.FAIL),
+    ],
+)
+def test_macrobenthos_numeric_branch_endpoints(value, meaning, expected):
+    from fishy.water_classification import MacroBenthos
+
+    assert (
+        cell(
+            "order111:64-ratio",
+            6,
+            value,
+            choice("order111:64-ratio", 6, range_meaning=meaning),
+            macro_benthos=MacroBenthos.PRESENT,
+        ).check.finding
+        is expected
+    )
+
+
+def test_macrobenthos_qualitative_alternative_and_unknown_not_zero():
+    from fishy.water_classification import MacroBenthos
+
+    c = choice("order111:64-ratio", 6, range_meaning=RangeMeaning.CLOSED)
+    assert cell("order111:64-ratio", 6, 85, c).check.finding is CheckFinding.UNKNOWN
+    sample = ClassificationObservation(
+        "order111:64-ratio",
+        None,
+        LOCATION,
+        PERIOD,
+        "supported daily sample",
+        Presence.PRESENT,
+        PROVENANCE,
+        macro_benthos=MacroBenthos.ABSENT,
+    )
+    result = assess_order111(profile(sample.row_id), (sample,))
+    assert result.supported_matches == (WaterClass.SIX,)
+    assert result.unknown_classes == tuple(WaterClass)[:5]
+    used = result.classes[5].cells[0].observation
+    assert used is not None and used.value is None
+    mismatched = replace(sample, location=replace(LOCATION, section=CalculationSection("different", "1")))
+    assert assess_order111(profile(sample.row_id), (mismatched,)).supported_matches == ()
+    with pytest.raises(ValueError, match="defined abundance ratio"):
+        observation(sample.row_id, 0, macro_benthos=MacroBenthos.ABSENT)
+    with pytest.raises(ValueError, match="only"):
+        observation("order111:02", 6, macro_benthos=MacroBenthos.PRESENT)
+
+
+def test_missing_correction_provenance_cannot_supply_numeric_payload():
+    with pytest.raises(ValueError, match="missing"):
+        replace(observation("order111:02", 6), provenance=replace(PROVENANCE, correction_state=CorrectionState.MISSING))
+
+
+@pytest.mark.parametrize("meaning", [RangeMeaning.CLOSED, RangeMeaning.OPEN])
+def test_fully_printed_endpoint_operators_reject_unused_interpretation(meaning):
+    with pytest.raises(ValueError, match="interpretation"):
+        choice("order111:65", 6, range_meaning=meaning)
+
+
+def test_macrobenthos_ratio_cannot_exceed_subset_percentage():
+    with pytest.raises(ValueError, match="100"):
+        observation("order111:64-ratio", 101)
+
+
+def interpreted_unit_result(row_id, value, choices):
+    row = source_row(row_id)
+    sample = observation(row_id, value)
+    selected = choices[0].unit_basis
+    assert selected is not None
+    sample = replace(sample, value=SourceValue(value, value, selected.value, row.name))
+    return assess_order111(profile(row_id, choices=choices), (sample,))
+
+
+@pytest.mark.parametrize(
+    "row_id,values",
+    [
+        ("order111:68", ("0.25", "0.75", "2", "4", "7", "10.25")),
+        ("order111:69", ("0.25", "2", "7", "20", "70", "110")),
+    ],
+)
+def test_bacterial_counts_all_six_classes_with_explicit_scaled_unit_interpretation(row_id, values):
+    from fishy.water_classification import UnitBasis
+
+    unit = UnitBasis.TOTAL_BACTERIA_MILLIONS_PER_ML if row_id.endswith("68") else UnitBasis.SAPROPHYTES_THOUSANDS_PER_ML
+    choices = tuple(
+        choice(row_id, c, unit_basis=unit, range_meaning=RangeMeaning.CLOSED if c in range(2, 6) else None)
+        for c in range(1, 7)
+    )
+    for cls, value in enumerate(values, 1):
+        result = interpreted_unit_result(row_id, value, choices)
+        assert result.supported_matches == (WaterClass(cls),)
+        assert result.unknown_classes == ()
+        assert result.classes[cls - 1].cells[0].row.unit != unit.value
+    assert cell(row_id, 1, "0.25").check.finding is CheckFinding.UNKNOWN
+    # Source gaps and strict end caps survive the unit interpretation.
+    gap = "1.05" if row_id.endswith("68") else "5.05"
+    assert interpreted_unit_result(row_id, gap, choices).supported_matches == ()
+    cap = "10.5" if row_id.endswith("68") else "120"
+    assert interpreted_unit_result(row_id, cap, choices).classes[5].summary.finding is CheckFinding.FAIL
+
+
+def test_missing_dissolved_arsenic_unit_requires_explicit_attributed_choice():
+    from fishy.water_classification import UnitBasis
+
+    row_id = "order111:58-dissolved"
+    c = choice(row_id, 1, unit_basis=UnitBasis.DISSOLVED_ARSENIC_MG_PER_L, bare_operator=Comparison.LE)
+    result = interpreted_unit_result(row_id, "0.001", (c,))
+    assert result.classes[0].summary.finding is CheckFinding.PASS
+    assert result.classes[0].cells[0].row.unit == "-"
+    assert (
+        cell(row_id, 1, "0.001", choice(row_id, 1, bare_operator=Comparison.LE)).check.finding is CheckFinding.UNKNOWN
+    )
+    assert interpreted_unit_result(row_id, "0.003", (c,)).classes[0].summary.finding is CheckFinding.FAIL
+
+
+@pytest.mark.parametrize(
+    "season,value,expected",
+    [
+        ("summer", 20, CheckFinding.PASS),
+        ("summer", 28, CheckFinding.PASS),
+        ("summer", 29, CheckFinding.FAIL),
+        ("winter", 5, CheckFinding.PASS),
+        ("winter", 8, CheckFinding.PASS),
+        ("winter", 4, CheckFinding.FAIL),
+    ],
+)
+def test_merged_temperature_explicit_shared_seasonal_condition(season, value, expected):
+    from fishy.water_classification import TemperatureSeason, UnitBasis
+
+    selected = TemperatureSeason.SUMMER if season == "summer" else TemperatureSeason.WINTER
+    choices = tuple(
+        choice(
+            "order111:01",
+            c,
+            unit_basis=UnitBasis.TEMPERATURE_CELSIUS,
+            temperature_season=selected,
+            range_meaning=RangeMeaning.CLOSED,
+        )
+        for c in range(1, 7)
+    )
+    result = interpreted_unit_result("order111:01", value, choices)
+    assert all(x.summary.finding is expected for x in result.classes)
+    assert result.classes[0].cells[0].raw_cell.startswith("Летом")
+    assert result.classes[5].cells[0].raw_cell.startswith("Зимой")
+    assert cell("order111:01", 1, value).check.finding is CheckFinding.UNKNOWN
+
+
+@pytest.mark.parametrize(
+    "row_id,cls,state,expected",
+    [
+        ("order111:66", 1, "absent", CheckFinding.PASS),
+        ("order111:66", 2, "traces", CheckFinding.FAIL),
+        ("order111:67", 1, "absent", CheckFinding.PASS),
+        ("order111:67", 4, "traces", CheckFinding.FAIL),
+        ("order111:67", 5, "traces", CheckFinding.PASS),
+        ("order111:67", 6, "absent", CheckFinding.FAIL),
+    ],
+)
+def test_supplied_qualitative_states_do_not_become_numeric_zero(row_id, cls, state, expected):
+    from fishy.water_classification import QualitativeMeaning, QualitativeState
+
+    sample = ClassificationObservation(
+        row_id,
+        None,
+        LOCATION,
+        PERIOD,
+        "supported daily sample",
+        Presence.PRESENT,
+        PROVENANCE,
+        qualitative=QualitativeState(state),
+    )
+    c = choice(row_id, cls, qualitative_meaning=QualitativeMeaning.EXACT_STATE)
+    result = assess_order111(profile(row_id, choices=(c,)), (sample,))
+    assert result.classes[cls - 1].summary.finding is expected
+    assert assess_order111(profile(row_id), (sample,)).classes[cls - 1].summary.finding is CheckFinding.UNKNOWN
+    if row_id == "order111:66":
+        assert result.classes[2].summary.finding is CheckFinding.UNKNOWN
+    with pytest.raises(ValueError, match="missing"):
+        replace(sample, provenance=replace(PROVENANCE, correction_state=CorrectionState.MISSING))
+
+
+def test_interpretations_cannot_change_unrelated_unit_or_qualitative_cells():
+    from fishy.water_classification import QualitativeMeaning, TemperatureSeason, UnitBasis
+
+    with pytest.raises(ValueError, match="unit interpretation"):
+        choice("order111:02", 1, unit_basis=UnitBasis.DISSOLVED_ARSENIC_MG_PER_L)
+    with pytest.raises(ValueError, match="seasonal interpretation"):
+        choice("order111:02", 1, temperature_season=TemperatureSeason.SUMMER)
+    with pytest.raises(ValueError, match="qualitative interpretation"):
+        choice("order111:66", 3, qualitative_meaning=QualitativeMeaning.EXACT_STATE)
+
+
+@pytest.mark.parametrize("row", SOURCE_ROWS, ids=lambda row: row.identifier)
+def test_every_source_cell_has_attributed_evaluation_route(row):
+    """Coverage, not an assertion that these synthetic interpretations are accepted law."""
+    import re
+
+    from fishy.water_classification import (
+        MacroBenthos,
+        QualitativeMeaning,
+        QualitativeState,
+        TemperatureSeason,
+        UnitBasis,
+    )
+
+    for cls in WaterClass:
+        raw = row.cells[cls - 1]
+        options = {}
+        sample = observation(row.identifier, 1)
+        if row.identifier == "order111:01":
+            options.update(
+                unit_basis=UnitBasis.TEMPERATURE_CELSIUS,
+                temperature_season=TemperatureSeason.SUMMER,
+                range_meaning=RangeMeaning.CLOSED,
+            )
+        elif row.identifier == "order111:58-dissolved":
+            options["unit_basis"] = UnitBasis.DISSOLVED_ARSENIC_MG_PER_L
+        elif row.identifier == "order111:68":
+            options["unit_basis"] = UnitBasis.TOTAL_BACTERIA_MILLIONS_PER_ML
+        elif row.identifier == "order111:69":
+            options["unit_basis"] = UnitBasis.SAPROPHYTES_THOUSANDS_PER_ML
+        elif row.identifier == "order111:70":
+            options["ratio_typography"] = RatioTypography.LITERAL_DIGITS
+        if row.identifier == "order111:12" and cls is WaterClass.SIX:
+            from fishy.water_classification import BackgroundArithmetic
+
+            options["background_arithmetic"] = BackgroundArithmetic.ADDITIVE_INCREMENT
+        if raw in ("отс.", "следы"):
+            options["qualitative_meaning"] = QualitativeMeaning.EXACT_STATE
+            sample = replace(sample, value=None, qualitative=QualitativeState.ABSENT)
+        elif row.identifier == "order111:18" and cls is WaterClass.SIX:
+            options.update(qualified_cell=QualifiedCell.OTHER_CALCIUM, bare_operator=Comparison.LE)
+        elif row.identifier == "order111:32" and cls is WaterClass.THREE:
+            options.update(qualified_cell=QualifiedCell.OTHER_PHOSPHATE, bare_operator=Comparison.LE)
+        elif row.identifier == "order111:12":
+            if cls is not WaterClass.SIX:
+                options["bare_operator"] = Comparison.LE
+            sample = replace(sample, background=SourceValue(0, 0, row.unit, row.name))
+        elif re.fullmatch(r"[0-9]+(?:[.,][0-9]+)?", raw):
+            options["bare_operator"] = Comparison.LE
+        elif "-" in raw and row.identifier != "order111:01":
+            if row.identifier == "order111:08" and cls is WaterClass.SIX:
+                options["range_meaning"] = RangeMeaning.OUTSIDE
+            elif row.identifier == "order111:70":
+                options["range_meaning"] = RangeMeaning.CLOSED_SORTED
+            elif not (raw.startswith(">") and "-<" in raw):
+                options["range_meaning"] = RangeMeaning.CLOSED
+        if row.identifier == "order111:64-ratio":
+            sample = replace(sample, macro_benthos=MacroBenthos.PRESENT)
+        if "unit_basis" in options:
+            sample = replace(sample, value=SourceValue(1, 1, options["unit_basis"].value, row.name))
+        selected = choice(row.identifier, int(cls), **options)
+        result = assess_order111(profile(row.identifier, choices=(selected,)), (sample,))
+        assert result.classes[cls - 1].summary.finding in (CheckFinding.PASS, CheckFinding.FAIL)
+
+
+@pytest.mark.parametrize("value,expected", [(20, CheckFinding.FAIL), ("20.001", CheckFinding.PASS)])
+def test_missing_background_plus_only_runs_under_explicit_additive_scenario(value, expected):
+    from fishy.water_classification import BackgroundArithmetic
+
+    row = source_row("order111:12")
+    c = choice(row.identifier, 6, background_arithmetic=BackgroundArithmetic.ADDITIVE_INCREMENT)
+    sample = observation(row.identifier, value, background=SourceValue(10, 10, row.unit, row.name))
+    result = assess_order111(profile(row.identifier, choices=(c,)), (sample,))
+    assert result.classes[5].summary.finding is expected
+    assert result.classes[5].cells[0].raw_cell == ">Сфон. 10,0"
+    assert assess_order111(profile(row.identifier), (sample,)).classes[5].summary.finding is CheckFinding.UNKNOWN
+    with pytest.raises(ValueError, match="missing-plus"):
+        choice(row.identifier, 5, background_arithmetic=BackgroundArithmetic.ADDITIVE_INCREMENT)
+
+
+def test_additive_background_candidate_cannot_bypass_support():
+    from fishy.water_classification import BackgroundArithmetic
+
+    row = source_row("order111:12")
+    c = choice(row.identifier, 6, background_arithmetic=BackgroundArithmetic.ADDITIVE_INCREMENT)
+    p = profile(row.identifier, choices=(c,))
+    missing = observation(row.identifier, 30)
+    wrong_unit = observation(row.identifier, 30, background=SourceValue(10, 10, "kg/m3", row.name))
+    valid = observation(row.identifier, 30, background=SourceValue(10, 10, row.unit, row.name))
+    wrong_basis = replace(valid, basis="unsupported monthly average")
+    wrong_location = replace(valid, location=replace(LOCATION, section=CalculationSection("other", "1")))
+    wrong_period = replace(valid, interval=Interval(datetime(2026, 1, 2, tzinfo=UTC), datetime(2026, 1, 3, tzinfo=UTC)))
+    warmup = replace(valid, provenance=replace(PROVENANCE, excluded_warmup=(PERIOD,)))
+    for sample in (missing, wrong_unit, wrong_basis, wrong_location, wrong_period, warmup):
+        assert assess_order111(p, (sample,)).classes[5].summary.finding is CheckFinding.UNKNOWN

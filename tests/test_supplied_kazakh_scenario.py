@@ -477,3 +477,40 @@ def test_supplied_kazakh_duty_is_not_generated_or_capped_by_deliverability():
     assert later.summary.finding is CheckFinding.UNKNOWN
     assert result.intervals[0].shortfall == Flow(5)
     assert duty.schedule[0].sample.value == Flow(10)
+
+
+def test_prior_year_biology_cannot_produce_complete_receiving_year_report():
+    initial = initial_allocation(
+        natural_reference(ObservationRoute.ADEQUATE), DesignClass.DRY, AllocationRoute.PROBABILITY_SHIFT
+    )
+    accepted, report = corrected_design(initial)
+    timing = biological_timing(PROVENANCE)
+    stale = replace(timing, baseline_onset=timing.baseline_onset.replace(year=2027))
+    stale = replace(stale, findings=replace(stale.findings, scope=replace(stale.findings.scope, period=stale.period)))
+    coefficients = spawning_schedule(
+        LOCATION,
+        MONTHS,
+        PROVENANCE,
+        DesignClass.DRY,
+        EligibilityInterpretation.DRY_YEAR_WORDING,
+        TemporalBasis.MONTHLY_AVERAGE,
+        CoefficientInterpretation.LISTED_VALUE,
+        StarRelevance.NOT_RELIED_UPON,
+        stale,
+        tuple(support(coefficient_scope(LOCATION, m, PROVENANCE), PROVENANCE) for m in MONTHS),
+        basin_row=2,
+    )
+    candidate = correct_schedule(
+        tuple(item.original for item in accepted.intervals),
+        source_bounds(PROVENANCE),
+        coefficients,
+        CorrectionOrder.CORRECTION_THEN_BOUNDS,
+        report.samples[0].provenance,
+    )
+    unsupported = appendix1_report(initial, YEAR, candidate.samples, ScheduleStage.CORRECTED, IDENTITY)
+    assert candidate.actual_volume is None
+    assert unsupported.annual.volume is None
+    assert unsupported.initial.volume == Volume(40_000_000)
+    assert all(sample.presence is Presence.UNSUPPORTED for sample in candidate.samples)
+    assert all(item.scientific_use.finding is not CheckFinding.PASS for item in candidate.intervals)
+    assert report.annual.volume == Volume(Fraction(40_000_000 * 619, 610))  # valid issued result unchanged

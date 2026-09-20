@@ -39,11 +39,14 @@ This route does not fabricate daily observations. Numerical availability,
 scientific adequacy and official admissibility remain separate.
 
 `assess_q347(estimate, review, scope)` returns a `CheckSummary`. Its `Q347Review`
-consumes exact scoped `EvidenceFindings`, human-influence, representativeness and
+binds the complete immutable reviewed `Q347Estimate` and typed `Q347Use` to
+exact scoped `EvidenceFindings`, human-influence, representativeness and
 trend checks, and a conditional verification decision. Keep the estimate and
 review alongside the summary for all provenance, uncertainty and authority facts.
-Use `scope.intended_use="final Q347 determination"` for final determination;
-other named uses support scoped indicative scenarios. Final use requires a
+Use `Q347Use.FINAL_DETERMINATION` for final determination or
+`Q347Use.INDICATIVE_SCENARIO` for an indicative scenario. The scope's free-text
+use label cannot disable final-use checks. A review cannot transfer to a different
+control point, reach version, data/configuration version or changed estimate. Final use requires a
 final-submission estimate, accepted (not merely indicative) scientific findings,
 and supported verification. No operation grants official admission.
 
@@ -84,5 +87,11 @@ All tests below are in `tests/test_low_flow.py`; tolerance is zero (exact fracti
 | Art.31(1) every anchor ±0.001 l/s; both jumps | `statutory_minimum` | `test_literal_table`: exact published values in parameter table |
 | Art.4(i), uncapped low end | `permanent_flow`, `statutory_minimum` | `test_zero_small_positive_and_uncapped`: zero fails,0.001 l/s passes,1→50 |
 | Invalid quantities | `Flow`, `statutory_minimum` | `test_invalid_amount`: negative and nonfinite values refused |
+
+Additional constructor and attribution witnesses cover exact review binding,
+contradictory pooled values, untyped sample/convention records, production-method
+laundering, and final-use label changes. The public pooled carrier recalculates its
+value from retained evidence and refuses contradictions. Illustrative or simulated
+contributors cannot yield an observed-labelled result.
 
 Tests verify software and synthetic supplied decisions, not scientific or legal certification.

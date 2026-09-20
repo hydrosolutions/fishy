@@ -27,6 +27,7 @@ from fishy.low_flow import (
     EstimateStatus,
     Q347Conventions,
     Q347Review,
+    Q347Use,
     VerificationRoute,
     assess_q347,
     imported_q347,
@@ -90,7 +91,16 @@ def review(estimate, route=VerificationRoute.NOT_APPLICABLE, use="final Q347 det
     )
     passed = Check("supplied", CheckFinding.PASS, ("synthetic specialist evidence",))
     return Q347Review(
-        findings, passed, passed, passed, route, passed, None, "supplied applicability/exception assessment"
+        estimate,
+        Q347Use.INDICATIVE_SCENARIO if use == "indicative scenario" else Q347Use.FINAL_DETERMINATION,
+        findings,
+        passed,
+        passed,
+        passed,
+        route,
+        passed,
+        None,
+        "supplied applicability/exception assessment",
     ), scope
 
 
@@ -257,3 +267,59 @@ def test_different_product_cannot_accept_q347():
     wrong = replace(scope, product="monthly mean")
     wrong_review = replace(r, findings=replace(r.findings, scope=wrong))
     assert assess_q347(estimate, wrong_review, wrong).finding is CheckFinding.UNKNOWN
+
+
+@pytest.mark.parametrize("change", ["section", "reach_version", "data_version", "configuration_version"])
+def test_review_bound_to_complete_estimate(change):
+    estimate = imported()
+    r, scope = review(estimate)
+    if change == "section":
+        altered = replace(estimate, location=replace(estimate.location, section=CalculationSection("other", "1")))
+    elif change == "reach_version":
+        altered = replace(
+            estimate, location=replace(estimate.location, reach=replace(estimate.location.reach, version="2"))
+        )
+    else:
+        altered = replace(estimate, provenance=replace(estimate.provenance, **{change: "2"}))
+    assert assess_q347(altered, r, scope).finding is CheckFinding.UNKNOWN
+
+
+def test_pooled_carrier_cannot_lie():
+    estimate = pooled_q347(series(), CONVENTIONS, PROVENANCE, EstimateStatus.FINAL)
+    with pytest.raises(ValueError):
+        replace(estimate, value=Flow(999, "l/s"))
+
+
+def test_pooled_carrier_rejects_untyped_contributors():
+    estimate = pooled_q347(series(), CONVENTIONS, PROVENANCE, EstimateStatus.FINAL)
+    with pytest.raises(TypeError):
+        replace(estimate, samples=("not a sample",), conventions="not conventions")
+
+
+def test_pooled_cannot_promote_illustration_to_observation():
+    with pytest.raises(ValueError):
+        pooled_q347(
+            series(),
+            CONVENTIONS,
+            replace(PROVENANCE, production_method=ProductionMethod.OBSERVED),
+            EstimateStatus.FINAL,
+        )
+
+
+def test_typed_final_use_cannot_be_bypassed_by_scope_label():
+    estimate = imported(EstimateStatus.PRELIMINARY)
+    r, scope = review(estimate, VerificationRoute.REQUIRED, use="final determination")
+    assert r.use is Q347Use.FINAL_DETERMINATION
+    assert assess_q347(estimate, r, scope).finding is CheckFinding.UNKNOWN
+    with pytest.raises(TypeError):
+        replace(r, use="final determination")
+
+
+def test_constructor_also_rejects_observed_promotion_and_method_conflict():
+    estimate = pooled_q347(series(), CONVENTIONS, PROVENANCE, EstimateStatus.FINAL)
+    with pytest.raises(ValueError):
+        replace(estimate, provenance=replace(PROVENANCE, production_method=ProductionMethod.OBSERVED))
+    with pytest.raises(ValueError):
+        replace(estimate, method_description="mean annual Q347")
+    with pytest.raises(ValueError):
+        replace(imported(), samples=series())

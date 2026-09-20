@@ -13,6 +13,7 @@ from fishy.evidence import (
     CheckSummary,
     EvidenceFindings,
     EvidenceScope,
+    ProductionMethod,
     Provenance,
     ScientificAdequacy,
     permitted_use,
@@ -40,6 +41,11 @@ class Q347Method(StrEnum):
 class EstimateStatus(StrEnum):
     PRELIMINARY = "preliminary"
     FINAL = "submitted for final use"
+
+
+class Q347Use(StrEnum):
+    FINAL_DETERMINATION = "final determination"
+    INDICATIVE_SCENARIO = "indicative scenario"
 
 
 class VerificationRoute(StrEnum):
@@ -104,10 +110,18 @@ class Q347Estimate:
                 raise TypeError("uncertainty requires FlowBounds")
             if not self.uncertainty.lower.value <= self.value.value <= self.uncertainty.upper.value:
                 raise ValueError("estimate outside uncertainty bounds")
-        if not isinstance(self.samples, tuple):
-            raise TypeError("samples must be immutable")
-        if self.method is Q347Method.POOLED_DAILY and (not self.samples or self.conventions is None):
-            raise ValueError("pooled Q347 must retain samples and conventions")
+        if not isinstance(self.samples, tuple) or any(not isinstance(s, FlowSample) for s in self.samples):
+            raise TypeError("samples must be immutable FlowSample records")
+        if self.method is Q347Method.POOLED_DAILY:
+            if not isinstance(self.conventions, Q347Conventions):
+                raise TypeError("pooled Q347 requires typed conventions")
+            value, location, period = _pooled_value(self.samples, self.conventions, self.provenance)
+            if (self.value, self.location, self.reference_period) != (value, location, period):
+                raise ValueError("pooled estimate contradicts its daily evidence")
+            if self.method_description != self.conventions.interpolation:
+                raise ValueError("pooled method description contradicts conventions")
+        elif self.samples or self.conventions is not None:
+            raise ValueError("Art.59 imports cannot claim pooled daily evidence")
 
     @property
     def permanent_flow(self) -> CheckFinding:
@@ -115,18 +129,18 @@ class Q347Estimate:
         return CheckFinding.PASS if self.value.value > 0 else CheckFinding.FAIL
 
 
-def pooled_q347(
-    samples: tuple[FlowSample, ...],
-    conventions: Q347Conventions,
-    provenance: Provenance,
-    status: EstimateStatus,
-    uncertainty: FlowBounds | None = None,
-) -> Q347Estimate:
-    """Pool complete selected calendar years, retaining each day's original evidence.
-
-    Short records remain numerical estimates, not automatically accepted ten-year evidence.
-    Leap days increase the pooled population, not the 347-days-per-year exceedance rank.
-    """
+def _pooled_value(
+    samples: tuple[FlowSample, ...], conventions: Q347Conventions, provenance: Provenance
+) -> tuple[Flow, Location, Interval]:
+    """Validate and calculate the exact evidence represented by a pooled carrier."""
+    if not isinstance(conventions, Q347Conventions) or not isinstance(provenance, Provenance):
+        raise TypeError("pooled calculation requires typed conventions and provenance")
+    if not isinstance(samples, tuple) or any(not isinstance(sample, FlowSample) for sample in samples):
+        raise TypeError("pooled calculation requires immutable FlowSample records")
+    if provenance.production_method is ProductionMethod.OBSERVED and any(
+        sample.provenance.production_method is not ProductionMethod.OBSERVED for sample in samples
+    ):
+        raise ValueError("non-observed contributors cannot become observed Q347")
     if conventions.daily_basis is DailyBasis.COARSE_REPETITION:
         raise ValueError("repeated coarse means cannot establish daily low-flow evidence")
     daily_discharge(samples)  # Real shared support, identity, resolution and overlap checks.
@@ -147,10 +161,27 @@ def pooled_q347(
     lower = position.numerator // position.denominator
     fraction = position - lower
     value = values[lower] if not fraction else values[lower] + fraction * (values[lower + 1] - values[lower])
+    return Flow(value), first.location, Interval(start, end)
+
+
+def pooled_q347(
+    samples: tuple[FlowSample, ...],
+    conventions: Q347Conventions,
+    provenance: Provenance,
+    status: EstimateStatus,
+    uncertainty: FlowBounds | None = None,
+) -> Q347Estimate:
+    """Pool complete selected calendar years, retaining each day's original evidence.
+
+    Short records remain numerical estimates, not automatically accepted ten-year evidence.
+    Leap days increase the pooled population, not the 347-days-per-year exceedance rank.
+    """
+    value, location, period = _pooled_value(samples, conventions, provenance)
+    ordered = tuple(sorted(samples, key=lambda s: s.interval.start))
     return Q347Estimate(
-        Flow(value),
-        first.location,
-        Interval(start, end),
+        value,
+        location,
+        period,
         provenance,
         Q347Method.POOLED_DAILY,
         conventions.interpolation,
@@ -186,6 +217,8 @@ def imported_q347(
 
 @dataclass(frozen=True)
 class Q347Review:
+    estimate: Q347Estimate
+    use: Q347Use
     findings: EvidenceFindings
     influences: Check
     representativeness: Check
@@ -197,6 +230,8 @@ class Q347Review:
     guidance: str = GUIDE
 
     def __post_init__(self) -> None:
+        if not isinstance(self.estimate, Q347Estimate) or not isinstance(self.use, Q347Use):
+            raise TypeError("review requires the exact estimate and a typed intended use")
         if not isinstance(self.findings, EvidenceFindings):
             raise TypeError("scoped evidence findings required")
         for value in (self.influences, self.representativeness, self.trend, self.verification):
@@ -220,6 +255,7 @@ def assess_q347(estimate: Q347Estimate, review: Q347Review, scope: EvidenceScope
     attribution = review.findings.provenance
     if (
         scope.product != "Q347"
+        or review.estimate != estimate
         or actual != expected
         or any(
             getattr(attribution, f) != getattr(estimate.provenance, f)
@@ -234,7 +270,7 @@ def assess_q347(estimate: Q347Estimate, review: Q347Review, scope: EvidenceScope
         ("trend", review.trend),
     ):
         checks.append(Check(name, supplied.finding, supplied.reasons))
-    final = scope.intended_use == "final Q347 determination"
+    final = review.use is Q347Use.FINAL_DETERMINATION
     if final:
         accepted = (
             estimate.status is EstimateStatus.FINAL

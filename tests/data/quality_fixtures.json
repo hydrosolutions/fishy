@@ -1,0 +1,563 @@
+{
+  "status": "Synthetic arithmetic and behavior checks; not observations or policy thresholds",
+  "units": "SI for mixing",
+  "fixtures": [
+    {
+      "id": "ordinary_dilution",
+      "kind": "mixing",
+      "inputs": {
+        "Qb_m3s": 10,
+        "B_kg_s": {
+          "salt": 8
+        },
+        "Cs_kg_m3": {
+          "salt": 0.1
+        },
+        "tests": [
+          {
+            "kind": "upper",
+            "constituent": "salt",
+            "limit_kg_m3": 0.5
+          }
+        ]
+      },
+      "expected": {
+        "q_min_m3s": 7.5,
+        "section_total_m3s": 17.5,
+        "C_kg_m3": {
+          "salt": 0.5
+        }
+      }
+    },
+    {
+      "id": "ecological_total_no_double_count",
+      "kind": "mixing",
+      "inputs": {
+        "Qb_m3s": 10,
+        "B_kg_s": {
+          "salt": 8
+        },
+        "Cs_kg_m3": {
+          "salt": 0.1
+        },
+        "tests": [
+          {
+            "kind": "upper",
+            "constituent": "salt",
+            "limit_kg_m3": 0.5
+          }
+        ],
+        "ecological_total_m3s": 20
+      },
+      "expected": {
+        "q_candidate_m3s": 10,
+        "section_total_m3s": 20,
+        "C_kg_m3": {
+          "salt": 0.45
+        }
+      }
+    },
+    {
+      "id": "already_compliant",
+      "kind": "mixing",
+      "inputs": {
+        "Qb_m3s": 10,
+        "B_kg_s": {
+          "salt": 4
+        },
+        "Cs_kg_m3": {
+          "salt": 0.1
+        },
+        "tests": [
+          {
+            "kind": "upper",
+            "constituent": "salt",
+            "limit_kg_m3": 0.5
+          }
+        ]
+      },
+      "expected": {
+        "q_min_m3s": 0,
+        "section_total_m3s": 10,
+        "C_kg_m3": {
+          "salt": 0.4
+        }
+      }
+    },
+    {
+      "id": "background_not_new_legal_floor",
+      "kind": "mixing",
+      "inputs": {
+        "Qb_m3s": 10,
+        "B_kg_s": {
+          "salt": 4
+        },
+        "Cs_kg_m3": {
+          "salt": 0.1
+        },
+        "tests": [
+          {
+            "kind": "upper",
+            "constituent": "salt",
+            "limit_kg_m3": 0.5
+          }
+        ],
+        "ecological_total_m3s": 5
+      },
+      "expected": {
+        "q_candidate_m3s": 0,
+        "section_total_m3s": 10,
+        "issued_floor": "not_created"
+      }
+    },
+    {
+      "id": "source_equals_limit",
+      "kind": "mixing",
+      "inputs": {
+        "Qb_m3s": 10,
+        "B_kg_s": {
+          "salt": 8
+        },
+        "Cs_kg_m3": {
+          "salt": 0.5
+        },
+        "tests": [
+          {
+            "kind": "upper",
+            "constituent": "salt",
+            "limit_kg_m3": 0.5
+          }
+        ]
+      },
+      "expected": {
+        "quality_feasible": false,
+        "reason": "zero_coefficient_negative_rhs"
+      }
+    },
+    {
+      "id": "capacity_limited",
+      "kind": "mixing",
+      "inputs": {
+        "Qb_m3s": 10,
+        "B_kg_s": {
+          "salt": 8
+        },
+        "Cs_kg_m3": {
+          "salt": 0.1
+        },
+        "tests": [
+          {
+            "kind": "upper",
+            "constituent": "salt",
+            "limit_kg_m3": 0.5
+          }
+        ],
+        "capacity_m3s": 5
+      },
+      "expected": {
+        "quality_q_min_m3s": 7.5,
+        "feasible_with_capacity": false,
+        "C_at_capacity_kg_m3": {
+          "salt": 0.5666666666666667
+        }
+      }
+    },
+    {
+      "id": "dirty_source_upper_bound",
+      "kind": "mixing",
+      "inputs": {
+        "Qb_m3s": 10,
+        "B_kg_s": {
+          "salt": 1
+        },
+        "Cs_kg_m3": {
+          "salt": 1
+        },
+        "tests": [
+          {
+            "kind": "upper",
+            "constituent": "salt",
+            "limit_kg_m3": 0.5
+          }
+        ]
+      },
+      "expected": {
+        "q_interval_m3s": [
+          0,
+          8
+        ]
+      }
+    },
+    {
+      "id": "ecological_quality_conflict",
+      "kind": "mixing",
+      "inputs": {
+        "Qb_m3s": 10,
+        "B_kg_s": {
+          "salt": 1
+        },
+        "Cs_kg_m3": {
+          "salt": 1
+        },
+        "tests": [
+          {
+            "kind": "upper",
+            "constituent": "salt",
+            "limit_kg_m3": 0.5
+          }
+        ],
+        "ecological_total_m3s": 20
+      },
+      "expected": {
+        "quality_q_interval_m3s": [
+          0,
+          8
+        ],
+        "combined_feasible": false,
+        "reason": "ecological_minimum_exceeds_quality_upper"
+      }
+    },
+    {
+      "id": "dry_channel_open_interval",
+      "kind": "mixing",
+      "inputs": {
+        "Qb_m3s": 0,
+        "B_kg_s": {
+          "salt": 0
+        },
+        "Cs_kg_m3": {
+          "salt": 0.1
+        },
+        "tests": [
+          {
+            "kind": "upper",
+            "constituent": "salt",
+            "limit_kg_m3": 0.5
+          }
+        ]
+      },
+      "expected": {
+        "q_interval_m3s": [
+          0,
+          null
+        ],
+        "lower_open": true,
+        "attained_minimum": false,
+        "q_zero_concentration": "undefined"
+      }
+    },
+    {
+      "id": "grouped_upper",
+      "kind": "mixing",
+      "inputs": {
+        "Qb_m3s": 10,
+        "B_kg_s": {
+          "a": 0.8,
+          "b": 0.3
+        },
+        "Cs_kg_m3": {
+          "a": 0,
+          "b": 0
+        },
+        "tests": [
+          {
+            "kind": "group_upper",
+            "limits_kg_m3": {
+              "a": 0.1,
+              "b": 0.05
+            }
+          }
+        ]
+      },
+      "expected": {
+        "q_min_m3s": 4,
+        "group_sum_at_qmin": 1
+      }
+    },
+    {
+      "id": "lower_and_upper",
+      "kind": "mixing",
+      "inputs": {
+        "Qb_m3s": 10,
+        "B_kg_s": {
+          "salt": 1
+        },
+        "Cs_kg_m3": {
+          "salt": 1
+        },
+        "tests": [
+          {
+            "kind": "lower",
+            "constituent": "salt",
+            "limit_kg_m3": 0.3
+          },
+          {
+            "kind": "upper",
+            "constituent": "salt",
+            "limit_kg_m3": 0.5
+          }
+        ]
+      },
+      "expected": {
+        "q_interval_m3s": [
+          2.857142857142857,
+          8
+        ]
+      }
+    },
+    {
+      "id": "tds_standalone",
+      "kind": "mixing",
+      "inputs": {
+        "Qb_m3s": 10,
+        "B_kg_s": {
+          "tds": 8,
+          "chloride": 3.5,
+          "sulphate": 1
+        },
+        "Cs_kg_m3": {
+          "tds": 0,
+          "chloride": 0,
+          "sulphate": 0
+        },
+        "tests": [
+          {
+            "kind": "upper",
+            "constituent": "tds",
+            "limit_kg_m3": 1
+          },
+          {
+            "kind": "group_upper",
+            "limits_kg_m3": {
+              "chloride": 0.35,
+              "sulphate": 0.5
+            }
+          }
+        ],
+        "group_authority": "synthetic_test_only_not_a_national_group"
+      },
+      "expected": {
+        "q_min_m3s": 2,
+        "tds_not_in_group": true
+      }
+    },
+    {
+      "id": "missing_group_member",
+      "kind": "assessment",
+      "inputs": {
+        "group_limits": {
+          "a": 100,
+          "b": 50
+        },
+        "concentrations": {
+          "a": 20,
+          "b": null
+        }
+      },
+      "expected": {
+        "group_result": "unassessed"
+      }
+    },
+    {
+      "id": "censored_upper",
+      "kind": "assessment",
+      "inputs": {
+        "concentration_interval_mg_l": [
+          0,
+          600
+        ],
+        "upper_limit_mg_l": 500
+      },
+      "expected": {
+        "result": "indeterminate"
+      }
+    },
+    {
+      "id": "unit_conversion",
+      "kind": "units",
+      "inputs": {
+        "C_mg_l": 500,
+        "Q_m3s": 10
+      },
+      "expected": {
+        "C_kg_m3": 0.5,
+        "load_kg_s": 5
+      }
+    },
+    {
+      "id": "single_load_control",
+      "kind": "load_reduction",
+      "inputs": {
+        "Q_m3s": 10,
+        "limit_kg_m3": 0.5,
+        "other_load_kg_s": 3,
+        "controlled_load_kg_s": 4
+      },
+      "expected": {
+        "allowed_load_kg_s": 2,
+        "reduction_kg_s": 2
+      }
+    },
+    {
+      "id": "conservation",
+      "kind": "accounting",
+      "inputs": {
+        "Qb_m3s": 10,
+        "B_kg_s": 8,
+        "q_m3s": 7.5,
+        "Cs_kg_m3": 0.1
+      },
+      "expected": {
+        "incoming_load_kg_s": 8.75,
+        "outgoing_load_kg_s": 8.75,
+        "residual_kg_s": 0
+      }
+    },
+    {
+      "id": "inactive_quality",
+      "kind": "status",
+      "inputs": {
+        "Qeco": 10,
+        "quality_candidate": 20,
+        "quality_active": false
+      },
+      "expected": {
+        "report_requirement": 10,
+        "quality_result_status": "advisory"
+      }
+    },
+    {
+      "id": "invalid_group_limit",
+      "kind": "validation",
+      "inputs": {
+        "limit": 0
+      },
+      "expected": {
+        "result": "invalid_input"
+      }
+    },
+    {
+      "id": "negative_load",
+      "kind": "validation",
+      "inputs": {
+        "B_kg_s": -1
+      },
+      "expected": {
+        "result": "invalid_input"
+      }
+    },
+    {
+      "id": "strict_upper_open_minimum",
+      "kind": "mixing_strict_limit",
+      "inputs": {
+        "Qb_m3s": 10,
+        "B_kg_s": 8,
+        "Cs_kg_m3": 0.1,
+        "operator": "lt",
+        "limit_kg_m3": 0.5
+      },
+      "expected": {
+        "additional_flow_interval_m3s": {
+          "lower": 7.5,
+          "lower_inclusive": false,
+          "upper": null
+        },
+        "attained_minimum": false,
+        "q_7_5_passes": false,
+        "q_8_concentration_kg_m3": 0.48888888888888893,
+        "q_8_passes": true,
+        "capacity_7_5_result": "capacity-limited; equality does not pass"
+      }
+    },
+    {
+      "id": "strict_equality_zero_coefficient",
+      "kind": "mixing_strict_limit",
+      "inputs": {
+        "Qb_m3s": 10,
+        "B_kg_s": 5,
+        "Cs_kg_m3": 0.5,
+        "operator": "lt",
+        "limit_kg_m3": 0.5
+      },
+      "expected": {
+        "feasible": false,
+        "reason": "constant concentration equals strict limit at every finite flow"
+      }
+    },
+    {
+      "id": "group_equality_interpretations",
+      "kind": "configured_assessment",
+      "inputs": {
+        "normalised_ratios": [
+          0.4,
+          0.6
+        ],
+        "sum_limit": 1,
+        "profiles": [
+          "explicit_inclusive_scenario",
+          "explicit_strict_scenario",
+          "unresolved_source_equality"
+        ]
+      },
+      "expected": {
+        "sum": 1,
+        "explicit_inclusive_scenario": "pass",
+        "explicit_strict_scenario": "fail",
+        "unresolved_source_equality": "indeterminate; no automatic source interpretation"
+      }
+    },
+    {
+      "id": "nitrite_reporting_basis_unresolved",
+      "kind": "profile_selection_contract",
+      "inputs": {
+        "measurement": {
+          "value": 0.2,
+          "unit": "mg/L",
+          "basis": "NO2 ion mass"
+        },
+        "configured_limit": {
+          "value": 0.2,
+          "unit": "mg/L",
+          "basis": "N in nitrite"
+        },
+        "supported_conversion": null
+      },
+      "expected": {
+        "comparison": "indeterminate",
+        "reason": "chemical reporting basis mismatch; equal units and values do not establish equivalence"
+      }
+    },
+    {
+      "id": "source_range_not_automatically_interval",
+      "kind": "profile_selection_contract",
+      "inputs": {
+        "source_cell": "0,3–3,0",
+        "selected_interpretation": null
+      },
+      "expected": {
+        "assessment": "indeterminate",
+        "reason": "could be a context-dependent limit range; no permitted-concentration interval inferred"
+      }
+    },
+    {
+      "id": "missing_group_member_preserves_individual_failure",
+      "kind": "profile_selection_contract",
+      "inputs": {
+        "required_group_members": [
+          "a",
+          "b"
+        ],
+        "observed_members": [
+          "a"
+        ],
+        "individual_a": "fail"
+      },
+      "expected": {
+        "individual_a": "fail",
+        "group": "indeterminate",
+        "coverage": "incomplete",
+        "whole_profile_pass": false
+      }
+    }
+  ]
+}

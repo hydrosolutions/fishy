@@ -1,0 +1,31 @@
+{
+  "schema": "fishy-source-publication-v1",
+  "purpose": "Inactive source-table transcription; not an adopted or complete applicable quality profile",
+  "upstream_prefix": "report_snapshot/quality_support/",
+  "upstream_sha256": {
+    "parameter_catalogue.json": "7c84bbc7c193f1dde0693069f0cf44bbe23fdd9ea18b2b2b903ac7ca7ec39170",
+    "public_parameter_seed.csv": "468d37bab0579469277d92e6e4e46ead404703fd34d8cbba18f1066f691ce7f8",
+    "parameter_sources/paket_annex1.json": "a8bb7cc14525b25f65b5bfa04addfad45c0f07c7b54a8d991fef8f0d325e2f15",
+    "parameter_sources/sanpin_annex6.json": "cbba973f65d6ef3f7487d1ecee6fe1bd789d5ff7cc82b58ba050f03d35022ebf"
+  },
+  "published_sha256": {
+    "public_parameter_seed.csv": "468d37bab0579469277d92e6e4e46ead404703fd34d8cbba18f1066f691ce7f8",
+    "parameter_catalogue.json": "7c84bbc7c193f1dde0693069f0cf44bbe23fdd9ea18b2b2b903ac7ca7ec39170",
+    "parameter_sources/paket_annex1.json": "7688dfd5a70d4910f315962ac2f89d4d16075025440e2c9c327bf008f5ba3f8a",
+    "parameter_sources/sanpin_annex6.json": "e6c07831381fbe820aa19098a54c34a20b48e2fdd78eab49fffcf6eb2e15d5eb"
+  },
+  "omitted_json_pointers": [
+    "paket_annex1/sources/docx/path",
+    "paket_annex1/sources/supplied_text/path",
+    "paket_annex1/auxiliary_ooxml_parts",
+    "paket_annex1/original_docx_base64",
+    "sanpin_annex6/source/path",
+    "sanpin_annex6/source/offline_path",
+    "paket_annex1/verification/docx_payload_roundtrip_sha256"
+  ],
+  "changed_json_pointers": [
+    "paket_annex1/extraction_notes/5"
+  ],
+  "retained": "All 456 entries, 8 separate seeds, raw table cells, names, units, formula runs, source categories, qualifications, source notes, merged-cell relationships and original source hashes. Catalogue transcription_sha256 identifies upstream transcription, not sanitized derivative.",
+  "restrictions": "No licence grant inferred. SanPiN public official text; supplied Paket draft remains unauthenticated as adopted and nonbinding. No restricted methodological papers, reports, full handover, embedded original binary or private filesystem paths included."
+}

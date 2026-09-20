@@ -54,6 +54,21 @@ Compatible source revisions are locked:
 | Taqsim | `396ad093c2b6f240e702a3b05aee1fb96a69b3f7` |
 | Incidence | `665da4e0d81ab28921b8d5d2edbb9be27f4ec612` |
 
+## Assess quality and conservative feasibility
+
+```sh
+uv run python examples/imported_quality.py
+uv run --extra taqsim python examples/taqsim_quality.py --save mixed.taqsim
+```
+
+Configure individual, group, range or relative-reference targets. Imported evidence
+works without Taqsim. A fixed conservative boundary returns the full feasible
+arrival interval, including upper bounds and strict endpoints. Source-control,
+local/basin accounting and five-condition activation remain separate operations.
+The 456 catalogue records and eight seed rules stay inactive until explicitly
+selected and qualified. See [quality operations and limits](docs/quality.md) and
+[executed acceptance crosswalk](docs/quality-acceptance.md).
+
 ## Meaning and limits
 
 Present zero, missing, absent, outside-horizon and unsupported evidence remain
@@ -64,8 +79,8 @@ supplied evidence. A daily mean cannot certify unseen within-day conditions.
 A missing basin-plan assignment does not block a supported reach calculation.
 Scenario changes do not rewrite source profiles or issued duty versions. The
 library does not infer national methods, choose policy, reconstruct natural flow,
-or run an all-method orchestrator. Quality-limit assessment and route-specific
-issuance rules belong to their own methods.
+or run an all-method orchestrator. Quality-limit findings do not issue duties. Route-specific
+issuance rules remain separate.
 
 See [assessment contracts and executed crosswalk](docs/assessment.md).
 

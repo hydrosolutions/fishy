@@ -276,3 +276,10 @@ def permitted_use(findings: EvidenceFindings, scope: EvidenceScope) -> Check:
     ):
         return Check(check_id, CheckFinding.UNKNOWN, ("required evidence unresolved",) + findings.reasons)
     return Check(check_id, CheckFinding.PASS, findings.reasons)
+
+
+def warmup_restrictions(provenance: Provenance, interval: Interval) -> tuple[str, ...]:
+    """Return the supplied exclusion when any part of the requested interval overlaps."""
+    if any(interval.start < excluded.end and excluded.start < interval.end for excluded in provenance.excluded_warmup):
+        return ("requested interval overlaps excluded warm-up",)
+    return ()

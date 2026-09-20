@@ -54,7 +54,7 @@ possibly-unresolved-reference = "warn"
 # Pytest
 # -----------------------
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "."] # Acceptance tests exercise runnable caller examples.
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]

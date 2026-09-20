@@ -284,6 +284,10 @@ def test_supplied_biological_monthly_schedule_enters_bounds_and_changes_annual_v
         SignedState(StateVariable.TEMPERATURE, 15, "degC", "water"),
         timing_evidence,
         LOCATION,
+        YEAR,
+        replace(
+            timing_evidence, scope=replace(timing_evidence.scope, product="spawning_timing_applicability", period=YEAR)
+        ),
     )
     coefficients = spawning_schedule(
         LOCATION,
@@ -373,20 +377,65 @@ def test_required_biological_support_binds_declared_derivation_scope(alteration)
     assert c.findings is not None
     scope = replace(c.findings.scope, product="spawning_timing")
     support = replace(c.findings, scope=scope)
-    accepted = replace(c, required_support=(scope,), supporting_evidence=(support,))
+    applicability = replace(support, scope=replace(scope, product="spawning_timing_applicability"))
+    accepted = replace(c, required_support=(scope, applicability.scope), supporting_evidence=(support, applicability))
     result = correct_schedule((sample(8),), bounds(), (accepted,), CorrectionOrder.CORRECTION_THEN_BOUNDS, RESULT)
     assert result.intervals[0].scientific_use.finding is CheckFinding.PASS
     if alteration == "missing":
         altered = replace(accepted, supporting_evidence=())
     elif alteration == "period":
         support = replace(support, scope=replace(scope, period=Interval(YEAR.start, datetime(2024, 2, 1, tzinfo=UTC))))
-        altered = replace(accepted, supporting_evidence=(support,))
+        altered = replace(accepted, supporting_evidence=(support, applicability))
     elif alteration == "use":
         support = replace(support, scope=replace(scope, intended_use="other_use"))
-        altered = replace(accepted, supporting_evidence=(support,))
+        altered = replace(accepted, supporting_evidence=(support, applicability))
     else:
         support = replace(support, provenance=replace(support.provenance, **{alteration: "unrelated"}))
-        altered = replace(accepted, supporting_evidence=(support,))
+        altered = replace(accepted, supporting_evidence=(support, applicability))
     result = correct_schedule((sample(8),), bounds(), (altered,), CorrectionOrder.CORRECTION_THEN_BOUNDS, RESULT)
+    assert result.samples[0].value == Flow(10)
+    assert result.intervals[0].scientific_use.finding is CheckFinding.UNKNOWN
+
+
+def test_unavailable_coefficient_cannot_claim_scientific_pass():
+    c = coefficient()
+    assert c.findings is not None
+    support = replace(c.findings, scope=replace(c.findings.scope, product="spawning_timing"))
+    c = replace(
+        c,
+        value=None,
+        presence=Presence.UNSUPPORTED,
+        reasons=("biological timing not applicable",),
+        supporting_evidence=(support,),
+        required_support=(support.scope,),
+    )
+    result = correct_schedule((sample(8),), bounds(), (c,), CorrectionOrder.CORRECTION_THEN_BOUNDS, RESULT)
+    assert result.intervals[0].scientific_use.finding is CheckFinding.UNKNOWN
+
+
+@pytest.mark.parametrize("route", ["stretched", "multiple_cycles"])
+def test_direct_coefficient_cannot_join_biology_and_flow_through_different_cycles(route):
+    c = coefficient()
+    assert c.findings is not None
+    biology = replace(c.findings, scope=replace(c.findings.scope, product="spawning_timing"))
+    if route == "stretched":
+        horizon = Interval(YEAR.start, datetime(2026, 1, 1, tzinfo=UTC))
+        applications = (
+            replace(
+                c.findings, scope=replace(c.findings.scope, product="spawning_timing_applicability", period=horizon)
+            ),
+        )
+    else:
+        oldyear = Interval(datetime(2023, 1, 1, tzinfo=UTC), YEAR.start)
+        biology = replace(biology, scope=replace(biology.scope, period=oldyear))
+        applications = tuple(
+            replace(
+                c.findings, scope=replace(c.findings.scope, product="spawning_timing_applicability", period=horizon)
+            )
+            for horizon in (oldyear, YEAR)
+        )
+    supporters = (biology, *applications)
+    c = replace(c, supporting_evidence=supporters, required_support=tuple(f.scope for f in supporters))
+    result = correct_schedule((sample(8),), bounds(), (c,), CorrectionOrder.CORRECTION_THEN_BOUNDS, RESULT)
     assert result.samples[0].value == Flow(10)
     assert result.intervals[0].scientific_use.finding is CheckFinding.UNKNOWN

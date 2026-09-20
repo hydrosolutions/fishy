@@ -253,8 +253,17 @@ class BiologicalTiming:
     optimal_temperature: SignedState
     findings: EvidenceFindings
     location: Location
+    applicability: Interval | None = None
+    applicability_findings: EvidenceFindings | None = None
 
     def __post_init__(self) -> None:
+        if self.applicability is not None:
+            if not isinstance(self.applicability, Interval):
+                raise TypeError("biological applicability requires Interval")
+            if self.applicability.seconds > 366 * 86400:
+                raise ValueError("biological applicability covers one annual cycle, at most 366 days")
+        if self.applicability_findings is not None and not isinstance(self.applicability_findings, EvidenceFindings):
+            raise TypeError("biological applicability findings require EvidenceFindings")
         if not isinstance(self.location, Location):
             raise TypeError("biological timing requires Location")
         if not isinstance(self.species, str) or not self.species.strip():
@@ -376,6 +385,21 @@ def spawning_schedule(
             "spawning_correction",
         )
         reasons.extend(_support(timing.findings, scope, provenance))
+        if timing.applicability is None or timing.applicability_findings is None:
+            reasons.append("biological temporal applicability and its evidence are missing")
+        else:
+            applicability_scope = EvidenceScope(
+                "spawning_timing_applicability",
+                location.reach.identifier,
+                provenance.reference_member,
+                timing.applicability,
+                "spawning_correction",
+            )
+            reasons.extend(_support(timing.applicability_findings, applicability_scope, provenance))
+            if not (
+                timing.applicability.start <= timing.period.start and timing.period.end <= timing.applicability.end
+            ):
+                reasons.append("shifted biological season is outside its supported applicability")
         if timing.onset_water_temperature.value < timing.optimal_temperature.value:
             reasons.append("water temperature has not reached biological onset threshold")
     row = None
@@ -414,6 +438,9 @@ def spawning_schedule(
             f"species={timing.species}; onset={timing.onset.isoformat()}; stage_days={timing.stage_days}; annual_shift_days={timing.annual_shift_days}",
         )
         supporting_evidence += (timing.findings,)
+        if timing.applicability_findings is not None:
+            supporting_evidence += (timing.applicability_findings,)
+        trace += (f"biological_applicability={timing.applicability}",)
     if study is not None:
         trace += (
             f"study stage_values={study.stage_values}; stage_weights={study.stage_weights}; period={study.period}",
@@ -424,6 +451,12 @@ def spawning_schedule(
         scope = coefficient_scope(location, interval, provenance)
         findings = next((f for f in coefficient_findings if f.scope == scope), None)
         local = list(reasons)
+        if (
+            timing is not None
+            and timing.applicability is not None
+            and not (timing.applicability.start <= interval.start and interval.end <= timing.applicability.end)
+        ):
+            local.append("requested interval is outside biological temporal applicability")
         if findings is None:
             local.append("coefficient evidence missing for interval")
         else:

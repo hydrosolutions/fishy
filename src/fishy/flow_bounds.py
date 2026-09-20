@@ -226,7 +226,37 @@ def _coefficient_support(coefficient: TimedCoefficient | None) -> tuple[bool, Ch
     else:
         main = permitted_use(evidence, scope)
     checks = [Check("main", main.finding, main.reasons)]
+    checks.append(
+        Check(
+            "coefficient_availability",
+            CheckFinding.PASS if valid else CheckFinding.UNKNOWN,
+            ("coefficient numerical/temporal availability is assessed separately",),
+        )
+    )
     required = coefficient.required_support
+    applicability = tuple(s for s in required if s.product == "spawning_timing_applicability")
+    if not any(
+        a.period.start <= coefficient.interval.start and coefficient.interval.end <= a.period.end for a in applicability
+    ):
+        checks.append(
+            Check(
+                "temporal_applicability",
+                CheckFinding.UNKNOWN,
+                ("no declared biological applicability covers the requested interval",),
+            )
+        )
+    for i, biological_scope in enumerate(s for s in required if s.product == "spawning_timing"):
+        if not any(
+            a.period.start <= biological_scope.period.start and biological_scope.period.end <= a.period.end
+            for a in applicability
+        ):
+            checks.append(
+                Check(
+                    f"season_applicability_{i}",
+                    CheckFinding.UNKNOWN,
+                    ("biological season is outside declared temporal applicability",),
+                )
+            )
     if not any(s.product == "spawning_timing" for s in required):
         checks.append(
             Check("required_biology", CheckFinding.UNKNOWN, ("required biological support scopes were not declared",))

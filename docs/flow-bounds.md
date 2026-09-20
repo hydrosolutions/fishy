@@ -35,7 +35,9 @@ interval. No interpolation or calendar transfer is performed. Missing/partial
 bounds, warm-up exclusions and unsupported coefficients remain unresolved.
 Coefficient findings use `coefficient_scope`; findings must match both that exact
 scope and the coefficient's provenance. `TimedCoefficient.required_support` declares the biological/study scopes used by
-the derivation. Missing required support prevents a scientific pass; an attached
+the derivation. Required temporal applicability must cover the coefficient interval and the full
+biological season. An unavailable coefficient cannot claim a scientific pass.
+Missing required support prevents a scientific pass; an attached
 rejected or prohibited prerequisite retains its failure even when another
 prerequisite is missing. Declared biological periods can differ from the daily or
 monthly coefficient interval. Supporting scopes, use and provenance must bind the

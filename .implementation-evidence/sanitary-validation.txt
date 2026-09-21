@@ -1,4 +1,4 @@
-Validated source revision: 5779570974a83de126b5282d0298e2ea45636708
+Validated source revision: 86ee896724fbbdc4e84413bd2d514936ecc2a16c
 
 $ uv run --all-extras pytest -q
 ........................................................................ [  5%]
@@ -19,8 +19,14 @@ $ uv run --all-extras pytest -q
 ........................................................................ [ 85%]
 ........................................................................ [ 90%]
 ........................................................................ [ 95%]
-.......................................................                  [100%]
-1351 passed in 23.42s
+..........................................................               [100%]
+1354 passed in 22.06s
+
+
+$ uv run --all-extras pytest tests/test_duties.py tests/test_sanitary_duties.py tests/test_sanitary_profile.py tests/test_sanitary_hydraulics.py -q
+........................................................................ [ 78%]
+....................                                                     [100%]
+92 passed in 0.71s
 
 
 $ uv run --all-extras ruff format --check
@@ -35,13 +41,7 @@ $ uv run --all-extras ty check
 All checks passed!
 
 
-$ uv run pytest tests/test_duties.py tests/test_sanitary_duties.py tests/test_sanitary_profile.py tests/test_sanitary_hydraulics.py -q
-........................................................................ [ 80%]
-.................                                                        [100%]
-89 passed in 0.71s
-
-
-$ uv run python examples/sanitary_assessment.py
+$ uv run --all-extras python examples/sanitary_assessment.py
 Sanitary shortfall m3: 43200
 Sanitary finding: fail complete
 Independent ecological finding: unknown

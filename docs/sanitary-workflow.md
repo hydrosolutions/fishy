@@ -180,6 +180,14 @@ It fails a hypothetical inclusive rise limit `1/5 = 0.20`. The reverse rate is
 `-6/25` and passes a separate fall limit `3/10 = 0.30`. These limits are supplied
 synthetic criteria, not source-law thresholds.
 
+A `RateAssessment` retains each required direction in `directional_checks` and
+reports coverage through `completeness`. A supported failure against one supplied
+bound remains `FAIL` when the opposite bound is missing, with `INCOMPLETE`
+coverage. With no known failure, a missing bound remains unknown. Supported
+change bounds, elapsed time and rate bounds remain available in both cases.
+Inspect these fields together: the aggregate `check` and `rate_check` projection
+alone cannot encode incomplete directional coverage.
+
 For state bounds `[l0, u0]` and `[l1, u1]`, conservative rate bounds are
 `[(l1-u0)/dt, (u1-l0)/dt]`. Supported tighter joint evidence may narrow them.
 Containment passes; disjointness fails; overlap is indeterminate, with strict

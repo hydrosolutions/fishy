@@ -334,3 +334,34 @@ def test_no_directional_criteria_cannot_manufacture_satisfaction():
     result = assess_sanitary_rate(replace(c, rise=absent, fall=absent), t)
     assert result.check.finding is CheckFinding.UNKNOWN
     assert result.rate_bounds is None
+
+
+@pytest.mark.parametrize(
+    ("previous", "current", "missing", "rate"),
+    [("1", "1.12", "fall", ".24"), ("1.20", "1", "rise", "-.4")],
+)
+def test_supported_direction_failure_survives_missing_other_bound(previous, current, missing, rate):
+    from fishy.evidence import Completeness
+
+    criterion, transition = inputs(previous, current)
+    criterion = replace(criterion, **{missing: RateBound(BoundState.MISSING, None)})
+    result = assess_sanitary_rate(criterion, transition)
+    assert result.check.finding is CheckFinding.FAIL
+    assert result.completeness is Completeness.INCOMPLETE
+    assert result.directional_checks.finding is CheckFinding.FAIL
+    assert any(check.finding is CheckFinding.UNKNOWN for check in result.directional_checks.checks)
+    assert result.rate_bounds == bounds(rate)
+    assert result.elapsed_hours == Fraction(1, 2)
+    assert result.change_bounds == bounds(Fraction(current) - Fraction(previous))
+    assert result.criterion == criterion and result.transition == transition
+
+
+def test_passed_direction_cannot_hide_missing_other_bound():
+    from fishy.evidence import Completeness
+
+    criterion, transition = inputs("1", "1.05")
+    criterion = replace(criterion, fall=RateBound(BoundState.MISSING, None))
+    result = assess_sanitary_rate(criterion, transition)
+    assert result.check.finding is CheckFinding.UNKNOWN
+    assert result.completeness is Completeness.INCOMPLETE
+    assert result.rate_bounds == bounds(".1")

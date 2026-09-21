@@ -11,6 +11,8 @@ from fractions import Fraction
 from fishy.evidence import (
     Check,
     CheckFinding,
+    CheckSummary,
+    Completeness,
     Computability,
     EvidenceFindings,
     NumericalValidity,
@@ -322,6 +324,12 @@ class RateAssessment:
     change_bounds: StateBounds | None
     elapsed_hours: Fraction
     rate_bounds: StateBounds | None
+    directional_checks: CheckSummary = CheckSummary(())
+
+    @property
+    def completeness(self) -> Completeness:
+        """Missing bounds and indeterminate directions retain incomplete coverage."""
+        return self.directional_checks.completeness
 
     @property
     def permission(self) -> Check:
@@ -345,8 +353,6 @@ def assess_sanitary_rate(criterion: RateCriterion, transition: HydraulicTransiti
         reasons.append("missing state or predecessor; no gap bridging")
     if criterion.applicability is CriterionApplicability.UNRESOLVED:
         reasons.append("season-boundary criterion unresolved")
-    if any(bound.state is BoundState.MISSING for bound in (criterion.rise, criterion.fall)):
-        reasons.append("required directional bound missing")
     if all(bound.state is BoundState.INTENTIONALLY_ABSENT for bound in (criterion.rise, criterion.fall)):
         reasons.append("no directional criterion supplied; empty bounds cannot establish satisfaction")
     reasons.extend(_unsupported(transition.evidence, transition.scope))
@@ -370,32 +376,49 @@ def assess_sanitary_rate(criterion: RateCriterion, transition: HydraulicTransiti
         if joint.lower < rates.lower or joint.upper > rates.upper:
             raise ValueError("joint rate evidence must tighten conservative bounds")
         rates = joint
-    contained = True
-    disjoint = False
-    for bound, low, high in ((criterion.rise, rates.lower, rates.upper), (criterion.fall, -rates.upper, -rates.lower)):
+    directions = []
+    for name, bound, low, high in (
+        ("rise", criterion.rise, rates.lower, rates.upper),
+        ("fall", criterion.fall, -rates.upper, -rates.lower),
+    ):
         if bound.state is BoundState.INTENTIONALLY_ABSENT:
+            continue
+        if bound.state is BoundState.MISSING:
+            directions.append(Check(name, CheckFinding.UNKNOWN, ("required directional bound missing",)))
             continue
         assert bound.magnitude is not None
         if bound.comparison is Comparison.INCLUSIVE:
-            contained = contained and high <= bound.magnitude
-            disjoint = disjoint or low > bound.magnitude
+            contained = high <= bound.magnitude
+            disjoint = low > bound.magnitude
         else:
-            contained = contained and high < bound.magnitude
-            disjoint = disjoint or low >= bound.magnitude
-    # Two strict zero bounds define an empty admissible range.
+            contained = high < bound.magnitude
+            disjoint = low >= bound.magnitude
+        finding = CheckFinding.PASS if contained else CheckFinding.FAIL if disjoint else CheckFinding.UNKNOWN
+        directions.append(Check(name, finding, (f"{bound.comparison.value} supplied directional bound",)))
+    # Joint strict zero bounds can exclude every rate even when each marginal
+    # direction overlaps the uncertainty interval.
     if criterion.rise.magnitude == criterion.fall.magnitude == 0 and Comparison.STRICT in (
         criterion.rise.comparison,
         criterion.fall.comparison,
     ):
-        disjoint = True
-        contained = False
-    finding = CheckFinding.PASS if contained else CheckFinding.FAIL if disjoint else CheckFinding.UNKNOWN
+        directions.append(Check("joint_bounds", CheckFinding.FAIL, ("empty admissible rate range",)))
+    directional_checks = CheckSummary(tuple(directions))
+    finding = directional_checks.finding
     notes = (
         f"{criterion.status.value} criterion: {criterion.source}",
         "discrete transition only; not instantaneous maxima or legal compliance",
         "interval overlap is indeterminate; bounds are not probabilistic confidence intervals",
     )
-    return RateAssessment(criterion, transition, Check(criterion.scope.component, finding, notes), change, hours, rates)
+    notes += tuple(reason for check in directions if check.finding is CheckFinding.UNKNOWN for reason in check.reasons)
+    return RateAssessment(
+        criterion,
+        transition,
+        Check(criterion.scope.component, finding, notes),
+        change,
+        hours,
+        rates,
+        directional_checks,
+    )
 
 
 def rate_check(required: HydraulicScope, assessment: RateAssessment) -> Check:

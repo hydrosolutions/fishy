@@ -1,4 +1,4 @@
-"""compose_requirement : EcologicalFlow × QualityComponent × ControlMapping → IntervalComposition.
+"""compose_requirement : FlowSample × Provenance × QualityComponent? × ControlMapping? × EvidenceFindings? → IntervalComposition.
 
 Shared lower bounds use their maximum. Lateral water uses the supported carrier
 mapping, never a sum of arbitrary requirements. Original components remain visible.

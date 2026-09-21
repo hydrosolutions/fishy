@@ -1,4 +1,4 @@
-"""finalize_regime : SelectedRequirementFamily × FinalPhysicalInputs × DurationTests → FinalRegime.
+"""finalization : FamilySelection × (ClassAssessment | RequirementAssessment)* × (MemberConstruction | FloorConstruction)* × DurationTest* → (FinalRegime | FinalFloors).
 
 A whole-family failure declines new requirement/floor publication. Existing issued
 versions remain unchanged. Route selection/descent is a separate caller operation.
@@ -11,16 +11,49 @@ from fishy.duration_minima import DurationThreshold
 from fishy.duration_windows import WindowUncertaintySupport
 from fishy.duties import Floor
 from fishy.evidence import Check, CheckFinding, CheckSummary, Provenance
-from fishy.floor_construction import FloorConstruction, FloorConstructionAssessment, assess_floor_construction
+from fishy.floor_construction import (
+    FloorConstruction,
+    FloorConstructionAssessment,
+    PotentialFloorSource,
+    assess_floor_construction,
+    assess_floor_source,
+    floor_reconstruction_need,
+)
 from fishy.flows import FlowSample
 from fishy.low_flow_safeguard import AssessmentStage, CandidateReferenceRelation, LowFlowAssessment, assess_low_flow
+from fishy.mixing import CheckOutcome, recheck_mixing
 from fishy.natural_baseline import EcologicalRegimeMethod
 from fishy.natural_floor import FloorInvariant, natural_floor
 from fishy.natural_routing import NaturalRoute, RouteFailure
+from fishy.potential_requirements import PotentialRoute
+from fishy.provisional_duration import ProvisionalDurationAssessment, recompute_provisional_duration
+from fishy.quality_activation import ComponentStatus, apply_quality_component
+from fishy.quantities import Flow
+from fishy.receptor_delivery import WaterRelationship
 from fishy.requirement_checks import FinalCondition, RequirementAssessment, recheck_requirement
-from fishy.requirement_construction import ConstructionAssessment, MemberConstruction, assess_construction
-from fishy.requirement_family import FamilySelection, FloorSeries, RequirementFamily, assess_selected_family
+from fishy.requirement_construction import (
+    ConstructionAssessment,
+    MemberConstruction,
+    StudySource,
+    assess_construction,
+)
+from fishy.requirement_family import (
+    FamilySelection,
+    FloorSeries,
+    ReconstructionNeed,
+    RequirementFamily,
+    assess_selected_family,
+)
 from fishy.scientific_acceptance import ScientificAssessment, UsePurpose
+from fishy.source_conditions import (
+    ProcessConditionAssessment,
+    SourceConditionAssessment,
+    SourcePeriodMapping,
+    assess_process_conditions,
+    assess_source_conditions,
+    source_period_scope,
+)
+from fishy.source_policy import floor_policy_checks, source_policy_checks
 
 
 @dataclass(frozen=True)
@@ -93,6 +126,9 @@ class FinalRegime:
     floor: Floor | None
     member_physical: tuple[MemberPhysical, ...] = ()
     member_duration: tuple[ClassDurationAssessment, ...] = ()
+    provisional_diagnostics: tuple[ProvisionalDurationAssessment, ...] = ()
+    source_conditions: tuple[SourceConditionAssessment, ...] = ()
+    source_process_conditions: tuple[ProcessConditionAssessment, ...] = ()
 
     @property
     def route_failure(self) -> RouteFailure | None:
@@ -143,6 +179,167 @@ def _physical_checks(family, required, assessments):
                     Check(label + ":coverage", CheckFinding.UNKNOWN, ("required physical conditions unresolved",))
                 )
     return checks
+
+
+def _composition_obligations(composition, final):
+    checks = []
+    if composition.quality is not None and (final is None or final.original_quality is None):
+        checks.append(Check("source_quality", CheckFinding.UNKNOWN, ("source quality requires a final recheck",)))
+    if composition.quality is not None and final is not None:
+        q = composition.quality
+        q = apply_quality_component(
+            q.base,
+            q.quality.boundary,
+            q.quality.targets,
+            q.activation,
+            q.source_control,
+            q.accounts,
+            q.background_mapping,
+            q.quality.bounds,
+            q.final_check.arrival if q.final_check else None,
+        )
+        if q.status is not ComponentStatus.ADVISORY:
+            local = final.sample.value
+            if final.mapping is not None and final.mapping.mapping.relationship is WaterRelationship.LATERAL:
+                local = final.mapping.mapping.continuing
+            boundary = q.quality.boundary
+            if local is None:
+                checks.append(Check("original_quality", CheckFinding.UNKNOWN, ("actual final local flow missing",)))
+            elif local.value < boundary.background.value:
+                checks.append(Check("original_quality", CheckFinding.FAIL, ("final flow below source background",)))
+            else:
+                repeated = recheck_mixing(
+                    boundary, q.quality.targets, Flow(local.value - boundary.background.value), q.quality.bounds
+                )
+                finding = {
+                    CheckOutcome.PASS: CheckFinding.PASS,
+                    CheckOutcome.FAIL: CheckFinding.FAIL,
+                    CheckOutcome.INDETERMINATE: CheckFinding.UNKNOWN,
+                }[repeated.outcome]
+                checks.append(
+                    Check(
+                        "original_quality",
+                        finding,
+                        ("original source quality inputs rechecked at actual final local flow",),
+                    )
+                )
+    if composition.mapping is not None:
+        if final is None or final.mapping is None or final.receptor is None:
+            checks.append(
+                Check(
+                    "source_receptor",
+                    CheckFinding.UNKNOWN,
+                    ("mapped source requires exact final mapping and receptor quantity/salinity checks",),
+                )
+            )
+        if final is not None and final.mapping is not None:
+            original, mapped = composition.mapping.mapping, final.mapping.mapping
+            if (original.control, original.continuing_location, original.relationship, original.context.receptor) != (
+                mapped.control,
+                mapped.continuing_location,
+                mapped.relationship,
+                mapped.context.receptor,
+            ):
+                checks.append(
+                    Check(
+                        "source_mapping_policy",
+                        CheckFinding.FAIL,
+                        ("final mapping changes source topology or receptor",),
+                    )
+                )
+    return checks
+
+
+def _regime_source_conditions(construction, family, assessments):
+    by_key = {(a.design, a.result.sample.interval): a.result for a in assessments}
+    samples = {(c.design, s.interval): s for c in family.classes for s in c.samples}
+    checks, studies = [], []
+    for component in construction.compositions:
+        key = component.design, component.result.base.interval
+        result = by_key.get(key)
+        label = f"source_final:{construction.member}:{key[0].value}:{key[1].start.isoformat()}"
+        checks.extend(
+            Check(label + ":" + c.check_id, c.finding, c.reasons)
+            for c in _composition_obligations(component.result, result)
+        )
+        if isinstance(construction.source, StudySource):
+            for row in construction.source.studies:
+                if row.design is not key[0]:
+                    continue
+                for original in row.components:
+                    if original.study.scope.period != key[1]:
+                        continue
+                    computed = assess_source_conditions(
+                        original.study,
+                        original.relations,
+                        samples[key],
+                        mapping=result.mapping if result else None,
+                        supplied=result.study if result else None,
+                    )
+                    studies.append(computed)
+                    checks.extend(
+                        Check(label + ":study:" + original.name + ":" + c.check_id, c.finding, c.reasons)
+                        for c in computed.checks.checks
+                    )
+    return checks, studies
+
+
+def _floor_source_conditions(construction, samples, assessments):
+    by_period = {r.sample.interval: r for r in assessments}
+    finals = {s.interval: s for s in samples}
+    checks, studies, processes = [], [], []
+    cache = {}
+    for component in construction.components:
+        period = component.composition.base.interval
+        result = by_period.get(period)
+        label = f"source_final:{construction.member}:{period.start.isoformat()}"
+        checks.extend(
+            Check(label + ":" + c.check_id, c.finding, c.reasons)
+            for c in _composition_obligations(component.composition, result)
+        )
+        source = component.source
+        if not isinstance(source, PotentialFloorSource):
+            continue
+        if id(source) not in cache:
+            cache[id(source)] = assess_floor_source(source)[0]
+        sized = cache[id(source)]
+        if sized is None:
+            continue
+        original = (
+            source.habitat
+            if sized.selected_route is PotentialRoute.HABITAT
+            else source.hydraulics
+            if sized.selected_route is PotentialRoute.HYDRAULIC
+            else None
+        )
+        mode = SourcePeriodMapping.EXACT if source.scope.period == period else SourcePeriodMapping.CONSTANT_THRESHOLD
+        if original is not None and original.selection is not None:
+            scope = source_period_scope(original.selection, original.relations)
+            permission = next((e for e in source.constant_thresholds if e.scope == scope), None)
+            computed = assess_source_conditions(
+                original.selection,
+                original.relations,
+                finals[period],
+                mapping=result.mapping if result else None,
+                supplied=result.study if result else None,
+                period_mapping=mode,
+                period_permission=permission,
+            )
+            studies.append(computed)
+            checks.extend(Check(label + ":study:" + c.check_id, c.finding, c.reasons) for c in computed.checks.checks)
+        conditions = (*source.additional_conditions, *source.active_quality)
+        if conditions:
+            process = assess_process_conditions(
+                conditions,
+                finals[period],
+                mapping=result.mapping if result else None,
+                supplied=result.study if result else None,
+                period_mapping=mode,
+                period_permissions=source.constant_thresholds,
+            )
+            processes.append(process)
+            checks.extend(Check(label + ":process:" + c.check_id, c.finding, c.reasons) for c in process.checks.checks)
+    return checks, studies, processes
 
 
 def _duration_checks(family, duration_tests, expected, version):
@@ -220,6 +417,7 @@ def finalize_regime(
     constructions: tuple[MemberConstruction, ...] = (),
     member_physical: tuple[MemberPhysical, ...] = (),
     member_duration_tests: tuple[DurationTest, ...] = (),
+    provisional_duration_tests: tuple[DurationTest, ...] = (),
 ) -> FinalRegime:
     """Run every required selected-family safeguard before deriving an issuable floor.
 
@@ -238,9 +436,7 @@ def finalize_regime(
     family = selection.supplied
     if family is None:
         checks.append(Check("selected_family", CheckFinding.UNKNOWN, ("selected requirement family missing",)))
-        return FinalRegime(
-            selection, (), method, physical, (), provisional, None, CheckSummary(tuple(checks)), None, None
-        )
+        return FinalRegime(selection, (), method, physical, (), (), None, CheckSummary(tuple(checks)), None, None)
     if not isinstance(family, RequirementFamily):
         raise TypeError("floor-only routes cannot create a regime or obligation")
     if family.basis.method != method.value:
@@ -272,6 +468,13 @@ def finalize_regime(
         checks.extend(
             Check(f"member:{member.identifier}:{c.check_id}", c.finding, c.reasons) for c in source_result.checks.checks
         )
+    policy_checks = source_policy_checks(tuple(c.source for c in constructions))
+    checks.append(
+        Check(
+            "source_policy", policy_checks.finding, ("actual source policy compared independently of reference data",)
+        )
+    )
+    checks.extend(policy_checks.checks)
     physical = tuple(ClassAssessment(item.design, recheck_requirement(item.result)) for item in physical)
     checks.extend(_physical_checks(family, required, physical))
     # Same labels cannot conceal changed activation or target policies. Physical
@@ -364,6 +567,24 @@ def finalize_regime(
                         ("member final check changed its construction policy",),
                     )
                 )
+    source_conditions = []
+    for construction in constructions:
+        local = next(m.candidate for m in selection.members if m.identifier == construction.member)
+        for role, candidate, supplied_physics in (
+            ("selected", family, physical),
+            ("retained", local, tuple(a.assessment for a in assessed_members if a.member == construction.member)),
+        ):
+            source_checks, conditions = _regime_source_conditions(construction, candidate, supplied_physics)
+            checks.extend(Check(role + ":" + c.check_id, c.finding, c.reasons) for c in source_checks)
+            source_conditions.extend(conditions)
+    provisional_diagnostics = recompute_provisional_duration(
+        selection.members,
+        tuple(source_results),
+        duration_tests,
+        expected_duration_tests,
+        provisional_duration_tests=provisional_duration_tests,
+    )
+    provisional = tuple(r.result for r in provisional_diagnostics if r.result is not None)
     invariant = natural_floor(family)
     checks.append(invariant.check)
     summary = CheckSummary(tuple(checks))
@@ -396,6 +617,8 @@ def finalize_regime(
         floor,
         assessed_members,
         tuple(member_duration),
+        provisional_diagnostics,
+        tuple(source_conditions),
     )
 
 
@@ -421,6 +644,8 @@ class FinalFloors:
     floors: tuple[Floor, ...]
     constructions: tuple[FloorConstructionAssessment, ...] = ()
     member_physical: tuple[FloorMemberAssessment, ...] = ()
+    source_conditions: tuple[SourceConditionAssessment, ...] = ()
+    source_process_conditions: tuple[ProcessConditionAssessment, ...] = ()
 
 
 def finalize_floors(
@@ -455,6 +680,7 @@ def finalize_floors(
         raise ValueError("direct-floor construction belongs to an excluded member")
     sources = []
     policies = {}
+    source_policies = {}
     for member in selection.members:
         if member.identifier not in by_member:
             checks.append(
@@ -470,6 +696,8 @@ def finalize_floors(
         checks.extend(
             Check(f"source:{member.identifier}:{c.check_id}", c.finding, c.reasons) for c in source.checks.checks
         )
+        for component in source.construction.components:
+            source_policies.setdefault(component.composition.base.interval, []).append(component.source)
         for item in source.compositions:
             q = item.quality
             policy = (q.activation, q.quality.targets) if q is not None else None
@@ -483,10 +711,27 @@ def finalize_floors(
                     )
                 )
             policies[key] = policy
+    for period, actual_sources in source_policies.items():
+        policy_checks = floor_policy_checks(tuple(actual_sources))
+        checks.extend(
+            Check(period.start.isoformat() + ":" + c.check_id, c.finding, c.reasons) for c in policy_checks.checks
+        )
     if not isinstance(member_physical, tuple) or any(not isinstance(a, FloorMemberAssessment) for a in member_physical):
         raise TypeError("typed retained direct-floor physical assessments required")
     if any(a.member not in selection.specification.retained for a in member_physical):
         raise ValueError("physical assessment belongs to an excluded direct-floor member")
+    if any(
+        floor_reconstruction_need(component.source) is ReconstructionNeed.REQUIRED
+        for construction in constructions
+        for component in construction.components
+    ):
+        checks.append(
+            Check(
+                "source_structural_diversity",
+                CheckFinding.PASS if len({m.structure for m in selection.members}) >= 2 else CheckFinding.UNKNOWN,
+                ("source does not establish a direct non-reconstructed floor; one reference remains screening",),
+            )
+        )
     original_checks = tuple(FloorMemberAssessment(a.member, recheck_requirement(a.result)) for a in member_physical)
     for member in selection.members:
         if not isinstance(member.candidate, FloorSeries):
@@ -549,6 +794,32 @@ def finalize_floors(
         )
         if result and any(c.finding is CheckFinding.UNKNOWN for c in result.checks.checks):
             checks.append(Check(label + ":coverage", CheckFinding.UNKNOWN))
+    source_conditions, process_conditions = [], []
+    for construction in constructions:
+        member = next(m for m in selection.members if m.identifier == construction.member)
+        if not isinstance(member.candidate, FloorSeries):
+            raise TypeError("floor source must bind direct floor series")
+        for role, samples, assessed in (
+            ("selected", series.samples, physical),
+            (
+                "retained",
+                member.candidate.samples,
+                tuple(a.result for a in original_checks if a.member == construction.member),
+            ),
+        ):
+            source_checks, conditions, processes = _floor_source_conditions(construction, samples, assessed)
+            checks.extend(Check(role + ":" + c.check_id, c.finding, c.reasons) for c in source_checks)
+            source_conditions.extend(conditions)
+            process_conditions.extend(processes)
     summary = CheckSummary(tuple(checks))
     floors = tuple(Floor(s, version) for s in series.samples) if summary.finding is CheckFinding.PASS else ()
-    return FinalFloors(selection, physical, summary, floors, tuple(sources), original_checks)
+    return FinalFloors(
+        selection,
+        physical,
+        summary,
+        floors,
+        tuple(sources),
+        original_checks,
+        tuple(source_conditions),
+        tuple(process_conditions),
+    )

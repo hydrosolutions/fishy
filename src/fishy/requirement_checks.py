@@ -1,4 +1,4 @@
-"""assess_requirement : FinalRequirement × MatchedPhysicalInputs → RequirementAssessment.
+"""assess_requirement : FlowSample × FinalCondition* × QualityComponent? × ControlEquivalent? × DeliveryStep? × HydraulicScope* × (StateAssessment | RateAssessment | ImportedHydraulicFinding)* × StudySelection? × FlowResponseRelation* → RequirementAssessment.
 
 Re-evaluate quality, mapped receptors and supplied hydraulic/study evidence on the
 exact final candidate. A previous pass cannot move to a changed requirement.
@@ -220,11 +220,13 @@ def assess_requirement(
         for scope in hydraulic_required:
             if (scope.candidate, scope.location, scope.period, scope.scenario) != (
                 sample_subject(sample),
-                sample.location,
+                scope.location,
                 sample.interval,
                 sample.provenance.scenario,
-            ):
-                raise ValueError("hydraulic condition must identify the exact final candidate")
+            ) or scope.location not in (sample.location, local_location):
+                raise ValueError(
+                    "hydraulic condition must identify the exact final candidate and a mapped physical location"
+                )
         recalculated = []
         for component in hydraulic_components:
             if isinstance(component, StateAssessment):
@@ -245,14 +247,15 @@ def assess_requirement(
         scope = study_selection.scope
         if (scope.candidate, scope.location, scope.period, scope.scenario, scope.reference_member) != (
             sample_subject(sample),
-            sample.location,
+            scope.location,
             sample.interval,
             sample.provenance.scenario,
             sample.provenance.reference_member,
-        ):
-            raise ValueError("study must identify the exact final candidate")
-        if study_selection.selected_flow != sample.value:
-            raise ValueError("study selected discharge differs from final requirement")
+        ) or scope.location not in (sample.location, local_location):
+            raise ValueError("study must identify the exact final candidate and a mapped physical location")
+        study_flow = sample.value if scope.location == sample.location else local_flow
+        if study_selection.selected_flow != study_flow:
+            raise ValueError("study selected discharge differs from actual final flow at its physical location")
         _identity(sample, study_selection.evidence.provenance)
         study = assess_study(study_selection, study_relations)
         checks.extend(Check(f"study:{c.check_id}", c.finding, c.reasons) for c in study.checks.checks)

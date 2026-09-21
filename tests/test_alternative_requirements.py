@@ -37,7 +37,8 @@ def test_u11_complete_supported_top_preserves_pulse_above_baseline_median(top):
     result = top.finalize()
     assert result.checks.finding is CheckFinding.PASS
     assert result.requirement is not None and result.floor is not None
-    assert len(result.physical) == len(result.member_physical) == 4 * 365
+    assert len(result.physical) == 4 * 365
+    assert len(result.member_physical) == 2 * 4 * 365
     assert result.duration == result.member_duration == ()
     assert result.floor.sample.value == Flow(12)
     assert result.invariant is not None and not result.invariant.crossings
@@ -55,6 +56,14 @@ def test_u11_complete_supported_top_preserves_pulse_above_baseline_median(top):
         p.result.study is not None and p.result.study.supported_flow == p.result.sample.value for p in result.physical
     )
     assert result.route_failure is None
+    assert result.selection.specification.reconstruction is ReconstructionNeed.REQUIRED
+    assert len({m.structure for m in result.selection.members}) == 2
+    other = top.additional_constructions[0].source
+    assert isinstance(other, StudySource)
+    assert [
+        source.hydrology.result.inputs.patterns[0].magnitude.value,
+        other.hydrology.result.inputs.patterns[0].magnitude.value,
+    ] == [Flow(10), Flow(11)]
 
 
 def test_u11_missing_actual_study_relation_declines_complete_regime(top):
@@ -80,11 +89,15 @@ def test_u6_qualified_transfer_rechecks_local_quality_before_floor_without_basel
     assert all(s.value == Flow(6) for c in result.requirement.classes for s in c.samples)
     assert result.floor.sample.value == Flow(6)
     assert result.duration == result.member_duration == ()
-    assert len(result.physical) == len(result.member_physical) == 4 * 365
+    assert len(result.physical) == 4 * 365
+    assert len(result.member_physical) == 2 * 4 * 365
     assert all(p.result.quality is not None for p in result.physical)
     assert result.invariant is not None and result.invariant.check.finding is CheckFinding.PASS
-    assert result.selection.specification.reconstruction is ReconstructionNeed.NOT_REQUIRED
+    assert result.selection.specification.reconstruction is ReconstructionNeed.REQUIRED
     assert all(p.method is PatternMethod.IMPORTED for p in source.recipient_natural)
+    other = transfer.additional_constructions[0].source
+    assert [s.value for s in other.recipient_natural[0].samples[:2]] == [Flow("6.6"), Flow(11)]
+    assert len({m.structure for m in result.selection.members}) == 2
 
 
 def test_u6_missing_one_final_quality_day_is_not_complete_acceptance(transfer):
@@ -112,6 +125,9 @@ def test_u7_presumptive_actual_sizing_keeps_active_quality_in_final_floors_only(
     base, result = supported_presumptive()
     assert base.checks.finding is CheckFinding.PASS
     assert [s.value for s in base.samples[:2]] == [Flow("1.2"), Flow(2)]
+    assert result.selection.specification.reconstruction is ReconstructionNeed.REQUIRED
+    assert len({m.structure for m in result.selection.members}) == 2
+
     assert result.checks.finding is CheckFinding.PASS
     assert isinstance(result.selection.supplied, FloorSeries)
     assert len(result.floors) == 365
@@ -122,10 +138,19 @@ def test_u7_presumptive_actual_sizing_keeps_active_quality_in_final_floors_only(
 def entry_final():
     from test_graduated_entry import curve, screen, statistic
 
+    from examples.natural_baseline import synthetic_acceptance
     from examples.requirement_chain import TARGET, samples
-    from fishy.graduated_entry import EntryStatus, evaluate_graduated_entry
+    from fishy.evidence import ReferenceKind
+    from fishy.graduated_entry import EntryStatistic, EntryStatus, evaluate_graduated_entry
 
-    base = evaluate_graduated_entry(statistic(5), curve(), screen())
+    original = statistic(5).product
+    observed = replace(
+        original,
+        provenance=replace(original.provenance, reference_kind=ReferenceKind.OBSERVED),
+        population="complete accepted direct observed daily flow record, no natural reconstruction",
+        statistic_name="observed pooled daily Q347",
+    )
+    base = evaluate_graduated_entry(EntryStatistic(observed, synthetic_acceptance(observed)), curve(), screen())
     assert base.status is EntryStatus.FLOOR_ONLY and base.floor == Flow(4)
     # The accepted observed daily statistic sizes a scalar floor, explicitly applied
     # to this declared complete period. It does not fabricate ecological classes.
@@ -206,7 +231,7 @@ def repeat_floor_finalization(result, constructions):
         (FinalCondition.QUALITY,),
         result.physical,
         version="rechecked-direct-final-v1",
-        constructions=constructions,
+        constructions=constructions + tuple(c.construction for c in result.constructions[1:]) if constructions else (),
         member_physical=result.member_physical,
     )
 
@@ -282,3 +307,39 @@ def test_direct_floor_missing_sizing_input_remains_unknown_not_computed_failure(
     result = repeat_floor_finalization(direct_floor, (construction,))
     assert result.checks.finding is CheckFinding.UNKNOWN
     assert not result.floors
+
+
+def test_top_two_same_day_source_components_keep_distinct_final_checks(top):
+    from examples.alternative_requirements import natural_route
+
+    def extend(construction):
+        source = construction.source
+        assert isinstance(source, StudySource)
+        first = source.studies[0]
+        original = first.components[0]
+        second = replace(original, name="independent-habitat-objective")
+        first = replace(
+            first, required_components=(*first.required_components, second.name), components=(*first.components, second)
+        )
+        source = replace(source, studies=(first, *source.studies[1:]))
+        return replace(construction, source=source, route=natural_route(source))
+
+    first = extend(top.construction)
+    second = extend(top.additional_constructions[0])
+    result = replace(top, construction=first, additional_constructions=(second,)).finalize()
+    assert result.checks.finding is CheckFinding.PASS
+    assert result.requirement is not None and result.floor is not None
+    assert isinstance(second.source, StudySource)
+    original = second.source.studies[0].components[0].study
+    records = tuple(r for r in result.source_conditions if r.source == original)
+    # All four classes have identical source studies on this day. Adding the
+    # second named component in one class gives five records per assessed family.
+    # Both selected and retained member checks keep the extra condition.
+    assert len(records) == 10
+    for member in (first.member, second.member):
+        matched = tuple(r for r in records if r.final.provenance.reference_member == member)
+        assert len(matched) == 5
+        assert all(r.checks.finding is CheckFinding.PASS for r in matched)
+    labels = tuple(c.check_id for c in result.checks.checks)
+    assert len(labels) == len(set(labels))
+    assert any(":study:independent-habitat-objective:" in label for label in labels)

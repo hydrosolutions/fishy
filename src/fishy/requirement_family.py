@@ -1,4 +1,4 @@
-"""assess_selected_family : FixedRequirementMembers × SuppliedRequirementFamily → FamilySelection.
+"""assess_selected_family : RequirementMember* × RequirementCandidate? × SelectionSpecification → FamilySelection.
 
 D.10 of the proposed Uzbek method (author report, 2026-09-19).
 Selection verifies an external decision; it does not run members or cap requirements.
@@ -296,7 +296,7 @@ def assess_selected_family(
             else Check("support", CheckFinding.UNKNOWN, ("member acceptance missing",))
         )
         checks.append(Check(f"member:{member.identifier}", check.finding, check.reasons))
-    if specification.reconstruction is ReconstructionNeed.REQUIRED:
+    if isinstance(first, RequirementFamily) or specification.reconstruction is ReconstructionNeed.REQUIRED:
         checks.append(
             Check(
                 "structural_diversity",

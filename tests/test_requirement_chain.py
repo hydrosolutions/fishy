@@ -449,3 +449,39 @@ def test_u9_potential_floor_source_proof_cannot_be_omitted_or_relabelled(potenti
     assert result.floors == ()
     assert len(final.floors) == 365
     assert all(floor.sample.value == Flow(9) for floor in final.floors)
+
+
+def test_u9_mapped_receptor_checks_cannot_be_omitted_from_final_manifest(chain):
+    from fishy.requirement_checks import FinalCondition
+    from fishy.requirement_finalization import finalize_regime
+
+    original = chain.final
+    required = tuple(c for c in FinalCondition if c is not FinalCondition.RECEPTOR)
+    selected = tuple(replace(a, result=replace(a.result, required=required, receptor=None)) for a in original.physical)
+    retained = tuple(
+        replace(
+            a, assessment=replace(a.assessment, result=replace(a.assessment.result, required=required, receptor=None))
+        )
+        for a in original.member_physical
+    )
+    assert original.floor is not None
+    declined = finalize_regime(
+        original.selection,
+        original.method,
+        required,
+        selected,
+        duration_tests=tuple(a.test for a in original.duration),
+        expected_duration_tests=(("A", "annual7-T100"), ("B", "annual7-T100")),
+        version="missing-mapped-receptor",
+        provenance=original.floor.sample.provenance,
+        constructions=tuple(a.construction for a in original.constructions),
+        member_physical=retained,
+        member_duration_tests=tuple(a.test for a in original.member_duration),
+    )
+    assert declined.checks.finding is CheckFinding.UNKNOWN
+    assert declined.floor is declined.requirement is None
+    assert any(
+        c.check_id.endswith("source_receptor") and c.finding is CheckFinding.UNKNOWN for c in declined.checks.checks
+    )
+    assert original.checks.finding is CheckFinding.PASS
+    assert float(original.floor.sample.value.value) == pytest.approx(12.112273310225769, rel=0, abs=TOLERANCE)

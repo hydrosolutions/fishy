@@ -1,4 +1,4 @@
-"""assess_construction : RequirementMember × RegimeConstruction → ConstructionAssessment.
+"""assess_construction : RequirementMember × MemberConstruction → ConstructionAssessment.
 
 Recompute typed pre-quality sources and every composition. Exact final-family
 acceptance cannot waive failed source hydrology, natural bounds or physical maps.

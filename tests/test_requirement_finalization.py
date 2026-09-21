@@ -18,6 +18,7 @@ from examples.requirement_chain import (
     synthetic_acceptance,
 )
 from fishy.annual_statistics import ImportedDerivation, TrendTreatment
+from fishy.design_conditions import DesignClass
 from fishy.duration_minima import construct_duration_reference, import_duration_threshold
 from fishy.duration_windows import DurationWindowRule, WindowDomain, WindowUncertaintySupport
 from fishy.evidence import CheckFinding, Completeness
@@ -644,3 +645,73 @@ def test_missing_route_proof_is_diagnostic_not_new_eligibility(active_inputs):
     assert result.checks.finding is CheckFinding.UNKNOWN
     assert result.route is None
     assert len(result.compositions) == 1460
+
+
+def test_single_reconstructed_natural_member_cannot_waive_structural_selection(active_inputs):
+    selection, physical, tests, constructions = active_inputs
+    member = selection.members[0]
+    single = assess_selected_family(
+        (member,),
+        selection.supplied,
+        replace(selection.specification, retained=(member.identifier,), reconstruction=ReconstructionNeed.NOT_REQUIRED),
+    )
+    result = finish(
+        single,
+        physical,
+        tuple(t for t in tests if t.member == member.identifier),
+        (constructions[0],),
+        expected=((member.identifier, "annual7"),),
+    )
+    assert result.checks.finding is not CheckFinding.PASS
+    assert result.floor is result.requirement is None
+    assert result.selection.specification.retained == (member.identifier,)
+
+
+def test_actual_alpha_policy_cannot_mix_members_even_when_natural_bound_hides_change(active_inputs):
+    from examples.requirement_chain import accepted_evidence
+    from fishy.natural_baseline import ReachCoefficients, baseline_family, coefficient_scope
+
+    selection, physical, tests, constructions = active_inputs
+    original = constructions[0]
+    source = original.source
+    assert isinstance(source, BaselineSource)
+    first = source.result.inputs.patterns[0]
+    alpha = ReachCoefficients(
+        tuple((c, Fraction(1, 2)) for c in DesignClass), "different scientific policy", "not reference uncertainty"
+    )
+    alpha = replace(
+        alpha,
+        findings=accepted_evidence(
+            coefficient_scope(alpha, first.location, first.calendar, source.provenance, first.requested_use),
+            source.provenance,
+        ),
+    )
+    changed = baseline_family(
+        source.result.inputs.patterns,
+        source.result.inputs.recorded,
+        provenance=source.provenance,
+        profile_version=source.profile_version,
+        alpha=alpha,
+    )
+    assert changed.candidate == source.result.candidate
+    assert changed.diagnostics[0].class_flow != source.result.diagnostics[0].class_flow
+    result = finish(
+        selection, physical, tests, (replace(original, source=replace(source, result=changed)), constructions[1])
+    )
+    assert result.checks.finding is CheckFinding.FAIL
+    assert next(c for c in result.checks.checks if c.check_id == "source_policy").finding is CheckFinding.FAIL
+    assert result.requirement is result.floor is None
+
+
+def test_recomputes_provisional_diagnostics_when_caller_omits_or_forges_summaries(active_inputs):
+    selection, physical, tests, constructions = active_inputs
+    result = finish(selection, physical, tests, constructions)
+    assert result.checks.finding is CheckFinding.PASS
+    assert len(result.provisional_diagnostics) == 8
+    assert all(r.source and r.result is not None for r in result.provisional_diagnostics)
+    assert all(r.result.stage is AssessmentStage.PROVISIONAL for r in result.provisional_diagnostics)
+    assert any(c.finding is CheckFinding.UNKNOWN for r in result.provisional_diagnostics for c in r.checks.checks)
+    forged = tuple(replace(p, stage=AssessmentStage.FINAL) for p in result.provisional)
+    repeated = finish(selection, physical, tests, constructions, provisional=forged)
+    assert repeated.provisional_diagnostics == result.provisional_diagnostics
+    assert repeated.provisional == result.provisional

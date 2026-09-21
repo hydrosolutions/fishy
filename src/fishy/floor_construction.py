@@ -1,17 +1,26 @@
-"""assess_floor_construction : FloorSeriesMember × SupportedFloorSource → FloorConstructionAssessment.
+"""assess_floor_construction : RequirementMember × FloorConstruction → FloorConstructionAssessment.
 
 Recompute each route's own floor and daily quality composition. Natural route
-classification remains required; no baseline or reconstruction prerequisite is added.
+classification and structural applicability bind the source; no baseline duration gate is added.
 """
 
 from dataclasses import dataclass
 
 from fishy.duties import SuppliedDuty
-from fishy.evidence import Check, CheckFinding, CheckSummary
+from fishy.evidence import (
+    Check,
+    CheckFinding,
+    CheckSummary,
+    EvidenceFindings,
+    ProductionMethod,
+    ReferenceKind,
+    permitted_use,
+)
 from fishy.graduated_entry import EntryResult, evaluate_graduated_entry
 from fishy.natural_routing import NaturalRoute, select_natural_route
 from fishy.potential_requirements import (
     PotentialFloorResult,
+    PotentialRoute,
     PotentialStudy,
     ServiceZeroDetermination,
     size_potential_floor,
@@ -20,8 +29,9 @@ from fishy.presumptive_floor import PresumptiveFloor, presumptive_floor
 from fishy.quality_activation import apply_quality_component
 from fishy.requirement_composition import IntervalComposition, compose_requirement
 from fishy.requirement_construction import NaturalRouteInputs
-from fishy.requirement_family import FloorSeries, RequirementMember
+from fishy.requirement_family import FloorSeries, ReconstructionNeed, RequirementMember
 from fishy.service_conveyance import ServiceConveyanceRequest
+from fishy.source_conditions import source_period_scope
 from fishy.spatial import PreparedClassification, Track, assessment_track
 from fishy.study_requirements import StudyCondition, StudyNeed, StudyScope
 
@@ -50,6 +60,7 @@ class PotentialFloorSource:
     additional_conditions: tuple[StudyCondition, ...] = ()
     active_quality: tuple[StudyCondition, ...] = ()
     zero: ServiceZeroDetermination | None = None
+    constant_thresholds: tuple[EvidenceFindings, ...] = ()
 
 
 type DirectFloorSource = EntryFloorSource | PresumptiveFloorSource | PotentialFloorSource
@@ -88,7 +99,7 @@ class FloorConstructionAssessment:
     checks: CheckSummary
 
 
-def _source(source: DirectFloorSource):
+def assess_floor_source(source: DirectFloorSource):
     checks = []
     if isinstance(source, EntryFloorSource):
         original = source.result
@@ -218,7 +229,7 @@ def assess_floor_construction(
         component = components[period]
         source = component.source
         if id(source) not in cache:
-            cache[id(source)] = _source(source)
+            cache[id(source)] = assess_floor_source(source)
             if cache[id(source)][0] is not None:
                 results.append(cache[id(source)][0])
         result, source_checks = cache[id(source)]
@@ -226,6 +237,7 @@ def assess_floor_construction(
         base = component.composition.base
         bound = False
         available = False
+        temporal = Check("constant_threshold", CheckFinding.PASS)
         if isinstance(result, EntryResult):
             available = result.floor is not None
             product = result.statistic.product
@@ -244,18 +256,51 @@ def assess_floor_construction(
             )
         elif isinstance(result, PotentialFloorResult):
             available = result.floor is not None
+            temporal = Check("constant_threshold", CheckFinding.PASS)
+            if base.interval != result.scope.period:
+                temporal = Check(
+                    "constant_threshold",
+                    CheckFinding.UNKNOWN,
+                    ("separate constant-threshold support required; interval means cannot be disaggregated",),
+                )
+                if isinstance(source, PotentialFloorSource):
+                    study = (
+                        source.habitat
+                        if result.selected_route is PotentialRoute.HABITAT
+                        else source.hydraulics
+                        if result.selected_route is PotentialRoute.HYDRAULIC
+                        else None
+                    )
+                    if study is not None and study.selection is not None:
+                        subject = source_period_scope(study.selection, study.relations)
+                        permission = next((e for e in source.constant_thresholds if e.scope == subject), None)
+                        if permission is not None:
+                            temporal = permitted_use(permission, subject)
+                if not (
+                    result.scope.period.start <= base.interval.start and base.interval.end <= result.scope.period.end
+                ):
+                    temporal = Check(
+                        "constant_threshold", CheckFinding.FAIL, ("daily floor outside supported source period",)
+                    )
+                checks.append(Check(label + ":constant_threshold", temporal.finding, temporal.reasons))
             bound = (
                 result.floor is not None
                 and base.value == result.floor
                 and base.location == result.scope.location
-                and base.interval == result.scope.period
+                and temporal.finding is CheckFinding.PASS
                 and base.provenance.scenario == result.scope.scenario
                 and base.provenance.reference_member == result.scope.reference_member
             )
         checks.append(
             Check(
                 label + ":source_binding",
-                CheckFinding.PASS if bound else CheckFinding.FAIL if available else CheckFinding.UNKNOWN,
+                CheckFinding.PASS
+                if bound
+                else CheckFinding.UNKNOWN
+                if isinstance(result, PotentialFloorResult) and temporal.finding is CheckFinding.UNKNOWN
+                else CheckFinding.FAIL
+                if available
+                else CheckFinding.UNKNOWN,
                 ("daily base floor must match its actual route-specific source",),
             )
         )
@@ -300,4 +345,39 @@ def assess_floor_construction(
         )
     return FloorConstructionAssessment(
         member, construction, tuple(results), tuple(compositions), CheckSummary(tuple(checks))
+    )
+
+
+def floor_reconstruction_need(source: DirectFloorSource) -> ReconstructionNeed:
+    """Derive structural applicability from the accepted source, not selection flags."""
+    if isinstance(source, PotentialFloorSource):
+        return ReconstructionNeed.NOT_REQUIRED
+    if isinstance(source, EntryFloorSource):
+        product = source.result.statistic.product
+        direct = (
+            product.provenance.reference_kind is ReferenceKind.OBSERVED
+            and source.result.statistic.assessment.acceptance_for(product).finding is CheckFinding.PASS
+        )
+        return ReconstructionNeed.NOT_REQUIRED if direct else ReconstructionNeed.REQUIRED
+    reference = source.result.reference
+    if reference is None or reference.use_checks.finding is not CheckFinding.PASS:
+        return ReconstructionNeed.REQUIRED
+    # An imported/illustrative hydrograph alone cannot establish direct observations.
+    # Require the exact accepted daily values to retain actual observation leaves.
+    annual = reference.magnitude.reference
+    from fishy.annual_statistics import AnnualReference
+
+    if not isinstance(annual, AnnualReference):
+        return ReconstructionNeed.REQUIRED
+
+    def observations(sample):
+        if sample.components:
+            return tuple(leaf for component in sample.components for leaf in observations(component))
+        return (sample,) if sample.provenance.production_method is ProductionMethod.OBSERVED else ()
+
+    original = tuple(leaf for sample in annual.observations for leaf in observations(sample))
+    return (
+        ReconstructionNeed.REQUIRED
+        if not reference.samples or any(sample not in original for sample in reference.samples)
+        else ReconstructionNeed.NOT_REQUIRED
     )

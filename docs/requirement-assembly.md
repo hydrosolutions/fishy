@@ -63,17 +63,24 @@ No delivery cap enters this calculation. No selected natural mosaic or new natur
 cap is constructed. Original member hydrology/bound results remain in typed construction records and
 are recomputed at finalization, as the complete example demonstrates.
 
-With one required reconstruction, the candidate remains visible but structural
-selection is incomplete. Routes that do not need reconstruction use their own
-ordinary acceptance conditions, without an artificial two-member requirement.
+Every natural baseline, top or transfer family needs at least two accepted,
+structurally distinct reference members. One member remains visible for screening;
+`NOT_REQUIRED` and imported or observed labels cannot waive this rule. Direct
+floors derive applicability from their actual accepted source. Potential floors
+and an accepted observed-statistic entry do not acquire a reconstruction gate.
+A presumptive reference without proof of direct observations still needs structural
+selection. Imported or hypothetical production labels alone are not that proof.
 A missing external candidate stays pending. Failed member support remains failed
 even if another check or the selected result is missing.
 
 ## Repeat final physical checks
 
 `requirement_checks.assess_requirement` rechecks one exact final `FlowSample`.
-Its required-condition manifest identifies quality, mapping, receptor, hydraulic
-and study checks that apply. An empty manifest cannot pass. Missing required
+Its manifest declares extra quality, mapping, receptor, hydraulic and study checks.
+Finalization also derives mandatory checks from the actual source and composition:
+a mapped receptor requires final mapping and quantity/salinity evidence; source
+study criteria and process conditions cannot be dropped or relaxed. An empty
+manifest cannot pass. Missing required
 inputs remain unknown. Use `sample_subject(sample)` as the candidate ID in supplied
 mapping, receptor, hydraulic and study records. Changing the flow, interval or
 provenance changes this identity.
@@ -93,8 +100,15 @@ assessments. The method must match the immutable family basis. Supply all config
 retained-member tests in `expected_duration_tests`. Each applies to every class.
 A `DurationTest` provides its threshold, exact scientific assessment, explicit
 predecessors, reference relation and uncertainty support. The operation runs
-`assess_low_flow` itself on the actual selected samples. It retains provisional
-results separately. Baseline needs configured tests for every retained member;
+`assess_low_flow` itself on the actual selected samples. It also recomputes
+`provisional_diagnostics` from each native pre-quality member source and every
+configured class/test. Caller-supplied summary findings cannot replace these
+results. Supply `provisional_duration_tests` for explicit pre-quality predecessor,
+reference-relation and uncertainty inputs; final-flow predecessors are never reused
+as pre-quality context. Missing source, tests, spatial correspondence or preceding
+days remain explicit unknown diagnostics. Provisional failure or uncertainty does
+not gate final issue: active quality can repair a final requirement. Baseline needs
+configured tests for every retained member;
 other methods acquire no implicit baseline gate.
 
 Supply `MemberConstruction` records for every retained member. Their
@@ -121,7 +135,10 @@ selection; Fishy never silently removes them and selects a convenient subset.
 It also recomputes selection arithmetic and physical findings from retained inputs,
 so replacing a summary PASS does not bypass the checks. Actual quality activation
 and target policies must agree at each class/day across retained and selected
-candidates, not just share a version label.
+candidates, not just share a version label. Actual source estimators, derivation
+methods, acceptance thresholds, pattern settings, alpha, winter shares, spawning
+coefficients, study criteria and transfer qualification policies are also compared.
+Reference values and member-specific evidence can differ without changing policy.
 
 The scalar floor is the annual minimum of final class95. It must not exceed any
 day in any class. `natural_floor` exposes this numerical diagnostic separately;
@@ -145,6 +162,24 @@ these source inputs. Supply `FloorMemberAssessment` records for every retained
 member interval as well as the selected-floor checks. Both are recomputed against
 their own exact floor series. The result creates neither a regime nor obligation
 and has no baseline-only safeguard argument.
+
+A source study's original criteria, relation geometry and process conditions remain
+binding at the actual final flow. `source_conditions` repeats the original numeric
+responses and requires fresh exact-candidate support for final study/process checks.
+A missing final study cannot hide a known habitat violation. A weaker final target
+or a more favourable replacement relation cannot replace the source constraints.
+For an explicit mapping, study evidence may refer to the continuing section: lateral
+water uses its continuing flow; shared water uses the actual final shared flow.
+
+A seasonal potential threshold can apply to daily floors only with separate
+constant-threshold support. Use `source_period_scope(selection, relations)` to bind
+that permission to the complete original study, relations and full source period.
+Place the accepted findings in `PotentialFloorSource.constant_thresholds`. One
+full-period permission can support all contained daily intervals; each final daily
+quality and study check still needs exact-candidate evidence. Supplemental process
+conditions need their own bound temporal permissions. Missing permission stays
+unknown; an interval outside the supported season fails. This does not disaggregate
+an annual/seasonal mean flow or infer subdaily constancy.
 
 Issuance is separate: `uzbek_issuance.issue_obligation` uses the minimum of the
 requirement and deliverability. The complete requirement remains unchanged.

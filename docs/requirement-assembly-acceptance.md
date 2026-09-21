@@ -48,10 +48,12 @@ the delivery evidence, not inferred from package version strings.
 
 `tests/test_alternative_requirements.py` uses complete 365-day four-class
 families and exact rational comparisons (zero numerical tolerance).
-TOP and transfer each run all 1460 retained-member and 1460 selected physical
-checks. These examples use accepted direct imported natural references, not
-reconstruction alternatives; `NOT_REQUIRED` does not waive diversity on a route
-that requires reconstruction. All permissions and physical relations are explicit
+TOP and transfer each run 2920 retained-member and 1460 selected physical checks.
+Each uses two freshly built and accepted, explicitly hypothetical reconstruction
+structures with distinct reference values. TOP natural medians are10 and11;
+transfer recipient references are6/10 and6.6/11, with one fixed donor and policy.
+Presumptive also uses two reference members. Imported records alone never waive
+natural structural selection. All permissions and physical relations are explicit
 hypothetical support, not basin validation.
 
 | Source/requirement | Real public operations | Actual = expected | Executed test |
@@ -106,3 +108,23 @@ The evidence log records actual execution and test counts. Source inspection and
 this table alone are not acceptance. Application evidence, national adoption,
 independent scientific validation and legal responsibility remain outside these
 synthetic results.
+
+## Source-bound acceptance regressions
+
+| Contract | Actual result | Executed test |
+| --- | --- | --- |
+| Natural structural count | A complete one-member baseline stays UNKNOWN with its candidate visible, even if caller sets `NOT_REQUIRED` | `test_single_reconstructed_natural_member_cannot_waive_structural_selection` |
+| Hidden alpha change | Alternative alpha changes classflow8→4 while natural99 stillbinds8; final policy check FAIL, no regime/floor | `test_actual_alpha_policy_cannot_mix_members_even_when_natural_bound_hides_change` |
+| Actual source configuration | Alpha, winter, spawning and scientific thresholds cannot change behind unchanged profile names; distinct source references remain comparable | `tests/test_source_policy.py` |
+| Required source habitat | Source40..100, finalQ10response20: omitted final study and relaxed final10..100 both FAIL; original candidates and constraints retained | `test_original_source_habitat_policy_survives_daily_quality_uplift` |
+| Mapped receptor applicability | Removing RECEPTOR from every final manifest still leaves the whole actual U9 family UNKNOWN; old issued floor remains unchanged | `test_u9_mapped_receptor_checks_cannot_be_omitted_from_final_manifest` |
+| Other source conditions | Missing/relaxed temporal or holistic conditions, flattering relations and unsupported source responses remain explicit; mapped R/U flow scopes are checked | `tests/test_source_conditions.py` |
+| Supported seasonal floor | One whole-year source threshold5 with bound constant-threshold permission +365 fresh finalquality/study checks produces365floors6 | `test_supported_seasonal_threshold_maps_to_all365_daily_quality_adjusted_floors` |
+| Missing/wrong temporal scope | Missing/foreign permission UNKNOWN; outside season FAIL; no clipping or mean disaggregation | `tests/test_floor_temporal_support.py` |
+| Source provisional diagnostics | Native base8 fails before quality while final10 passes; first missing windows stayUNKNOWN. Forged summaries and compositionbase999 cannot overwrite native source results | `test_recomputes_provisional_diagnostics_when_caller_omits_or_forges_summaries`, `tests/test_provisional_duration.py` |
+
+Direct-floor missing profiles remain incomplete, not a manufactured policy mismatch.
+Known supplied policy differences remain failures. Both original and selected source
+constraints are recomputed and retained. Provisional diagnostics never enter the
+final gate; a source/control location mismatch stays unknown rather than relabelling
+one location's source as another's.

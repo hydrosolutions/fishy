@@ -6,13 +6,18 @@ independent hydrological sizing. Existing duties are not changed.
 
 Supply a versioned `TierEvidence` inventory. Each required statistic names its
 exact `HydrologicalProduct` and `ScientificAssessment`; missing required IDs remain
-unknown. Baseline also requires the five accepted natural `DailyPattern` products
+unknown. Baseline and top tiers also require the five accepted natural `DailyPattern` products
 at .50/.75/.90/.97/.99, the accepted scalar `RecordedMinimum`, and a separate
-`reconstruction_disclosure` prerequisite. A smaller caller inventory cannot waive
+`reconstruction_disclosure` prerequisite. Bind the latter with
+`reconstruction_disclosure_scope(reference)` and complete disclosure findings for
+that exact reference, member, scenario, period and sizing use. A smaller caller inventory cannot waive
 these operands. Patterns already bind their annual acceptance; no duplicate annual
 review is required. Supported indicative statistics can select a tier. Rating restrictions,
 unsupported daily equivalence and failed scientific criteria still prevent use.
 Top-tier habitat/holistic inputs reuse `assess_natural_study`, without a baseline median cap.
+They add to—not replace—the full hydrological inputs. The delivered study vocabulary
+uses `sizing` (or `obligation sizing`) for its intended-use scope; screening-only
+study evidence cannot select the sizing tier.
 
 The result reports both the highest data-supported tier and the highest eligible
 tier. Missing resources and an absent top-tier priority/trigger remain separate.

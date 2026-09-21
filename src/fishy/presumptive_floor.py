@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 from fractions import Fraction
 from hashlib import sha256
 
-from fishy.daily_patterns import DailyPattern, pattern_product
+from fishy.daily_patterns import DailyPattern, PatternMethod, pattern_product
 from fishy.evidence import Check, CheckFinding, CheckSummary, ProductionMethod, ReferenceKind
 from fishy.flows import FlowSample
 from fishy.quantities import Flow, finite_number
@@ -91,9 +91,13 @@ class PresumptiveProfile:
 
 
 def presumptive_reference_identity(reference: DailyPattern) -> str:
-    return sha256(
-        repr(pattern_product(reference, intended_use=reference.requested_use, purpose=reference.purpose)).encode()
-    ).hexdigest()
+    """Bind the supplied record; an unavailable pattern is not a numerical product."""
+    identity = (
+        ("unavailable-pattern", reference)
+        if reference.method is PatternMethod.UNAVAILABLE
+        else pattern_product(reference, intended_use=reference.requested_use, purpose=reference.purpose)
+    )
+    return sha256(repr(identity).encode()).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -134,6 +138,8 @@ def presumptive_floor(reference: DailyPattern | None, profile: PresumptiveProfil
             "reference", reference.use_checks.finding, tuple(r for c in reference.use_checks.checks for r in c.reasons)
         )
     ]
+    if reference.method is PatternMethod.UNAVAILABLE:
+        checks.append(Check("reference_product", CheckFinding.UNKNOWN, ("numerical daily pattern unavailable",)))
     exact = profile.reference_identity == presumptive_reference_identity(reference)
     natural = reference.magnitude.provenance.reference_kind is ReferenceKind.PRESENT_CLIMATE_NATURAL
     checks.append(

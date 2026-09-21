@@ -7,13 +7,16 @@ remain separate. This selects one supplied configuration; it runs no member stud
 from dataclasses import dataclass
 from enum import StrEnum
 from fractions import Fraction
+from hashlib import sha256
 
+from fishy.annual_statistics import AnnualReference, ImportedAnnualReference
 from fishy.daily_patterns import DailyPattern
 from fishy.ecological_transfer import TransferResult, transfer_ecological_regime
 from fishy.evidence import (
     Check,
     CheckFinding,
     CheckSummary,
+    Disclosure,
     EvidenceFindings,
     EvidenceScope,
     ReferenceKind,
@@ -45,6 +48,19 @@ class NaturalRoute(StrEnum):
     PRESUMPTIVE = "presumptive_floor"
     PENDING = "pending_no_computable_basis"
     POTENTIAL = "potential_track"
+
+
+def reconstruction_disclosure_scope(reference: AnnualReference | ImportedAnnualReference) -> EvidenceScope:
+    """Bind the separate disclosure contract to this full reference and sizing use."""
+    if not isinstance(reference, (AnnualReference, ImportedAnnualReference)):
+        raise TypeError("exact natural annual reference required")
+    return EvidenceScope(
+        "reconstruction-disclosure:" + sha256(repr(reference).encode()).hexdigest(),
+        reference.location.reach.identifier,
+        reference.provenance.reference_member,
+        reference.reference_period,
+        "reconstruction disclosure for obligation sizing",
+    )
 
 
 class Availability(StrEnum):
@@ -159,12 +175,17 @@ class TierEvidence:
                 Check(
                     "entry_statistic",
                     CheckFinding.PASS
-                    if any(r.product.kind is HydrologicalProductKind.LOW_FLOW_STATISTIC for r in self.statistics)
+                    if any(
+                        r.product.kind is HydrologicalProductKind.LOW_FLOW_STATISTIC
+                        and r.product.purpose is UsePurpose.SIZING
+                        and r.product.scope.intended_use == UsePurpose.SIZING.value
+                        for r in self.statistics
+                    )
                     else CheckFinding.UNKNOWN,
-                    ("entry needs a daily low-flow statistic",),
+                    ("entry needs a daily low-flow statistic accepted for obligation sizing",),
                 )
             )
-        if self.route is NaturalRoute.BASELINE:
+        if self.route in (NaturalRoute.BASELINE, NaturalRoute.TOP):
             required_targets = {Fraction(p, 100) for p in (50, 75, 90, 97, 99)}
             targets = {p.magnitude.target.value for p in self.natural_patterns}
             checks.append(
@@ -202,24 +223,38 @@ class TierEvidence:
                 )
             else:
                 product = recorded_minimum_product(
-                    record, intended_use=record.assessment.record.product.scope.intended_use, purpose=UsePurpose.SIZING
+                    record,
+                    intended_use=self.natural_patterns[0].requested_use
+                    if self.natural_patterns
+                    else UsePurpose.SIZING.value,
+                    purpose=UsePurpose.SIZING,
                 )
                 check = record.assessment.acceptance_for(product)
                 aligned = record.reference.location == self.location and all(
-                    (
-                        p.magnitude.reference.reference_period == record.reference.reference_period
-                        and p.magnitude.provenance.reference_member == record.reference.provenance.reference_member
-                        and p.magnitude.provenance.scenario == record.reference.provenance.scenario
-                    )
-                    for p in self.natural_patterns
+                    p.magnitude.reference == record.reference for p in self.natural_patterns
                 )
                 checks.append(Check("recorded_minimum", check.finding if aligned else CheckFinding.FAIL, check.reasons))
             disclosure = next((p for p in self.prerequisites if p.identifier == "reconstruction_disclosure"), None)
+            disclosure_finding = CheckFinding.UNKNOWN
+            if disclosure is not None and self.natural_patterns:
+                reference = self.natural_patterns[0].magnitude.reference
+                expected_scope = reconstruction_disclosure_scope(reference)
+                findings = disclosure.findings
+                if (
+                    disclosure.scope != expected_scope
+                    or findings is not None
+                    and (findings.provenance != reference.provenance or findings.scope != expected_scope)
+                ):
+                    disclosure_finding = CheckFinding.FAIL
+                elif findings is None or findings.disclosure is not Disclosure.COMPLETE:
+                    disclosure_finding = CheckFinding.UNKNOWN
+                else:
+                    disclosure_finding = disclosure.check().finding
             checks.append(
                 Check(
                     "reconstruction_contract",
-                    disclosure.check().finding if disclosure else CheckFinding.UNKNOWN,
-                    ("separate reconstruction disclosure contract required",),
+                    disclosure_finding,
+                    ("disclosure must bind exact reference, member, scenario, period and sizing purpose",),
                 )
             )
         if self.route is NaturalRoute.TOP:
@@ -230,6 +265,24 @@ class TierEvidence:
                     )
                 )
             else:
+                if self.natural_patterns:
+                    first = self.natural_patterns[0]
+                    for component in self.studies:
+                        scope = component.study.scope
+                        aligned = (
+                            scope.purpose in ("sizing", UsePurpose.SIZING.value)
+                            and scope.reference_member == first.magnitude.provenance.reference_member
+                            and scope.scenario == first.magnitude.provenance.scenario
+                            and first.calendar.interval.start <= scope.period.start
+                            and scope.period.end <= first.calendar.interval.end
+                        )
+                        checks.append(
+                            Check(
+                                f"study_identity:{component.name}",
+                                CheckFinding.PASS if aligned else CheckFinding.FAIL,
+                                ("study must support sizing for this natural member/scenario/calendar",),
+                            )
+                        )
                 # Run the supplied real eligibility. Extract only non-eligibility checks
                 # for data support; never manufacture a priority decision or candidate.
                 eligibility = TopTierEligibility.NOT_SELECTED

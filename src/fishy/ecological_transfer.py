@@ -10,7 +10,7 @@ from enum import StrEnum
 from fractions import Fraction
 from hashlib import sha256
 
-from fishy.daily_patterns import DailyPattern, pattern_product
+from fishy.daily_patterns import DailyPattern, PatternMethod, pattern_product
 from fishy.design_conditions import DesignClass
 from fishy.evidence import (
     Check,
@@ -215,8 +215,18 @@ def transfer_scope(
         donor.classes,
         donor.evidence,
         profile,
-        tuple(pattern_product(p, intended_use=p.requested_use, purpose=p.purpose) for p in donor_natural),
-        tuple(pattern_product(p, intended_use=p.requested_use, purpose=p.purpose) for p in recipient_natural),
+        tuple(
+            ("unavailable-pattern", p)
+            if p.method is PatternMethod.UNAVAILABLE
+            else pattern_product(p, intended_use=p.requested_use, purpose=p.purpose)
+            for p in donor_natural
+        ),
+        tuple(
+            ("unavailable-pattern", p)
+            if p.method is PatternMethod.UNAVAILABLE
+            else pattern_product(p, intended_use=p.requested_use, purpose=p.purpose)
+            for p in recipient_natural
+        ),
     )
     return EvidenceScope(
         "ecological-transfer:" + _digest(identity),
@@ -267,7 +277,20 @@ def _natural_checks(patterns: tuple[DailyPattern, ...], name: str) -> tuple[Chec
     if len(patterns) != 4 or {p.magnitude.target.value for p in patterns} != targets:
         return (Check(name, CheckFinding.UNKNOWN, ("complete unshifted four-class mapping required",)),)
     first = patterns[0]
+    checks.append(
+        Check(
+            f"{name}_reference_identity",
+            CheckFinding.PASS
+            if all(p.magnitude.reference_identity == first.magnitude.reference_identity for p in patterns)
+            else CheckFinding.FAIL,
+            ("each natural family requires one exact annual reference identity",),
+        )
+    )
     for i, p in enumerate(patterns):
+        if p.method is PatternMethod.UNAVAILABLE:
+            checks.append(
+                Check(f"{name}_{i}_product", CheckFinding.UNKNOWN, ("numerical daily pattern unavailable", *p.reasons))
+            )
         same = (p.location, p.calendar, p.magnitude.provenance.reference_member, p.magnitude.provenance.scenario) == (
             first.location,
             first.calendar,

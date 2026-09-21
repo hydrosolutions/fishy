@@ -5,7 +5,7 @@ from dataclasses import replace
 import pytest
 from test_graduated_entry import statistic
 from test_spatial import classification
-from test_study_requirements import EVIDENCE, LOCATION, NEED, relation, selection
+from test_study_requirements import NEED, relation, selection
 
 from fishy.evidence import Check, CheckFinding, Completeness
 from fishy.natural_routing import (
@@ -17,6 +17,7 @@ from fishy.natural_routing import (
     ScientificRequirement,
     ScopedRequirement,
     TierEvidence,
+    reconstruction_disclosure_scope,
     select_entry_variant,
     select_natural_route,
 )
@@ -36,7 +37,6 @@ def tier(route=NaturalRoute.BASELINE, *, indicative=False):
         Computability,
         Disclosure,
         EvidenceFindings,
-        EvidenceScope,
         NumericalValidity,
         OfficialAdmissibility,
         ScientificAdequacy,
@@ -54,13 +54,7 @@ def tier(route=NaturalRoute.BASELINE, *, indicative=False):
     rec, evidence = supplied(subject)
     assessment = assess_scientific_use(rec, evidence)
     requirements = (ScientificRequirement("low_flow", subject, assessment),)
-    scope = EvidenceScope(
-        "reconstruction-disclosure",
-        first.location.reach.identifier,
-        record.reference.provenance.reference_member,
-        record.reference.reference_period,
-        "reconstruction contract",
-    )
+    scope = reconstruction_disclosure_scope(first.magnitude.reference)
     disclosure = EvidenceFindings(
         scope,
         record.reference.provenance,
@@ -111,19 +105,42 @@ def natural():
     return classification(Origin.NATURAL, UseCategory.AGRICULTURE_IRRIGATION)
 
 
+def study_component(b, *, flow=5, required=("ramping",), name="habitat", kind="seasonal"):
+    """Explicit supported synthetic study on this complete natural reference family."""
+    original = selection(flow, required=required)
+    scope = replace(
+        original.scope,
+        location=b.location,
+        period=b.natural_patterns[0].samples[0].interval,
+        scenario=b.natural_patterns[0].magnitude.provenance.scenario,
+        reference_member=b.natural_patterns[0].magnitude.provenance.reference_member,
+    )
+    evidence = replace(
+        original.evidence,
+        scope=replace(
+            original.evidence.scope,
+            reach=b.location.reach.identifier,
+            member=scope.reference_member,
+            period=scope.period,
+        ),
+        provenance=b.natural_patterns[0].magnitude.provenance,
+    )
+    chosen = replace(
+        original,
+        scope=scope,
+        evidence=evidence,
+        conditions=tuple(replace(c, scope=scope, evidence=evidence) for c in original.conditions),
+    )
+    supported_relation = replace(relation(), scope=scope, evidence=evidence)
+    return NaturalStudyComponent(name, chosen, (supported_relation,), kind)
+
+
 def top():
-    return TierEvidence(
-        NaturalRoute.TOP,
-        LOCATION,
-        "top-v1",
-        Availability.AVAILABLE,
-        Availability.AVAILABLE,
-        finding("priority"),
-        ("reference_contract",),
-        (),
-        (ScopedRequirement("reference_contract", EVIDENCE.scope, EVIDENCE),),
-        (NaturalStudyComponent("habitat", selection(), (relation(),), "seasonal"),),
-        "supplied habitat study",
+    b = tier()
+    return replace(
+        b,
+        route=NaturalRoute.TOP,
+        studies=(study_component(b),),
         required_study_components=("habitat",),
         study_need=NEED,
     )
@@ -154,17 +171,17 @@ def test_top_priority_distinct_from_adequate_study_and_missing_study_descends():
 
 def test_study_recomputed_and_preserves_supported_pulse_above_baseline_cap():
     t = top()
-    bad = replace(t.studies[0], study=selection(10))
+    bad = study_component(t, flow=10)
     result = select_natural_route(natural(), (replace(t, studies=(bad,)),))
     assert result.selected is NaturalRoute.PENDING
-    pulse = NaturalStudyComponent(
-        "pulse", selection(8, required=("sediment", "hydraulic", "flood_safety", "ramping")), (relation(),), "pulse"
+    pulse = study_component(
+        t, flow=8, required=("sediment", "hydraulic", "flood_safety", "ramping"), name="pulse", kind="pulse"
     )
     full = replace(
         t, studies=(pulse,), required_study_components=("pulse",), study_trigger=HighFlowTrigger.SEDIMENT_TRAPPING
     )
     assert select_natural_route(natural(), (full,)).selected is NaturalRoute.TOP
-    missing = replace(full, studies=(replace(pulse, study=selection(8)),))
+    missing = replace(full, studies=(study_component(t, flow=8, name="pulse", kind="pulse"),))
     assert select_natural_route(natural(), (missing,)).selected is NaturalRoute.PENDING
 
 
@@ -237,3 +254,102 @@ def test_recorded_minimum_and_reconstruction_disclosure_are_not_optional():
     assert select_natural_route(natural(), (replace(b, prerequisites=()),)).selected is NaturalRoute.PENDING
     low_flow_only = replace(b, natural_patterns=(), recorded_minimum=None, required_ids=("low_flow",), prerequisites=())
     assert select_natural_route(natural(), (low_flow_only,)).highest_data_supported is None
+
+
+def test_screening_only_daily_statistic_cannot_select_entry():
+    from test_scientific_acceptance import supplied
+
+    from fishy.scientific_acceptance import UsePurpose
+
+    b = tier()
+    s = b.statistics[0]
+    subject = replace(
+        s.product, purpose=UsePurpose.SCREENING, scope=replace(s.product.scope, intended_use=UsePurpose.SCREENING.value)
+    )
+    record, evidence = supplied(subject)
+    screened = ScientificRequirement("low_flow", subject, assess_scientific_use(record, evidence))
+    entry = replace(
+        b,
+        route=NaturalRoute.ENTRY,
+        required_ids=("low_flow",),
+        statistics=(screened,),
+        prerequisites=(),
+        natural_patterns=(),
+        recorded_minimum=None,
+    )
+    result = select_natural_route(natural(), (entry,))
+    assert result.selected is NaturalRoute.PENDING
+    assert result.highest_data_supported is None
+
+
+def test_top_cannot_omit_baseline_hydrological_prerequisites():
+    t = top()
+    t = replace(t, natural_patterns=(), recorded_minimum=None)
+    result = select_natural_route(natural(), (t,))
+    assert result.selected is NaturalRoute.PENDING
+    assert result.highest_data_supported is None
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [("member", "other-member"), ("intended_use", "screen only"), ("product", "unrelated reference contract")],
+)
+def test_reconstruction_disclosure_cannot_rebind_its_own_scope(field, value):
+    b = tier()
+    d = b.prerequisites[0]
+    changed_scope = replace(d.scope, **{field: value})
+    changed = replace(d, scope=changed_scope, findings=replace(d.findings, scope=changed_scope))
+    result = select_natural_route(natural(), (replace(b, prerequisites=(changed,)),))
+    assert result.selected is NaturalRoute.PENDING
+    assert result.highest_data_supported is None
+
+
+def test_reconstruction_disclosure_other_scenario_is_not_this_reference():
+    b = tier()
+    d = b.prerequisites[0]
+    changed = replace(d, findings=replace(d.findings, provenance=replace(d.findings.provenance, scenario="other")))
+    assert select_natural_route(natural(), (replace(b, prerequisites=(changed,)),)).selected is NaturalRoute.PENDING
+
+
+def test_recorded_minimum_permission_must_match_family_requested_use():
+    from examples.natural_baseline import synthetic_acceptance
+    from fishy.natural_baseline import recorded_minimum_product
+    from fishy.scientific_acceptance import UsePurpose
+
+    b = tier()
+    minimum = b.recorded_minimum
+    subject = recorded_minimum_product(minimum, intended_use="screening", purpose=UsePurpose.SIZING)
+    changed = replace(minimum, assessment=synthetic_acceptance(subject))
+    assert select_natural_route(natural(), (replace(b, recorded_minimum=changed),)).selected is NaturalRoute.PENDING
+
+
+def test_reconstruction_contract_requires_complete_disclosure():
+    from fishy.evidence import Disclosure
+
+    b = tier()
+    d = b.prerequisites[0]
+    incomplete = replace(d, findings=replace(d.findings, disclosure=Disclosure.INCOMPLETE))
+    assert select_natural_route(natural(), (replace(b, prerequisites=(incomplete,)),)).selected is NaturalRoute.PENDING
+
+
+@pytest.mark.parametrize("missing", [0, 1, 2, 3, 4])
+def test_top_requires_every_natural_probability_product(missing):
+    t = top()
+    incomplete = replace(t, natural_patterns=t.natural_patterns[:missing] + t.natural_patterns[missing + 1 :])
+    assert select_natural_route(natural(), (incomplete,)).selected is NaturalRoute.PENDING
+
+
+def test_top_study_screening_permission_is_not_sizing_permission():
+    t = top()
+    c = t.studies[0]
+    scope = replace(c.study.scope, purpose="screening")
+    evidence = replace(c.study.evidence, scope=replace(c.study.evidence.scope, intended_use="screening"))
+    study = replace(
+        c.study,
+        scope=scope,
+        evidence=evidence,
+        conditions=tuple(replace(v, scope=scope, evidence=evidence) for v in c.study.conditions),
+    )
+    relations = tuple(replace(v, scope=scope, evidence=evidence) for v in c.relations)
+    changed = replace(c, study=study, relations=relations)
+    assert select_natural_route(natural(), (replace(t, studies=(changed,)),)).selected is NaturalRoute.PENDING

@@ -186,11 +186,24 @@ def official_comparison(evidence: ComparisonEvidence, numerical: NumericalFindin
         reasons.append("official evidence admission not established")
     if evidence.actual is None or evidence.actual.sample.provenance.production_method is not ProductionMethod.OBSERVED:
         reasons.append("scenario/imported prediction is not observed compliance")
-    if evidence.threshold.sample.provenance.production_method in (
-        ProductionMethod.ILLUSTRATIVE,
-        ProductionMethod.SIMULATED,
+    # Inspect every retained operand, not only an imported wrapper. Reconstructed
+    # but-for evidence can support a finding; illustrative/simulated inputs cannot
+    # become official merely by relabelling the derived output as imported.
+    for role_name, role in (
+        ("threshold", evidence.threshold),
+        ("actual", evidence.actual),
+        ("but_for", evidence.but_for),
     ):
-        reasons.append("hypothetical threshold does not establish an official duty")
+        if role is None:
+            continue
+        pending = [role.sample]
+        while pending:
+            sample = pending.pop()
+            if sample.provenance.production_method in (ProductionMethod.ILLUSTRATIVE, ProductionMethod.SIMULATED):
+                reasons.append(
+                    f"{role_name} retains hypothetical evidence from {sample.provenance.source}; technical only"
+                )
+            pending.extend(sample.components)
     if numerical in (NumericalFinding.UNAVAILABLE, NumericalFinding.INDETERMINATE):
         reasons.append("no decisive supported numeric finding")
     return Check("official_numeric_finding", CheckFinding.UNKNOWN if reasons else CheckFinding.PASS, tuple(reasons))

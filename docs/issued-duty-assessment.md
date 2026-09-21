@@ -67,7 +67,10 @@ remain unknown. Any missing or rejected prerequisite makes the numerical test un
 A `CompliancePoint` must identify the tested section and a supplied designation.
 A measuring station is not a designation. Without one, supported technical results remain
 visible but `official` is unknown. Official admissibility, observed versus scenario
-meaning, and supplied attribution are separate. Attribution to the tested conduct
+meaning, and supplied attribution are separate. The threshold, actual, and but-for
+operand trees retain their original production meaning. An imported wrapper cannot
+promote illustrative or simulated contributors to an official or responsibility finding.
+Supported reconstructed but-for evidence is not automatically hypothetical. Attribution to the tested conduct
 requires evidence of operator control and the same conduct identifier as the but-for flow.
 Even fully supported prerequisites return no legal liability decision. A `not_below`
 result concerns only this comparator, not every other duty.
@@ -140,3 +143,9 @@ private chapters or primary-source copies.
 Numeric comparisons in these tests use exact decimal-to-rational quantities, not a
 floating tolerance. The integrated regime assembly, annual family approval and fallback
 checks belong to their separate operations; these tests do not claim their acceptance.
+
+Provenance isolation regression: `tests/test_assessment_provenance.py` exercises
+illustrative/simulated floor and but-for operands through zero, one, and three
+imported wrappers, plus real issuance from hypothetical requirement/capacity operands.
+Technical shortfalls remain visible while official and responsibility findings stay
+unknown. A supported reconstructed counterfactual retains the positive official path.

@@ -202,6 +202,13 @@ def test_numeric_shortfall_stays_separate_from_official_and_causal_findings(miss
             actual.sample, provenance=replace(actual.sample.provenance, production_method=ProductionMethod.OBSERVED)
         ),
     )
+    but_for = replace(
+        but_for,
+        sample=replace(
+            but_for.sample,
+            provenance=replace(but_for.sample.provenance, production_method=ProductionMethod.RECONSTRUCTED),
+        ),
+    )
     evidence = replace(
         scenario_evidence(floor, actual, but_for),
         point=CompliancePoint("control", "v1", floor.sample.location.section, "supplied designation"),
@@ -253,6 +260,13 @@ def test_supported_official_prerequisites_and_supplied_cause_are_not_legal_liabi
         actual,
         sample=replace(
             actual.sample, provenance=replace(actual.sample.provenance, production_method=ProductionMethod.OBSERVED)
+        ),
+    )
+    but_for = replace(
+        but_for,
+        sample=replace(
+            but_for.sample,
+            provenance=replace(but_for.sample.provenance, production_method=ProductionMethod.RECONSTRUCTED),
         ),
     )
     evidence = replace(

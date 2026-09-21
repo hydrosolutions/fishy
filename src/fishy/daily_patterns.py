@@ -34,6 +34,7 @@ from fishy.evidence import (
     Provenance,
     ReferenceKind,
     ScientificAdequacy,
+    UseRestriction,
 )
 from fishy.flows import Coverage, FlowSample, IntervalUse, Presence, check_flow_intervals, interval_use
 from fishy.pattern_calendar import (
@@ -162,8 +163,13 @@ class AnalogueReference:
     reference: AnnualReference
     years: tuple[DailyReferenceYear, ...]
     imported_membership: ImportedMembership | None = None
+    restrictions: tuple[UseRestriction, ...] = ()
 
     def __post_init__(self) -> None:
+        if not isinstance(self.restrictions, tuple) or any(
+            not isinstance(r, UseRestriction) for r in self.restrictions
+        ):
+            raise TypeError("source restrictions require immutable scoped UseRestriction records")
         if not isinstance(self.reference, AnnualReference):
             raise TypeError("analogue requires the full accepted annual reference")
         if not isinstance(self.years, tuple):
@@ -540,8 +546,18 @@ class DailyPattern:
             source_climate.append(
                 Check(f"source_climate_{index}", finding, (f"actual donor climate treatment: {trend.value}",))
             )
+        prohibitions = tuple(
+            restriction.reason
+            for reference in self.references
+            if reference.reference.location in retained_locations
+            for restriction in reference.restrictions
+            if self.requested_use in restriction.prohibited_uses or self.purpose.value in restriction.prohibited_uses
+        )
+        restrictions = Check(
+            "source_restrictions", CheckFinding.FAIL if prohibitions else CheckFinding.PASS, prohibitions
+        )
         support = _support(self.retained, self.profile).checks if self.profile is not None else ()
-        return CheckSummary((annual, shape, source_separation, *source_climate, *support))
+        return CheckSummary((annual, shape, source_separation, restrictions, *source_climate, *support))
 
     @property
     def volume(self) -> Volume | None:
@@ -553,6 +569,11 @@ class DailyPattern:
 
 
 def _receiving_calendar(magnitude: AnnualEstimate, calendar: AccountingYear) -> None:
+    if magnitude.provenance.reference_kind not in (
+        ReferenceKind.PRESENT_CLIMATE_NATURAL,
+        ReferenceKind.NATURALISED_HISTORICAL,
+    ):
+        raise ValueError("daily natural design pattern requires explicit natural-reference magnitude")
     if (
         magnitude.reference.accounting_start_month != calendar.start_month
         or magnitude.reference.utc_offset_minutes != calendar.utc_offset_minutes
@@ -934,9 +955,19 @@ def construct_pattern(
     values = tuple(magnitude.value.value * value for value in shape)
     if sum(shape, Fraction()) != calendar.days or any(value < 0 for value in values):
         raise ArithmeticError("daily shape closure violated")
+    retained_locations = {contribution.source.location for contribution in retained}
+    illustrative = provenance.production_method is ProductionMethod.ILLUSTRATIVE or any(
+        sample.provenance.production_method is ProductionMethod.ILLUSTRATIVE
+        for reference in references
+        if reference.reference.location in retained_locations
+        for sample in (
+            *reference.reference.observations,
+            *(sample for year in reference.years for sample in year.samples),
+        )
+    )
     output_provenance = replace(
         provenance,
-        production_method=ProductionMethod.IMPORTED,
+        production_method=ProductionMethod.ILLUSTRATIVE if illustrative else ProductionMethod.IMPORTED,
         configuration_version=profile.version,
         dependencies=(*provenance.dependencies, *(c.source.provenance.source for c in retained)),
         limitations=(

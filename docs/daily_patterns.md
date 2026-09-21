@@ -26,8 +26,14 @@ cannot become zero. Keep reconstructed records and their evidence attributable.
 An `AnalogueReference` links those daily years to the source's **full** accepted
 `AnnualReference`. Daily annual means must match the annual observations exactly.
 The annual reference can contain additional years that are not daily shape
-candidates. The [calendar guide](pattern_calendar.md) explains fixed offsets and
-month-conservative leap mapping.
+candidates. Its optional `restrictions` are scoped `UseRestriction` records.
+A donor rating-range prohibition can forbid obligation sizing while leaving an
+independently supported screening use available. Known untreated present-climate
+trend blocks permission; unassessed treatment remains incomplete. Neither case
+erases the numerical candidate or an independently supported annual product.
+The [calendar guide](pattern_calendar.md) explains fixed offsets and
+month-conservative leap mapping. Receiving magnitude and design calendar must
+have the same accounting start month and fixed UTC offset.
 
 The example uses these first daily flows, followed by genuine zeros through the
 rest of each 365-day year:
@@ -191,3 +197,25 @@ This page derives implementation guidance without distributing private chapters.
 | `report_snapshot/part4_statistical_estimation.qmd`, D.7 | `10bb9e8feaaab5199575d1dbf0c2fd2a50c5867b5a55a92806294853c821a5df` | Full-reference empirical/fitted membership and attributable imports |
 | `report_snapshot/part4_scientific_acceptance.qmd`, D.8 | `c09d0d3afbb1766638c93951432ba09408f28135d5e2765d5579fb81079c3bd6` | Separate product/use acceptance and restrictions |
 | `evidence/design_pattern_acceptance.md`, D1–D14 | `43a88113eb2a9619817b7bcac7c157048bde035d7157ce2c08917eaf16dc63a7` | Software witnesses and deterministic exclusion checks |
+
+
+## Inspect transformations and permissions
+
+`alignment_iterations` records every median, proposed shift and simultaneous
+exclusion. Each retained contribution exposes `introduced_share` and
+`displaced_share`, plus `introduced_volume` and `displaced_volume` in original
+source cubic metres. None of these edge volumes is extra receiving water.
+
+`use_checks` checks the current candidate against its complete scientific record.
+Changing a schedule, contributor or profile does not carry an earlier permission
+forward. Duplicate source years and inconsistent stored support are refused.
+Actual source climate clusters cannot also be withheld validation clusters.
+Illustrative inputs remain labelled illustrative in constructed output.
+
+The additional regression suites exercise complete public paths:
+`test_pattern_review_regressions.py` (candidate/calendar/withheld identity),
+`test_pattern_review_support.py` and `test_pattern_review_invariants.py`
+(unique immutable contributors and consistent support),
+`test_pattern_review_climate.py` (known and unresolved donor trend), and
+`test_pattern_source_restrictions.py` (screening permitted, donor rating-range
+sizing prohibition retained). Their categorical results use exact equality.

@@ -15,27 +15,6 @@ from datetime import UTC, datetime, timedelta
 from fractions import Fraction
 
 import pytest
-from fishy.scientific_acceptance import (
-    AcceptanceRecord,
-    Aggregation,
-    ClimateTreatment,
-    Comparison,
-    CriterionRole,
-    DailyDerivation,
-    DiagnosticObservation,
-    ErrorMeasure,
-    EvidenceItem,
-    EvidenceRequirement,
-    HydrologicalProductKind,
-    RatingSupport,
-    ScientificCriterion,
-    ScientificEvidence,
-    UsePurpose,
-    ValidationEvidence,
-    ValidationMethod,
-    assess_scientific_use,
-    minimum_evidence,
-)
 
 from fishy.annual_statistics import (
     AnnualEstimator,
@@ -80,6 +59,27 @@ from fishy.evidence import (
 from fishy.flows import Coverage, FlowSample, Presence
 from fishy.pattern_calendar import AccountingYear
 from fishy.quantities import Flow, Volume
+from fishy.scientific_acceptance import (
+    AcceptanceRecord,
+    Aggregation,
+    ClimateTreatment,
+    Comparison,
+    CriterionRole,
+    DailyDerivation,
+    DiagnosticObservation,
+    ErrorMeasure,
+    EvidenceItem,
+    EvidenceRequirement,
+    HydrologicalProductKind,
+    RatingSupport,
+    ScientificCriterion,
+    ScientificEvidence,
+    UsePurpose,
+    ValidationEvidence,
+    ValidationMethod,
+    assess_scientific_use,
+    minimum_evidence,
+)
 from fishy.spatial import CalculationSection, Location, Reach, WaterBody
 from fishy.time import Interval
 
@@ -958,6 +958,7 @@ def test_import_cannot_relabel_consistent_observed_only_reference_as_natural_pat
         derivation=original.magnitude.derivation,
     )
     samples = tuple(replace(s, provenance=observed_provenance) for s in original.samples)
+    assert annual.derivation is not None
     with pytest.raises(ValueError, match="natural"):
         import_pattern(
             annual, original.calendar, samples, annual.derivation, intended_use="screen", purpose=UsePurpose.SCREENING

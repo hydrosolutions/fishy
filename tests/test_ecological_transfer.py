@@ -488,3 +488,33 @@ def test_unavailable_identity_does_not_create_numerical_product(inputs):
         presumptive_floor("malformed", profile_for(inputs[2][0]))  # ty: ignore[invalid-argument-type]
     with pytest.raises(TypeError, match="DailyPattern families"):
         run((inputs[0], list(inputs[1]), *inputs[2:]))
+
+
+@pytest.mark.parametrize("side", ["donor", "recipient"])
+def test_transfer_rejects_mixed_individually_accepted_intended_uses(inputs, side):
+    from examples.ecological_transfer import synthetic_acceptance
+    from fishy.daily_patterns import annual_magnitude_product, pattern_product
+
+    donor, dn, rn, profile, evidence, register = inputs
+    patterns = dn if side == "donor" else rn
+    pattern = patterns[1]
+    use = "separate use only"
+    magnitude = synthetic_acceptance(
+        annual_magnitude_product(pattern.magnitude, intended_use=use, purpose=pattern.purpose)
+    )
+    changed = replace(
+        pattern,
+        requested_use=use,
+        magnitude_assessment=magnitude,
+        magnitude_evidence=magnitude.findings,
+        shape_assessment=None,
+        shape_evidence=None,
+    )
+    shape = synthetic_acceptance(pattern_product(changed, intended_use=use, purpose=changed.purpose))
+    changed = replace(changed, shape_assessment=shape, shape_evidence=shape.findings)
+    assert changed.use_checks.finding is CheckFinding.PASS
+    mixed = (patterns[0], changed, *patterns[2:])
+    args = (donor, mixed if side == "donor" else dn, mixed if side == "recipient" else rn, profile, evidence, register)
+    result = run(requalify(args))
+    assert result.candidate is None
+    assert result.checks.finding is CheckFinding.FAIL

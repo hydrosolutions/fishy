@@ -353,3 +353,31 @@ def test_top_study_screening_permission_is_not_sizing_permission():
     relations = tuple(replace(v, scope=scope, evidence=evidence) for v in c.relations)
     changed = replace(c, study=study, relations=relations)
     assert select_natural_route(natural(), (replace(t, studies=(changed,)),)).selected is NaturalRoute.PENDING
+
+
+@pytest.mark.parametrize("route", [NaturalRoute.BASELINE, NaturalRoute.TOP])
+def test_natural_family_cannot_mix_individually_accepted_intended_uses(route):
+    from examples.natural_baseline import synthetic_acceptance
+    from fishy.daily_patterns import annual_magnitude_product, pattern_product
+
+    b = tier() if route is NaturalRoute.BASELINE else top()
+    pattern = b.natural_patterns[1]
+    use = "separate use only"
+    magnitude = synthetic_acceptance(
+        annual_magnitude_product(pattern.magnitude, intended_use=use, purpose=pattern.purpose)
+    )
+    changed = replace(
+        pattern,
+        requested_use=use,
+        magnitude_assessment=magnitude,
+        magnitude_evidence=magnitude.findings,
+        shape_assessment=None,
+        shape_evidence=None,
+    )
+    shape = synthetic_acceptance(pattern_product(changed, intended_use=use, purpose=changed.purpose))
+    changed = replace(changed, shape_assessment=shape, shape_evidence=shape.findings)
+    assert changed.use_checks.finding is CheckFinding.PASS
+    patterns = (b.natural_patterns[0], changed, *b.natural_patterns[2:])
+    result = select_natural_route(natural(), (replace(b, natural_patterns=patterns),))
+    assert result.selected is NaturalRoute.PENDING
+    assert result.highest_data_supported is None

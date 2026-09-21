@@ -7,7 +7,7 @@ These are configurable proposed Uzbek fallback methods. They do not supply adopt
 `transfer_ecological_regime` consumes:
 
 - One complete **pre-quality** `EcologicalMemberCandidate`. A final requirement, sanitary duty, delivery cap or advisory spawning schedule is not this input.
-- Four accepted `DailyPattern` objects for the donor and four for the recipient. Their own, **unshifted** exceedances are 25%, 50%, 75% and 95%.
+- Four accepted `DailyPattern` objects for the donor and four for the recipient. Their own, **unshifted** exceedances are 25%, 50%, 75% and 95%. Each family uses one exact natural reference and one intended-use scope; separately accepted scopes cannot be mixed across its classes.
 - One `TransferProfile`, selected before `evaluated_at`, with a reason independent of the answer.
 - `QualificationTest` criteria and observations for regime, intermittency, ecological purpose, the transferable relationship and recipient evidence. Limits are supplied, never defaults.
 - An accepted `EvidenceFindings` bound by `transfer_scope` to the exact donor candidate, both natural families and the transfer profile. Changing their content invalidates that permission. Natural patterns also need their separate content-bound annual and daily scientific assessments for sizing.

@@ -291,11 +291,18 @@ def _natural_checks(patterns: tuple[DailyPattern, ...], name: str) -> tuple[Chec
             checks.append(
                 Check(f"{name}_{i}_product", CheckFinding.UNKNOWN, ("numerical daily pattern unavailable", *p.reasons))
             )
-        same = (p.location, p.calendar, p.magnitude.provenance.reference_member, p.magnitude.provenance.scenario) == (
+        same = (
+            p.location,
+            p.calendar,
+            p.magnitude.provenance.reference_member,
+            p.magnitude.provenance.scenario,
+            p.requested_use,
+        ) == (
             first.location,
             first.calendar,
             first.magnitude.provenance.reference_member,
             first.magnitude.provenance.scenario,
+            first.requested_use,
         )
         checks.append(
             Check(

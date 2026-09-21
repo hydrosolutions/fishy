@@ -11,7 +11,8 @@ at .50/.75/.90/.97/.99, the accepted scalar `RecordedMinimum`, and a separate
 `reconstruction_disclosure` prerequisite. Bind the latter with
 `reconstruction_disclosure_scope(reference)` and complete disclosure findings for
 that exact reference, member, scenario, period and sizing use. A smaller caller inventory cannot waive
-these operands. Patterns already bind their annual acceptance; no duplicate annual
+these operands. Every natural pattern uses the same exact reference and intended-use scope.
+Patterns already bind their annual acceptance; no duplicate annual
 review is required. Supported indicative statistics can select a tier. Rating restrictions,
 unsupported daily equivalence and failed scientific criteria still prevent use.
 Top-tier habitat/holistic inputs reuse `assess_natural_study`, without a baseline median cap.

@@ -204,6 +204,7 @@ class TierEvidence:
                         pattern.location == self.location
                         and pattern.calendar == first.calendar
                         and pattern.purpose is UsePurpose.SIZING
+                        and pattern.requested_use == first.requested_use
                         and pattern.magnitude.provenance.reference_kind is ReferenceKind.PRESENT_CLIMATE_NATURAL
                         and pattern.magnitude.reference_identity == first.magnitude.reference_identity
                         and pattern.magnitude.provenance.reference_member == first.magnitude.provenance.reference_member

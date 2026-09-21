@@ -4,7 +4,7 @@ Floor candidates do not issue requirements or delivery obligations. Existing dut
 and additional process conditions pass unchanged to the assembly boundary.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 
 from fishy.duties import SuppliedDuty
@@ -233,6 +233,17 @@ def size_potential_floor(
         evidence.append(zero.evidence)
     if len({e.provenance.configuration_version for e in evidence}) > 1:
         raise ValueError("incompatible potential configuration versions")
+    if conveyance is not None:
+        if conveyance.location != scope.location or conveyance.interval != scope.period:
+            raise ValueError("conveyance location/interval mismatch")
+        evidence = [item.evidence for item in (*conveyance.duties, *conveyance.other_inflows)]
+        if conveyance.relation is not None:
+            evidence.append(conveyance.relation.evidence)
+        if any(
+            (e.provenance.scenario, e.provenance.reference_member) != (scope.scenario, scope.reference_member)
+            for e in evidence
+        ):
+            raise ValueError("conveyance scenario/reference mismatch")
     routes = []
     calculated = None
     flow = None
@@ -250,16 +261,6 @@ def size_potential_floor(
                 (Check("conveyance", CheckFinding.UNKNOWN, ("authenticated service duty or relation missing",)),)
             )
         else:
-            if conveyance.location != scope.location or conveyance.interval != scope.period:
-                raise ValueError("conveyance location/interval mismatch")
-            evidence = [item.evidence for item in (*conveyance.duties, *conveyance.other_inflows)]
-            if conveyance.relation is not None:
-                evidence.append(conveyance.relation.evidence)
-            if any(
-                (e.provenance.scenario, e.provenance.reference_member) != (scope.scenario, scope.reference_member)
-                for e in evidence
-            ):
-                raise ValueError("conveyance scenario/reference mismatch")
             calculated = solve_service_conveyance(conveyance)
             flow = calculated.flow
             summary = CheckSummary(
@@ -309,6 +310,14 @@ def size_potential_floor(
                 (Check("zero", CheckFinding.UNKNOWN, ("supported zero determination not supplied",)),)
             )
         if zero is not None or flow is not None:
+            # Reconcile the candidate zero even when an earlier ecological route
+            # succeeded. This is a service check, not a lower-route selection.
+            if (
+                conveyance is not None
+                and zero is not None
+                and (calculated is None or calculated.zero_candidate is None)
+            ):
+                calculated = solve_service_conveyance(replace(conveyance, initial_flow=Flow(0)))
             if conveyance is not None and (calculated is None or calculated.zero_candidate is None):
                 finding = (
                     CheckFinding.FAIL
@@ -330,7 +339,11 @@ def size_potential_floor(
             accepted = checks.finding is CheckFinding.PASS
             flow = Flow(0) if accepted else None
             selected = PotentialRoute.ZERO if accepted else None
-            routes.append(PotentialRouteFinding(PotentialRoute.ZERO, Applicability.APPLICABLE, checks, flow, None))
+            routes.append(
+                PotentialRouteFinding(
+                    PotentialRoute.ZERO, Applicability.APPLICABLE, checks, flow, None, conveyance=calculated
+                )
+            )
     return PotentialFloorResult(
         scope,
         classification,

@@ -283,3 +283,71 @@ def test_potential_handoff_rejects_mixed_configuration(target):
         kwargs["active_quality"] = (replace(condition("quality"), evidence=changed),)
     with pytest.raises(ValueError, match="configuration"):
         run(HABITAT, **kwargs)
+
+
+@pytest.mark.parametrize("route", ["habitat", "hydraulics"])
+def test_earlier_supported_zero_reconciles_supplied_service_account(route):
+    from fishy.quantities import Volume
+
+    req = request()
+    assert req.ramp is not None and req.relation is not None
+
+    def evidence_at(evidence, product, period):
+        return replace(
+            evidence,
+            scope=replace(evidence.scope, product=product, period=period, member=SCOPE.reference_member),
+            provenance=replace(
+                evidence.provenance,
+                scenario=SCOPE.scenario,
+                reference_member=SCOPE.reference_member,
+                configuration_version=EVIDENCE.provenance.configuration_version,
+            ),
+        )
+
+    transition = replace(
+        req.ramp.transition,
+        start=SCOPE.period.start - (req.ramp.transition.end - req.ramp.transition.start),
+        end=SCOPE.period.start,
+    )
+    duty = replace(
+        req.duties[0],
+        interval=SCOPE.period,
+        volume=Volume(0),
+        evidence=evidence_at(req.duties[0].evidence, "rule", SCOPE.period),
+    )
+    relation_input = replace(
+        req.relation,
+        location=SCOPE.location,
+        interval=SCOPE.period,
+        evidence=evidence_at(req.relation.evidence, "relation", SCOPE.period),
+    )
+    ramp = replace(
+        req.ramp,
+        previous_flow=Flow(0),
+        transition=transition,
+        evidence=evidence_at(req.ramp.evidence, "conveyance_ramp", transition),
+    )
+    req = replace(
+        req,
+        location=SCOPE.location,
+        interval=SCOPE.period,
+        duties=(duty,),
+        relation=relation_input,
+        initial_flow=Flow(0),
+        ramp=ramp,
+    )
+    habitat = replace(HABITAT, selection=selection(0, criteria=(criterion(low=0),))) if route == "habitat" else MISSING
+    hydraulics = (
+        replace(HYDRAULICS, selection=selection(0, criteria=(criterion(DEPTH, 0, 2), criterion(VELOCITY, 0, 1))))
+        if route == "hydraulics"
+        else MISSING
+    )
+    result = size_potential_floor(SCOPE, POTENTIAL, habitat, hydraulics, req, NEED, zero=zero())
+    assert result.floor == Flow(0)
+    assert result.selected_route is PotentialRoute.ZERO
+    first_success = next(r for r in result.routes if r.flow is not None)
+    assert first_success.route is (PotentialRoute.HABITAT if route == "habitat" else PotentialRoute.HYDRAULIC)
+    assert result.routes[-1].conveyance is not None
+    assert result.routes[-1].conveyance.zero_candidate == Flow(0)
+    assert result.routes[-1].conveyance.trace[0].flow == Flow(0)
+    assert result.routes[-1].conveyance.trace[0].residual_m3 == 0

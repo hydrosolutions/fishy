@@ -372,6 +372,10 @@ def screen_ended_influence(boundary: ReachBoundary, context: AssessmentContext) 
         for field in ("scenario", "reference_member", "configuration_version")
     ):
         raise ValueError("boundary and downstream context differ in scenario/member, period or configuration")
+    # A class-based end inherits each indicator's original area/evidence coverage.
+    # A source lake end instead rests on its independent >3 h × MQ volume rule.
+    upstream = {r.indicator: r for r in boundary.inputs.upstream_classes}
+    lake_end = boundary.inputs.lake_volume is not None
     return tuple(
         IndicatorResult(
             indicator,
@@ -382,6 +386,7 @@ def screen_ended_influence(boundary: ReachBoundary, context: AssessmentContext) 
             MANUAL + ", §6.1.1",
             boundary.reasons,
             (boundary,),
+            Completeness.COMPLETE if lake_end else upstream[indicator].coverage,
         )
         for indicator in Indicator
     )

@@ -164,3 +164,31 @@ def test_source_lake_end_can_feed_downstream_river_without_classifying_lake():
     assert output.result.classification == 1
     assert output.contributions[0].point_result is not None
     assert output.contributions[0].point_result.inputs == (ended,)
+
+
+@pytest.mark.parametrize("partial_indicators", [tuple(Indicator), (Indicator.MEAN_FLOW,)])
+def test_class_based_end_preserves_each_upstream_indicator_coverage(partial_indicators):
+    from fishy.catchment_conditions import screen_ended_influence
+    from fishy.hydrological_condition import assess_hydrology
+
+    upstream = tuple(
+        replace(result(i, 1), coverage=Completeness.INCOMPLETE) if i in partial_indicators else result(i, 1)
+        for i in Indicator
+    )
+    ended = delimit_reach(boundary(upstream_classes=upstream))
+    downstream = context("downstream")
+    screened = screen_ended_influence(ended, downstream)
+    assert tuple(r.coverage for r in screened) == tuple(r.coverage for r in upstream)
+    assert assess_hydrology(downstream, screened).completeness is Completeness.INCOMPLETE
+
+
+def test_lake_end_uses_independent_volume_criterion_not_upstream_class_coverage():
+    from fishy.catchment_conditions import screen_ended_influence
+    from fishy.hydrological_condition import assess_hydrology
+
+    upstream = tuple(replace(result(i, 1), coverage=Completeness.INCOMPLETE) for i in Indicator)
+    ended = delimit_reach(boundary(lake_volume=Volume(10801), upstream_classes=upstream))
+    downstream = context("downstream")
+    screened = screen_ended_influence(ended, downstream)
+    assert assess_hydrology(downstream, screened).completeness is Completeness.COMPLETE
+    assert all(r.inputs == (ended,) for r in screened)

@@ -203,6 +203,18 @@ an automatic reallocation: supply a supported alternative with the original rive
 and receptor constraints, or recompose the family before selection. Shared water
 uses the actual shared flow for physical checks.
 
+An accepted zero determination does not erase the numerical source that produced
+zero. A zero-valued habitat or hydraulic study remains binding after positive
+quality uplift. A service account reconciled by the zero determination also keeps
+its domain, capacity, ramp and balance constraints. Unused fallback sources are
+not added to a successful positive study route.
+
+After whole-family selection, original quality concentrations and operational
+limits remain binding. A contributor's pre-quality ecological base is not reapplied
+as a new lower bound on a valid selected median. Retained members still keep their
+own base. Advisory quality remains visible in source records without requiring a
+final quality condition; explicit activation-policy inconsistencies still fail.
+
 For a selected service-conveyance route, `conveyance_conditions` evaluates the
 actual final local flow against the original relation domain, capacity, ramp and
 service balance. It does not resize the service requirement from the quality

@@ -15,6 +15,7 @@ from fishy.ecological_transfer import TransferResult
 from fishy.evidence import Check, CheckFinding, CheckSummary
 from fishy.floor_construction import DirectFloorSource, EntryFloorSource, PresumptiveFloorSource, assess_floor_source
 from fishy.potential_requirements import PotentialFloorResult, PotentialRoute
+from fishy.quality_activation import ComponentStatus, QualityComponent, apply_quality_component
 from fishy.requirement_construction import BaselineSource, StudySource
 from fishy.scientific_acceptance import ScientificAssessment, ScientificCriterion
 from fishy.study_requirements import StudySelection
@@ -209,6 +210,44 @@ def source_policy_components(source: BaselineSource | StudySource | TransferResu
     )
 
 
+def quality_policy_matches(left: QualityComponent | None, right: QualityComponent | None) -> bool:
+    """Compare explicit policies; only a natively advisory diagnostic may be omitted."""
+    if left is not None and right is not None:
+        return (left.activation, left.quality.targets) == (right.activation, right.quality.targets)
+    present = left if left is not None else right
+    if present is None:
+        return True
+    checked = apply_quality_component(
+        present.base,
+        present.quality.boundary,
+        present.quality.targets,
+        present.activation,
+        present.source_control,
+        present.accounts,
+        present.background_mapping,
+        present.quality.bounds,
+        present.final_check.arrival if present.final_check else None,
+    )
+    return checked.status is ComponentStatus.ADVISORY
+
+
+def potential_source_routes(result: PotentialFloorResult) -> tuple[PotentialRoute, ...]:
+    """Return recorded numerical origins and any service reconciliation of accepted zero."""
+    origins = tuple(
+        r.route
+        for r in result.routes
+        if r.flow is not None
+        and r.route in (PotentialRoute.HABITAT, PotentialRoute.HYDRAULIC, PotentialRoute.CONVEYANCE)
+    )
+    if (
+        result.selected_route is PotentialRoute.ZERO
+        and any(r.route is PotentialRoute.ZERO and r.conveyance is not None for r in result.routes)
+        and PotentialRoute.CONVEYANCE not in origins
+    ):
+        return (*origins, PotentialRoute.CONVEYANCE)
+    return origins
+
+
 def floor_policy_components(source: DirectFloorSource) -> tuple[PolicyComponent, ...]:
     if isinstance(source, EntryFloorSource):
         result = source.result
@@ -260,13 +299,18 @@ def floor_policy_components(source: DirectFloorSource) -> tuple[PolicyComponent,
         if selected is None
         else _known("potential:selected_route", selected)
     )
-    # Earlier unresolved routes remain in the source assessment. They are not
-    # required policy components of the supported, ordered fallback route.
+    # ZERO is a determination label, not a replacement for the source law.
+    origins = potential_source_routes(result) if isinstance(result, PotentialFloorResult) else ()
+    components.append(
+        PolicyComponent("potential:source_routes", None)
+        if selected is None
+        else _known("potential:source_routes", origins)
+    )
     chosen = (
         source.habitat
-        if selected is PotentialRoute.HABITAT
+        if PotentialRoute.HABITAT in origins
         else source.hydraulics
-        if selected is PotentialRoute.HYDRAULIC
+        if PotentialRoute.HYDRAULIC in origins
         else None
     )
     if chosen is not None:
@@ -275,10 +319,30 @@ def floor_policy_components(source: DirectFloorSource) -> tuple[PolicyComponent,
             if chosen.selection is None
             else _known("potential:selected_criteria", _study(chosen.selection))
         )
-    if selected is PotentialRoute.CONVEYANCE:
+    if selected is PotentialRoute.ZERO:
+        zero = source.zero
+        components.append(
+            PolicyComponent("potential:zero", None)
+            if zero is None
+            else _known(
+                "potential:zero",
+                (
+                    zero.interpretation,
+                    zero.basis,
+                    zero.determination,
+                    zero.committee_signoff,
+                    zero.audit_right,
+                    zero.dispute_route,
+                    zero.service_impact_criterion,
+                    zero.drying_adoption,
+                    zero.review,
+                ),
+            )
+        )
+    if PotentialRoute.CONVEYANCE in origins:
         request = source.conveyance
         assert isinstance(result, PotentialFloorResult)
-        route = next(r for r in result.routes if r.route is PotentialRoute.CONVEYANCE)
+        route = next(r for r in result.routes if r.route is selected)
         conveyance = route.conveyance
         if request is None or conveyance is None:
             components.append(PolicyComponent("potential:conveyance", None))

@@ -83,3 +83,94 @@ def test_complete_potential_service_floor_rechecks_actual_final_relation_domain(
     assert len(result.conveyance_conditions) == 730
     assert all(c.source.flow == Flow(5) and c.local_flow == Flow(10) for c in result.conveyance_conditions)
     assert all(c.checks.finding is expected for c in result.conveyance_conditions)
+
+
+def zero_service_floor(*, upper=8):
+    """Complete supported ZERO sources preserve their actual pre-zero service/study basis."""
+    from examples.requirement_chain import accepted_evidence
+    from fishy.evidence import EvidenceScope
+    from fishy.potential_requirements import AuthorityBasis, ServiceZeroDetermination, ZeroInterpretation
+    from fishy.quantities import Volume
+
+    rows, physical, finals = [], [], []
+    missing = PotentialStudy(Applicability.UNRESOLVED, "original route not supplied", None, ())
+    for raw in samples(TARGET, 0, "zero-origin-final", "R"):
+        base = replace(raw, provenance=replace(raw.provenance, reference_kind=ReferenceKind.MANAGED))
+        p = base.provenance
+        scope = StudyScope(
+            sample_subject(base),
+            base.location,
+            base.interval,
+            p.scenario,
+            p.reference_member,
+            "sizing",
+            "whole-year daily zero service",
+        )
+        evidence = accepted_evidence(
+            EvidenceScope(scope.candidate, base.location.reach.identifier, p.reference_member, base.interval, "sizing"),
+            p,
+        )
+        zero = ServiceZeroDetermination(
+            scope,
+            ZeroInterpretation.SERVICE_DETERMINATION,
+            AuthorityBasis.HYPOTHETICAL,
+            evidence,
+            "audited no required service this day",
+            "explicit assumed signoff",
+            "independent audit right",
+            "reviewable dispute",
+            "no adverse service effect",
+            NEED,
+        )
+        _, request = service_request(base, upper=upper)
+        request = replace(
+            request, initial_flow=Flow(0), duties=tuple(replace(d, volume=Volume(0)) for d in request.duties)
+        )
+        source = PotentialFloorSource(scope, POTENTIAL, missing, missing, request, NEED, zero=zero)
+        quality = local_quality(base, route=QualityRoute.FLOOR_ONLY, background_mg_l=10)
+        composition = compose_requirement(base, p, quality=quality)
+        final = composition.candidate
+        assert final is not None and final.value == Flow(10)
+        rows.append(FloorComponent(source, composition))
+        finals.append(final)
+        physical.append(assess_requirement(final, (FinalCondition.QUALITY,), quality=quality))
+    series = FloorSeries(family_basis(finals[0], TARGET.interval, "potential_floor"), tuple(finals))
+    original = single_selection(series)
+    selected = assess_selected_family(
+        original.members,
+        series,
+        replace(
+            original.specification,
+            reconstruction=ReconstructionNeed.NOT_REQUIRED,
+            source="supported constructed zero; not a natural reconstruction",
+        ),
+    )
+    member = selected.members[0].identifier
+    result = finalize_floors(
+        selected,
+        (FinalCondition.QUALITY,),
+        tuple(physical),
+        version="zero-origin-final-v1",
+        constructions=(FloorConstruction(member, tuple(rows)),),
+        member_physical=tuple(FloorMemberAssessment(member, item) for item in physical),
+    )
+    assert len(finals) == len(physical) == 365
+    for source_result in result.constructions[0].sources:
+        assert isinstance(source_result, PotentialFloorResult)
+        assert source_result.selected_route is PotentialRoute.ZERO
+        assert source_result.floor == Flow(0)
+    return result
+
+
+@pytest.mark.parametrize("upper,expected", ((8, CheckFinding.UNKNOWN), (12, CheckFinding.PASS)))
+def test_complete_zero_service_quality_uplift_keeps_original_conveyance_constraints(upper, expected):
+    result = zero_service_floor(upper=upper)
+    assert result.checks.finding is expected
+    if expected is CheckFinding.PASS:
+        assert tuple(floor.sample.value for floor in result.floors) == (Flow(10),) * 365
+    else:
+        assert result.floors == ()
+    assert len(result.conveyance_conditions) == 730
+    assert all(c.local_flow == Flow(10) for c in result.conveyance_conditions)
+    # Service-only zero is retained, not silently resized to the quality floor.
+    assert all(c.source.zero_candidate == Flow(0) for c in result.conveyance_conditions)

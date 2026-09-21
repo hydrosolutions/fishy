@@ -140,3 +140,13 @@ one location's source as another's.
 | Original receptor quantity and policy | `test_u9_original_receptor_obligations_survive_fresh_final_checks`: all 4,380 fresh native physical checks can PASS after changing receiver 1→0 or relaxing salinity, but 5,840 original-obligation checks reject issuance. |
 | Missing original receptor proof | `test_u9_missing_original_receptor_proof_is_pending`: complete final physical evidence cannot replace the original source obligations. |
 | Receiver physical/state continuity | `tests/test_receptor_conditions.py`: exact storage endpoint, coupled quantity criteria, salinity bounds, original accounts/pathways and shared/lateral release semantics remain explicit. |
+
+
+## Selection and dormant-source boundaries
+
+| Contract | Regression evidence |
+| --- | --- |
+| ZERO keeps numerical origins | `tests/test_zero_source_conditions.py`: complete-year habitat and joint-hydraulic zero sources retain original criteria after uplift, including omitted/relaxed final studies. Supported positive cases remain valid. |
+| ZERO keeps service reconciliation | `tests/test_conveyance_floor.py`: accepted zero service with final quality 10 is unsupported outside domain 0..8 and valid inside 0..12; the actual zero authorization is checked separately. Unused nonzero-study fallback service does not gate. |
+| Median is not a contributor envelope | `tests/test_selected_quality_constraints.py`: full-year valid median and fixed lateral withdrawal 1 pass without reimposing contributor ecological bases; an original concentration violation still fails. |
+| Advisory remains a diagnostic | `tests/test_advisory_source_conditions.py`: source advisory demand 10 does not change supported habitat floor 5 or require a final quality condition. Binding quality and explicit activation inconsistencies remain checked. |

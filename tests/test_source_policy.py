@@ -243,3 +243,99 @@ def test_conveyance_previous_flow_is_reference_not_policy(conveyance_source):
     assert req is not None and req.ramp is not None
     changed = replace(conveyance_source, conveyance=replace(req, ramp=replace(req.ramp, previous_flow=Flow(9))))
     assert floor_policy_checks((conveyance_source, changed)).finding is CheckFinding.PASS
+
+
+@pytest.fixture
+def zero_conveyance_source(conveyance_source):
+    from test_potential_requirements import zero
+
+    from fishy.evidence import EvidenceScope
+    from fishy.quantities import Volume
+
+    req = conveyance_source.conveyance
+    assert req is not None and req.ramp is not None
+    req = replace(
+        req,
+        duties=(replace(req.duties[0], volume=Volume(0)),),
+        initial_flow=Flow(0),
+        ramp=replace(req.ramp, previous_flow=Flow(0)),
+    )
+    scope = conveyance_source.scope
+    evidence = replace(
+        req.duties[0].evidence,
+        scope=EvidenceScope(
+            scope.candidate, scope.location.reach.identifier, scope.reference_member, scope.period, scope.purpose
+        ),
+    )
+    determination = replace(zero(), scope=scope, evidence=evidence)
+    return replace(conveyance_source, conveyance=req, zero=determination)
+
+
+@pytest.mark.parametrize("field", ("capacity", "ramp", "stopping", "duty"))
+def test_zero_retains_reconciled_conveyance_policy(zero_conveyance_source, field):
+    from fishy.floor_construction import assess_floor_source
+    from fishy.potential_requirements import PotentialFloorResult, PotentialRoute
+
+    source = zero_conveyance_source
+    req = source.conveyance
+    assert req is not None and req.ramp is not None
+    change = {
+        "capacity": {"capacity": Flow(21)},
+        "ramp": {"ramp": replace(req.ramp, rise=Flow(6))},
+        "stopping": {"stopping": replace(req.stopping, iteration_limit=31)},
+        "duty": {"duties": (replace(req.duties[0], capacity=Flow(21)),)},
+    }[field]
+    changed = replace(source, conveyance=replace(req, **change))
+    for candidate in (source, changed):
+        result, _ = assess_floor_source(candidate)
+        assert isinstance(result, PotentialFloorResult)
+        assert result.selected_route is PotentialRoute.ZERO
+    assert floor_policy_checks((source, changed)).finding is CheckFinding.FAIL
+
+
+def test_zero_retains_underlying_study_policy_without_requiring_unused_service():
+    from test_potential_requirements import HABITAT, MISSING, NEED, POTENTIAL, SCOPE, criterion, selection, zero
+
+    from fishy.floor_construction import PotentialFloorSource, assess_floor_source
+    from fishy.potential_requirements import PotentialFloorResult, PotentialRoute
+
+    study = replace(HABITAT, selection=selection(0, criteria=(criterion(low=0),)))
+    source = PotentialFloorSource(SCOPE, POTENTIAL, study, MISSING, None, NEED, zero=zero())
+    assert study.selection is not None
+    changed = replace(
+        source, habitat=replace(study, selection=replace(study.selection, objective="different zero-study objective"))
+    )
+    result, _ = assess_floor_source(source)
+    assert isinstance(result, PotentialFloorResult)
+    assert result.selected_route is PotentialRoute.ZERO
+    assert result.routes[0].route is PotentialRoute.HABITAT
+    assert floor_policy_checks((source,)).finding is CheckFinding.PASS
+    assert floor_policy_checks((source, changed)).finding is CheckFinding.FAIL
+
+
+def test_zero_service_origins_and_determination_policy(zero_conveyance_source):
+    from fishy.floor_construction import assess_floor_source
+    from fishy.potential_requirements import PotentialFloorResult, PotentialRoute
+    from fishy.source_policy import potential_source_routes
+
+    source = zero_conveyance_source
+    result, _ = assess_floor_source(source)
+    assert isinstance(result, PotentialFloorResult)
+    assert potential_source_routes(result) == (PotentialRoute.CONVEYANCE,)
+    assert source.zero is not None
+    changed = replace(source, zero=replace(source.zero, service_impact_criterion="different criterion"))
+    assert floor_policy_checks((source, changed)).finding is CheckFinding.FAIL
+
+
+def test_direct_zero_determination_requires_no_unselected_route_policy():
+    from test_potential_requirements import MISSING, NEED, POTENTIAL, SCOPE, zero
+
+    from fishy.floor_construction import PotentialFloorSource, assess_floor_source
+    from fishy.potential_requirements import PotentialFloorResult
+    from fishy.source_policy import potential_source_routes
+
+    source = PotentialFloorSource(SCOPE, POTENTIAL, MISSING, MISSING, None, NEED, zero=zero())
+    result, _ = assess_floor_source(source)
+    assert isinstance(result, PotentialFloorResult)
+    assert potential_source_routes(result) == ()
+    assert floor_policy_checks((source,)).finding is CheckFinding.PASS

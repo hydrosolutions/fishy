@@ -292,3 +292,166 @@ def test_only_original_numeric_balance_tolerance_preserves_native_accepted_appro
     refused = assess_conveyance_conditions(tighter, final)
     assert next(c for c in refused.checks.checks if c.check_id == "final_capacity").finding is CheckFinding.FAIL
     assert refused.checks.finding is CheckFinding.FAIL
+
+
+def zero_determination(base):
+    from examples.study_requirements import NEED
+    from fishy.potential_requirements import AuthorityBasis, ServiceZeroDetermination, ZeroInterpretation
+    from fishy.study_requirements import StudyScope
+
+    p = base.provenance
+    scope = StudyScope(
+        "supported-zero:" + sample_subject(base),
+        base.location,
+        base.interval,
+        p.scenario,
+        p.reference_member,
+        "sizing",
+        "daily service zero",
+    )
+    evidence = accepted_evidence(
+        EvidenceScope(scope.candidate, base.location.reach.identifier, p.reference_member, base.interval, "sizing"), p
+    )
+    return ServiceZeroDetermination(
+        scope,
+        ZeroInterpretation.SERVICE_DETERMINATION,
+        AuthorityBasis.HYPOTHETICAL,
+        evidence,
+        "audited zero service this day",
+        "assumed signoff",
+        "audit right",
+        "dispute route",
+        "no adverse service effect",
+        NEED,
+    )
+
+
+def zero_request(*, upper=12):
+    base, request = service_request(upper=upper)
+    request = replace(request, initial_flow=Flow(0), duties=tuple(replace(d, volume=Volume(0)) for d in request.duties))
+    return replace(base, value=Flow(0)), request
+
+
+@pytest.mark.parametrize("upper,expected", ((8, CheckFinding.UNKNOWN), (12, CheckFinding.PASS)))
+def test_accepted_zero_source_keeps_original_final_domain_checks(upper, expected):
+    base, request = zero_request(upper=upper)
+    final = replace(base, value=Flow(10))
+    zero = zero_determination(base)
+    result = assess_conveyance_conditions(request, final, zero=zero)
+    assert result.zero is zero
+    assert result.zero_checks is not None and result.zero_checks.finding is CheckFinding.PASS
+    assert result.source.status is ConveyanceStatus.UNSUPPORTED
+    assert result.source.zero_candidate == Flow(0)
+    assert result.local_flow == Flow(10)
+    assert result.checks.finding is expected
+    if expected is CheckFinding.PASS:
+        assert result.unassigned_excess == Volume(10 * 86400)
+    assert assess_conveyance_conditions(request, final).checks.finding is CheckFinding.UNKNOWN
+
+
+def test_zero_reconciliation_uses_explicit_zero_not_positive_final_flow(monkeypatch):
+    import fishy.conveyance_conditions as module
+
+    base, request = zero_request()
+    request = replace(request, initial_flow=Flow(20))
+    seen = []
+    native = module.solve_service_conveyance
+
+    def recorded(actual):
+        seen.append(actual.initial_flow)
+        return native(actual)
+
+    monkeypatch.setattr(module, "solve_service_conveyance", recorded)
+    result = assess_conveyance_conditions(request, replace(base, value=Flow(10)), zero=zero_determination(base))
+    assert seen == [Flow(20), Flow(0)]
+    assert result.original_source is not None and result.original_source.status is ConveyanceStatus.UNSUPPORTED
+    assert result.original_source.zero_candidate is None
+    assert result.source.zero_candidate == Flow(0)
+    assert result.checks.finding is CheckFinding.PASS
+    assert result.request.initial_flow == Flow(20)
+
+
+@pytest.mark.parametrize("field", ("capacity", "ramp", "relation"))
+def test_zero_authorization_cannot_replace_missing_native_prerequisites(field):
+    base, request = zero_request()
+    request = replace(request, **{field: None})
+    result = assess_conveyance_conditions(request, replace(base, value=Flow(10)), zero=zero_determination(base))
+    assert result.checks.finding is CheckFinding.UNKNOWN
+    assert result.source.zero_candidate is None
+
+
+def test_zero_authorization_cannot_erase_positive_service_duty_or_failed_original_ramp():
+    base, positive = service_request(upper=12)
+    assert (
+        assess_conveyance_conditions(
+            positive, replace(base, value=Flow(10)), zero=zero_determination(base)
+        ).checks.finding
+        is CheckFinding.FAIL
+    )
+    base, request = zero_request()
+    assert request.ramp is not None
+    request = replace(request, ramp=replace(request.ramp, fall=Flow(0)))
+    result = assess_conveyance_conditions(request, replace(base, value=Flow(10)), zero=zero_determination(base))
+    assert result.original_source is not None and result.original_source.status is ConveyanceStatus.INFEASIBLE
+    assert result.checks.finding is CheckFinding.FAIL
+
+
+@pytest.mark.parametrize("wrong", ("point", "period", "scenario", "member", "configuration", "missing-signoff"))
+def test_zero_determination_must_bind_actual_source_scope_and_authority(wrong):
+    base, request = zero_request()
+    zero = zero_determination(base)
+    if wrong == "missing-signoff":
+        zero = replace(zero, committee_signoff=None)
+        expected = CheckFinding.UNKNOWN
+    else:
+        scope = zero.scope
+        p = zero.evidence.provenance
+        if wrong == "point":
+            scope = replace(
+                scope, location=replace(scope.location, section=replace(scope.location.section, identifier="other"))
+            )
+        elif wrong == "period":
+            scope = replace(scope, period=Interval(scope.period.start - timedelta(days=1), scope.period.start))
+        elif wrong == "scenario":
+            scope = replace(scope, scenario="other")
+            p = replace(p, scenario="other")
+        elif wrong == "member":
+            scope = replace(scope, reference_member="other")
+            p = replace(p, reference_member="other")
+        else:
+            p = replace(p, configuration_version="other")
+        evidence = replace(
+            zero.evidence,
+            scope=EvidenceScope(
+                scope.candidate, scope.location.reach.identifier, scope.reference_member, scope.period, scope.purpose
+            ),
+            provenance=p,
+        )
+        zero = replace(zero, scope=scope, evidence=evidence)
+        expected = CheckFinding.FAIL
+    result = assess_conveyance_conditions(request, replace(base, value=Flow(10)), zero=zero)
+    assert result.checks.finding is expected
+
+
+def test_accepted_zero_reconciliation_replaces_failed_discarded_fixedpoint_not_current_constraints():
+    base, request = zero_request(upper=12)
+    assert request.relation is not None
+    request = replace(
+        request,
+        initial_flow=Flow(10),
+        capacity=Flow(6),
+        relation=replace(
+            request.relation,
+            states=(ConveyanceState(Flow(0), Volume(0), ()), ConveyanceState(Flow(12), Volume(12 * 86400), ())),
+        ),
+    )
+    zero = zero_determination(base)
+    result = assess_conveyance_conditions(request, replace(base, value=Flow(5)), zero=zero)
+    assert result.original_source is not None and result.original_source.status is ConveyanceStatus.INFEASIBLE
+    assert result.source.zero_candidate == Flow(0)
+    assert result.checks.finding is CheckFinding.PASS
+    assert result.balance_margin_m3 == 0
+    failed = assess_conveyance_conditions(request, replace(base, value=Flow(7)), zero=zero)
+    assert failed.source.zero_candidate == Flow(0)
+    assert failed.checks.finding is CheckFinding.FAIL
+    assert next(c for c in failed.checks.checks if c.check_id == "final_capacity").finding is CheckFinding.FAIL

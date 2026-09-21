@@ -5,6 +5,7 @@ versions remain unchanged. Route selection/descent is a separate caller operatio
 """
 
 from dataclasses import dataclass, replace
+from typing import Literal
 
 from fishy.conveyance_conditions import ConveyanceConditionAssessment, assess_conveyance_conditions
 from fishy.design_conditions import DesignClass
@@ -55,7 +56,12 @@ from fishy.source_conditions import (
     assess_source_conditions,
     source_period_scope,
 )
-from fishy.source_policy import floor_policy_checks, source_policy_checks
+from fishy.source_policy import (
+    floor_policy_checks,
+    potential_source_routes,
+    quality_policy_matches,
+    source_policy_checks,
+)
 
 
 @dataclass(frozen=True)
@@ -189,11 +195,9 @@ def _physical_checks(family, required, assessments):
     return checks
 
 
-def _composition_obligations(composition, final, withdrawals=None):
+def _composition_obligations(composition, final, withdrawals=None, *, stage: Literal["retained", "selected"]):
     checks = []
-    if composition.quality is not None and (final is None or final.original_quality is None):
-        checks.append(Check("source_quality", CheckFinding.UNKNOWN, ("source quality requires a final recheck",)))
-    if composition.quality is not None and final is not None:
+    if composition.quality is not None:
         q = composition.quality
         q = apply_quality_component(
             q.base,
@@ -206,7 +210,11 @@ def _composition_obligations(composition, final, withdrawals=None):
             q.quality.bounds,
             q.final_check.arrival if q.final_check else None,
         )
-        if q.status is not ComponentStatus.ADVISORY:
+        if q.status is not ComponentStatus.ADVISORY and (final is None or final.original_quality is None):
+            checks.append(
+                Check("source_quality", CheckFinding.UNKNOWN, ("binding source quality requires a final recheck",))
+            )
+        if q.status is not ComponentStatus.ADVISORY and final is not None:
             local = final.sample.value
             if final.mapping is not None and final.mapping.mapping.relationship is WaterRelationship.LATERAL:
                 local = final.mapping.mapping.continuing
@@ -216,8 +224,17 @@ def _composition_obligations(composition, final, withdrawals=None):
             elif local.value < boundary.background.value:
                 checks.append(Check("original_quality", CheckFinding.FAIL, ("final flow below source background",)))
             else:
+                # The member's pre-quality base is already part of the selected
+                # uncapped total. Reimposing every member base would replace an
+                # accepted median with an envelope. All actual quality and
+                # operational constraints remain unchanged.
+                bounds = (
+                    replace(q.quality.bounds, ecological_total=None)
+                    if stage == "selected" and q.quality.bounds is not None
+                    else q.quality.bounds
+                )
                 repeated = recheck_mixing(
-                    boundary, q.quality.targets, Flow(local.value - boundary.background.value), q.quality.bounds
+                    boundary, q.quality.targets, Flow(local.value - boundary.background.value), bounds
                 )
                 finding = {
                     CheckOutcome.PASS: CheckFinding.PASS,
@@ -308,7 +325,9 @@ def _composition_obligations(composition, final, withdrawals=None):
     return checks
 
 
-def _regime_source_conditions(construction, family, assessments, schedules=None):
+def _regime_source_conditions(
+    construction, family, assessments, schedules=None, *, stage: Literal["retained", "selected"]
+):
     by_key = {(a.design, a.result.sample.interval): a.result for a in assessments}
     samples = {(c.design, s.interval): s for c in family.classes for s in c.samples}
     checks, studies, receptors = [], [], []
@@ -319,7 +338,7 @@ def _regime_source_conditions(construction, family, assessments, schedules=None)
         checks.extend(
             Check(label + ":" + c.check_id, c.finding, c.reasons)
             for c in _composition_obligations(
-                component.result, result, schedules.get(key, ()) if schedules is not None else None
+                component.result, result, schedules.get(key, ()) if schedules is not None else None, stage=stage
             )
         )
         if component.result.receptor_source is not None:
@@ -355,7 +374,9 @@ def _regime_source_conditions(construction, family, assessments, schedules=None)
     return checks, studies, receptors
 
 
-def _floor_source_conditions(construction, samples, assessments, schedules=None):
+def _floor_source_conditions(
+    construction, samples, assessments, schedules=None, *, stage: Literal["retained", "selected"]
+):
     by_period = {r.sample.interval: r for r in assessments}
     finals = {s.interval: s for s in samples}
     checks, studies, processes, conveyances, receptors = [], [], [], [], []
@@ -367,7 +388,7 @@ def _floor_source_conditions(construction, samples, assessments, schedules=None)
         checks.extend(
             Check(label + ":" + c.check_id, c.finding, c.reasons)
             for c in _composition_obligations(
-                component.composition, result, schedules.get(period, ()) if schedules is not None else None
+                component.composition, result, schedules.get(period, ()) if schedules is not None else None, stage=stage
             )
         )
         if component.composition.receptor_source is not None:
@@ -389,9 +410,13 @@ def _floor_source_conditions(construction, samples, assessments, schedules=None)
         sized = cache[id(source)]
         if sized is None:
             continue
-        if sized.selected_route is PotentialRoute.CONVEYANCE and source.conveyance is not None:
+        origins = potential_source_routes(sized)
+        if PotentialRoute.CONVEYANCE in origins and source.conveyance is not None:
             conveyed = assess_conveyance_conditions(
-                source.conveyance, finals[period], mapping=result.mapping if result else None
+                source.conveyance,
+                finals[period],
+                mapping=result.mapping if result else None,
+                zero=source.zero if sized.selected_route is PotentialRoute.ZERO else None,
             )
             conveyances.append(conveyed)
             checks.extend(
@@ -399,9 +424,9 @@ def _floor_source_conditions(construction, samples, assessments, schedules=None)
             )
         original = (
             source.habitat
-            if sized.selected_route is PotentialRoute.HABITAT
+            if PotentialRoute.HABITAT in origins
             else source.hydraulics
-            if sized.selected_route is PotentialRoute.HYDRAULIC
+            if PotentialRoute.HYDRAULIC in origins
             else None
         )
         mode = SourcePeriodMapping.EXACT if source.scope.period == period else SourcePeriodMapping.CONSTANT_THRESHOLD
@@ -576,8 +601,8 @@ def finalize_regime(
         for item in source_result.compositions:
             q = item.result.quality
             key = item.design, item.result.base.interval
-            policy = (q.activation, q.quality.targets) if q is not None else None
-            if key in policies and policies[key] != policy:
+            policy = q
+            if key in policies and not quality_policy_matches(policies[key], policy):
                 checks.append(
                     Check(
                         f"quality_policy:{source_result.member.identifier}:{item.design.value}:{key[1].start.isoformat()}",
@@ -585,13 +610,13 @@ def finalize_regime(
                         ("retained members use different quality/activation policies",),
                     )
                 )
-            else:
+            elif key not in policies or policies[key] is None:
                 policies[key] = policy
     for item in physical:
         key = item.design, item.result.sample.interval
         q = item.result.original_quality
-        policy = (q.activation, q.quality.targets) if q is not None else None
-        if key in policies and policies[key] != policy:
+        policy = q
+        if key in policies and not quality_policy_matches(policies[key], policy):
             checks.append(
                 Check(
                     f"selected_quality_policy:{item.design.value}:{key[1].start.isoformat()}",
@@ -650,8 +675,8 @@ def finalize_regime(
         for item in physical_inputs:
             key = item.design, item.result.sample.interval
             q = item.result.original_quality
-            policy = (q.activation, q.quality.targets) if q is not None else None
-            if key in policies and policies[key] != policy:
+            policy = q
+            if key in policies and not quality_policy_matches(policies[key], policy):
                 checks.append(
                     Check(
                         f"retained_policy:{member.identifier}:{key[0].value}:{key[1].start.isoformat()}",
@@ -681,7 +706,11 @@ def finalize_regime(
             ("retained", local, tuple(a.assessment for a in assessed_members if a.member == construction.member)),
         ):
             source_checks, conditions, receptors = _regime_source_conditions(
-                construction, candidate, supplied_physics, schedules if role == "selected" else None
+                construction,
+                candidate,
+                supplied_physics,
+                schedules if role == "selected" else None,
+                stage="selected" if role == "selected" else "retained",
             )
             checks.extend(Check(role + ":" + c.check_id, c.finding, c.reasons) for c in source_checks)
             source_conditions.extend(conditions)
@@ -812,9 +841,9 @@ def finalize_floors(
             source_policies.setdefault(component.composition.base.interval, []).append(component.source)
         for item in source.compositions:
             q = item.quality
-            policy = (q.activation, q.quality.targets) if q is not None else None
+            policy = q
             key = item.base.interval
-            if key in policies and policies[key] != policy:
+            if key in policies and not quality_policy_matches(policies[key], policy):
                 checks.append(
                     Check(
                         f"member_policy:{member.identifier}:{key.start.isoformat()}",
@@ -822,7 +851,8 @@ def finalize_floors(
                         ("direct floor members use different quality policies",),
                     )
                 )
-            policies[key] = policy
+            if key not in policies or policies[key] is None:
+                policies[key] = policy
     for period, actual_sources in source_policies.items():
         policy_checks = floor_policy_checks(tuple(actual_sources))
         checks.extend(
@@ -876,8 +906,8 @@ def finalize_floors(
                 checks.append(Check(label + ":coverage", CheckFinding.UNKNOWN))
             if result and sample.interval in policies:
                 q = result.original_quality
-                policy = (q.activation, q.quality.targets) if q is not None else None
-                if policy != policies[sample.interval]:
+                policy = q
+                if not quality_policy_matches(policies[sample.interval], policy):
                     checks.append(
                         Check(
                             label + ":policy", CheckFinding.FAIL, ("member final checks changed direct-floor policy",)
@@ -887,8 +917,8 @@ def finalize_floors(
         result = supplied.get(sample.interval)
         if result is not None and sample.interval in policies:
             q = result.original_quality
-            policy = (q.activation, q.quality.targets) if q is not None else None
-            if policy != policies[sample.interval]:
+            policy = q
+            if not quality_policy_matches(policies[sample.interval], policy):
                 checks.append(
                     Check(
                         f"selected_policy:{sample.interval.start.isoformat()}",
@@ -933,7 +963,11 @@ def finalize_floors(
             ),
         ):
             source_checks, conditions, processes, conveyances, receptors = _floor_source_conditions(
-                construction, samples, assessed, schedules if role == "selected" else None
+                construction,
+                samples,
+                assessed,
+                schedules if role == "selected" else None,
+                stage="selected" if role == "selected" else "retained",
             )
             checks.extend(Check(role + ":" + c.check_id, c.finding, c.reasons) for c in source_checks)
             source_conditions.extend(conditions)

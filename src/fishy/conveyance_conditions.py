@@ -4,11 +4,12 @@ The original service requirement remains fixed. Evaluate the actual final flow i
 its original supported storage/loss domain, capacity and predecessor transition.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from fractions import Fraction
 
 from fishy.evidence import Check, CheckFinding, CheckSummary
 from fishy.flows import Coverage, FlowSample, IntervalUse, Presence, interval_use
+from fishy.potential_requirements import ServiceZeroDetermination, _zero_checks
 from fishy.quantities import Flow, Volume
 from fishy.receptor_delivery import ControlEquivalent, WaterRelationship, control_equivalent
 from fishy.requirement_checks import sample_subject
@@ -37,6 +38,9 @@ class ConveyanceConditionAssessment:
     ramp_increment_m3_s: Fraction | None
     ramp_rate_m3_s2: Fraction | None
     checks: CheckSummary
+    zero: ServiceZeroDetermination | None = None
+    zero_checks: CheckSummary | None = None
+    original_source: ServiceConveyanceResult | None = None
 
 
 def _local_flow(request: ServiceConveyanceRequest, final: FlowSample, mapping: ControlEquivalent | None):
@@ -113,11 +117,13 @@ def assess_conveyance_conditions(
     final: FlowSample,
     *,
     mapping: ControlEquivalent | None = None,
+    zero: ServiceZeroDetermination | None = None,
 ) -> ConveyanceConditionAssessment:
     """Recheck a final physical candidate without solving a new service requirement.
 
-    Only the original request is solved for source prerequisites. Native relation
-    interpolation evaluates the final flow; no extrapolation is permitted. Excess
+    Source prerequisites use the original request and, when explicitly supplied,
+    its zero reconciliation. Neither solve is seeded with the positive final flow.
+    Native relation interpolation evaluates final flow without extrapolation. Excess
     inside the supported domain is retained as unassigned through-flow, not a new
     service duty, operating allocation or failed fixed-point convergence.
     Only the original declared numerical balance tolerance applies; it neither
@@ -127,15 +133,82 @@ def assess_conveyance_conditions(
         raise TypeError("typed original service request and actual final FlowSample required")
     if mapping is not None and not isinstance(mapping, ControlEquivalent):
         raise TypeError("typed supported control mapping required")
-    source = solve_service_conveyance(request)
+    if zero is not None and not isinstance(zero, ServiceZeroDetermination):
+        raise TypeError("typed scoped zero determination required")
+    original_source = solve_service_conveyance(request)
+    source = original_source
+    checks = []
+    zero_checks = None
+    accepted_zero = False
+    if zero is not None:
+        # This is the same explicit zero reconciliation as potential sizing,
+        # never a fixed-point solve seeded with the positive final quality flow.
+        source = solve_service_conveyance(replace(request, initial_flow=Flow(0)))
+        source_evidence = tuple(d.evidence for d in request.duties) + tuple(i.evidence for i in request.other_inflows)
+        if request.relation is not None:
+            source_evidence += (request.relation.evidence,)
+        if request.ramp is not None:
+            source_evidence += (request.ramp.evidence,)
+        identity = zero.scope.location == request.location and zero.scope.period == request.interval
+        identity = (
+            identity
+            and bool(source_evidence)
+            and all(
+                zero.scope.scenario == e.provenance.scenario
+                and zero.scope.reference_member == e.provenance.reference_member
+                and all(
+                    getattr(zero.evidence.provenance, f) == getattr(e.provenance, f)
+                    for f in ("scenario", "reference_member", "reference_kind", "configuration_version")
+                )
+                for e in source_evidence
+            )
+        )
+        native_zero = source.status is ConveyanceStatus.UNSUPPORTED and source.zero_candidate == Flow(0)
+        zero_checks = CheckSummary(
+            (
+                *_zero_checks(zero).checks,
+                Check(
+                    "request_identity",
+                    CheckFinding.PASS if identity else CheckFinding.FAIL,
+                    (
+                        "zero determination must bind original control, accounting period, scenario, member and configuration",
+                    ),
+                ),
+                Check(
+                    "native_zero_candidate",
+                    CheckFinding.PASS
+                    if native_zero
+                    else CheckFinding.FAIL
+                    if source.flow is not None and source.flow.value > 0
+                    else CheckFinding.UNKNOWN,
+                    (
+                        "native service reconciliation must supply zero; authority cannot erase positive service needs or missing physics",
+                    ),
+                ),
+            )
+        )
+        checks.extend(Check("zero:" + c.check_id, c.finding, c.reasons) for c in zero_checks.checks)
+        accepted_zero = zero_checks.finding is CheckFinding.PASS
+        # The separately evaluated native zero is the actual source candidate.
+        # A failed discarded initial fixed point stays visible in original_source;
+        # zero reconciliation and actual final constraints, not that old trial, gate.
+
     prerequisite = (
         CheckFinding.PASS
-        if source.status is ConveyanceStatus.SUPPORTED
+        if source.status is ConveyanceStatus.SUPPORTED or accepted_zero
         else CheckFinding.FAIL
         if source.status is ConveyanceStatus.INFEASIBLE
         else CheckFinding.UNKNOWN
     )
-    checks = [Check("source_service", prerequisite, source.reasons)]
+    checks.append(
+        Check(
+            "source_service",
+            prerequisite,
+            ("native zero candidate has separately accepted scoped determination",)
+            if accepted_zero
+            else source.reasons,
+        )
+    )
     flow, domain = _local_flow(request, final, mapping)
     checks.append(domain)
     capacity = (
@@ -248,4 +321,7 @@ def assess_conveyance_conditions(
         increment,
         rate,
         CheckSummary(tuple(checks)),
+        zero,
+        zero_checks,
+        original_source,
     )

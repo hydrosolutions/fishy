@@ -59,6 +59,17 @@ an explicitly hypothetical seasonal profile. Preserve hydraulic findings and
 source authority separately. See the [sanitary workflow](docs/sanitary-workflow.md)
 and [acceptance crosswalk](docs/sanitary-acceptance.md).
 
+## Annual hydrological estimates
+
+```sh
+uv run python examples/annual_estimation.py
+```
+
+Compute annual mean estimates from complete annual inputs, or import an attributable
+specialist result. Inspect ranking support, fitted diagnostics, uncertainty and
+scoped use restrictions separately. See [annual estimates](docs/annual-statistics.md).
+No daily record or simulator is required for independently supported annual inputs.
+
 ## Use Taqsim results
 
 ```sh

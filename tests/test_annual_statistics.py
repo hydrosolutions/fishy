@@ -290,3 +290,136 @@ def test_supported_import_and_missing_nonstationary_derivation():
 def test_invalid_probabilities(invalid):
     with pytest.raises((ValueError, TypeError)):
         ExceedanceProbability(invalid)
+
+
+def test_direct_estimate_record_cannot_bypass_nonstationary_derivation_gate():
+    # Public immutable record construction must enforce its route too.
+    original = estimate(replace(reference(), trend=TrendTreatment.UNTREATED))
+    with pytest.raises(ValueError, match="derivation"):
+        replace(original, estimator=AnnualEstimator.IMPORTED_NONSTATIONARY)
+
+
+def test_supported_import_without_raw_calibration_values():
+    from fishy.annual_statistics import ImportedAnnualReference
+
+    ref = reference()
+    imported_ref = ImportedAnnualReference(
+        ref.location,
+        ref.provenance,
+        ref.accepted_years,
+        ref.reference_period,
+        ref.climate_basis,
+        1,
+        0,
+        (),
+        ref.trend,
+        ref.climate_evidence,
+    )
+    imported = import_annual_estimate(
+        imported_ref,
+        ExceedanceProbability(".99"),
+        Flow(7),
+        estimator=AnnualEstimator.IMPORTED_STATIONARY,
+        profile_version="external-1",
+        provenance=PROVENANCE,
+        derivation=derivation(),
+    )
+    assert imported.value == Flow(7)
+    assert imported.discharge_support_distance is None
+    assert annual_use_checks(imported, findings(imported), "annual screen").finding is CheckFinding.PASS
+    with pytest.raises(ValueError, match="missing year"):
+        replace(imported_ref, accepted_years=imported_ref.accepted_years[:1] + imported_ref.accepted_years[2:])
+
+
+def test_real_fitted_replicate_failure_prevents_external_sampling_interval():
+    from fishy.sampling_uncertainty import ReplicateFailure, ReplicateSeries, SamplingPlan, sampling_intervals
+
+    values = (0, exp(-1), 1, exp(1))
+    plan = SamplingPlan(
+        (2000, 2001, 2002, 2003),
+        1,
+        2,
+        ((0, 1, 2, 3), (0, 2, 2, 2)),
+        "external fixture generator",
+        "1",
+        1,
+        "uniform",
+        AnnualEstimator.ZERO_MIXTURE.value,
+        "1",
+        "four complete annual means",
+        independence_justification="synthetic independent annual draws",
+    )
+    # This is a caller-owned test harness, not library resampling orchestration.
+    estimates = tuple(estimate(reference(tuple(values[i] for i in row)), ".75", fit=True) for row in plan.indices)
+    assert estimates[0].value == Flow(0)
+    assert estimates[1].value is None
+    outcomes = tuple(e.value if e.value is not None else ReplicateFailure(e.reasons) for e in estimates)
+    series = ReplicateSeries(
+        "annual P75", plan.estimator, "1", "real fitted_estimate applied to each replicate", plan.indices, outcomes
+    )
+    result = sampling_intervals(plan, (series,), ".05")[0]
+    assert result.interval is None and result.failed_count == 1
+    assert "standard deviation" in result.failures[0][1].reasons[0]
+
+
+def test_supported_annual_example():
+    from examples.annual_estimation import annual_example
+
+    median, screen, sizing, missing, imported = annual_example()
+    assert median.value == Flow(25)
+    assert screen.finding is CheckFinding.PASS
+    assert sizing.finding is CheckFinding.FAIL
+    assert missing.value is None
+    assert imported.value == Flow(10)
+
+
+def test_scientific_scope_binds_complete_reference_and_product_identity():
+    original = estimate()
+    supplied = findings(original)
+    changed_climate = estimate(replace(reference(), climate_basis="different climate reconstruction"))
+    assert annual_use_checks(changed_climate, supplied, "annual screen").finding is not CheckFinding.PASS
+    changed_location = replace(LOCATION, section=CalculationSection("different-section", "1"))
+    changed_ref = replace(
+        reference(), observations=tuple(replace(s, location=changed_location) for s in reference().observations)
+    )
+    assert annual_use_checks(estimate(changed_ref), supplied, "annual screen").finding is not CheckFinding.PASS
+    assert estimate(replace(reference(), observations=reference().observations[::-1])).scope(
+        "annual screen"
+    ) == original.scope("annual screen")
+
+
+def test_native_estimate_carrier_recomputes_value_and_route():
+    original = estimate()
+    with pytest.raises(ValueError, match="computed"):
+        replace(original, value=Flow(999))
+    with pytest.raises(ValueError, match="computed"):
+        replace(original, estimator=AnnualEstimator.ZERO_MIXTURE)
+    fitted = estimate(reference((0, exp(-1), 1, exp(1))), ".75", fit=True)
+    with pytest.raises(ValueError, match="computed"):
+        replace(fitted, value=Flow(10))
+
+
+def test_fitted_membership_preserves_representable_upper_tail_probability():
+    ref = reference((1,) * 99 + (2,))
+    fit = fit_zero_mixture(ref)
+    probabilities = fitted_membership(ref, fit)
+    assert float(probabilities[-1].exceedance.value) == pytest.approx(1.262508831201962e-23, rel=1e-12)
+
+
+def test_fitted_quantile_preserves_representable_small_exceedance():
+    result = estimate(reference((exp(-1), 1, exp(1))), "1e-23", fit=True)
+    assert result.value is not None
+    assert result.value.value > 1
+
+
+def test_fitted_membership_preserves_lower_tail_distance_from_one():
+    ref = reference((1,) + (2,) * 99)
+    probability = fitted_membership(ref, fit_zero_mixture(ref))[0].exceedance.value
+    assert float(1 - probability) == pytest.approx(1.262508831201962e-23, rel=1e-11)
+
+
+def test_fitted_membership_rejects_mutated_fit_parameters():
+    ref = reference((1, 2, 3))
+    fit = fit_zero_mixture(ref)
+    with pytest.raises(ValueError, match="inconsistent"):
+        fitted_membership(ref, replace(fit, log_mean=1))

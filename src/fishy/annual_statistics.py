@@ -4,12 +4,15 @@ Annual means use actual elapsed volume/duration. Ranking and the selected
 zero-mixture candidate are distinct from scientific acceptance and daily shape.
 """
 
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, fields, is_dataclass
 from datetime import datetime, timedelta, timezone
-from enum import StrEnum
+from enum import Enum, StrEnum
 from fractions import Fraction
-from math import exp, isfinite, log, sqrt
+from hashlib import sha256
+from math import erfc, exp, isfinite, log, sqrt
 from statistics import NormalDist
+from typing import Any
 
 from fishy.evidence import (
     Check,
@@ -295,14 +298,53 @@ def fit_zero_mixture(reference: AnnualReference) -> ZeroMixtureFit:
 def fitted_membership(reference: AnnualReference, fit: ZeroMixtureFit) -> tuple[YearProbability, ...]:
     if fit.reference != reference:
         raise ValueError("fitted membership must retain full reference identity")
+    if fit != fit_zero_mixture(reference):
+        raise ValueError("fitted membership parameters are inconsistent with annual reference")
     if fit.log_variance is None:
         raise ValueError("fitted membership unavailable: " + "; ".join(fit.reasons))
-    probabilities = {
-        j.discharge.value: ExceedanceProbability(1 - (j.fitted_left + j.fitted_right) / 2) for j in fit.jumps
-    }
+    assert fit.log_mean is not None
+    probabilities = {}
+    for value in reference.values:
+        if value.value == 0:
+            probability = 1 - fit.zero_fraction / 2
+        else:
+            z = (log(value.value.numerator) - log(value.value.denominator) - fit.log_mean) / sqrt(fit.log_variance)
+            # erfc retains tiny positive tails which 1-cdf rounds to zero.
+            small_tail = Fraction(str(erfc(abs(z) / sqrt(2)) / 2))
+            survival = small_tail if z >= 0 else 1 - small_tail
+            probability = (1 - fit.zero_fraction) * survival
+        if not 0 < probability < 1:
+            raise ValueError("fitted membership exceeds floating-point probability resolution")
+        probabilities[value.value] = ExceedanceProbability(probability)
     return tuple(
         YearProbability(s.interval, probabilities[s.value.value]) for s in reference.observations if s.value is not None
     )
+
+
+def _identity_data(value: Any) -> Any:
+    """Canonical domain content; sort only reference populations, not numerical axes."""
+    if isinstance(value, Enum):
+        return {"enum": type(value).__name__, "value": value.value}
+    if isinstance(value, Fraction):
+        return {"fraction": str(value)}
+    if isinstance(value, datetime):
+        return {"datetime": value.isoformat()}
+    if is_dataclass(value) and not isinstance(value, type):
+        result = {"type": type(value).__name__}
+        for field in fields(value):
+            content = _identity_data(getattr(value, field.name))
+            if field.name in ("observations", "accepted_years", "exclusions"):
+                content = sorted(content, key=lambda item: json.dumps(item, sort_keys=True))
+            result[field.name] = content
+        return result
+    if isinstance(value, tuple):
+        return [_identity_data(item) for item in value]
+    return value
+
+
+def _fingerprint(estimate: "AnnualEstimate | AnnualReference | ImportedAnnualReference") -> str:
+    content = json.dumps(_identity_data(estimate), sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return sha256(content.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -328,6 +370,36 @@ class AnnualEstimate:
         if self.value is not None and not isinstance(self.value, Flow):
             raise TypeError("annual estimate requires Flow")
         _text(self.profile_version)
+        imported = self.estimator in (AnnualEstimator.IMPORTED_STATIONARY, AnnualEstimator.IMPORTED_NONSTATIONARY)
+        if imported and not isinstance(self.derivation, ImportedDerivation):
+            raise ValueError("imported estimate requires reproducible derivation")
+        if self.estimator is AnnualEstimator.IMPORTED_NONSTATIONARY and (
+            self.derivation is None or not self.derivation.covariates or self.derivation.evaluation is None
+        ):
+            raise ValueError("nonstationary derivation requires covariates and evaluation date/scenario")
+        if not imported and isinstance(self.reference, ImportedAnnualReference):
+            raise ValueError("computed estimator requires actual annual observations")
+        if isinstance(self.reference, AnnualReference) and not imported:
+            if self.estimator is AnnualEstimator.EMPIRICAL:
+                expected_value, expected_neighbours, _ = _empirical_values(self.reference, self.target)
+                if (
+                    self.value != expected_value
+                    or self.neighbours != expected_neighbours
+                    or self.fit is not None
+                    or self.derivation is not None
+                ):
+                    raise ValueError("computed empirical estimate is inconsistent with annual reference/target")
+            else:
+                expected_value, expected_fit, _ = _fitted_values(self.reference, self.target)
+                if (
+                    self.value != expected_value
+                    or self.fit != expected_fit
+                    or self.neighbours
+                    or self.derivation is not None
+                ):
+                    raise ValueError("computed fitted estimate is inconsistent with annual reference/target")
+        if imported and (self.neighbours or self.fit is not None):
+            raise ValueError("imported derivation cannot masquerade as native rank/fit calculation")
         if self.value is None and not self.reasons:
             raise ValueError("unavailable estimate requires reasons")
         first = self.reference.provenance
@@ -336,6 +408,15 @@ class AnnualEstimate:
             for name in ("scenario", "reference_member", "reference_kind")
         ):
             raise ValueError("estimate provenance changes reference identity")
+
+    @property
+    def identity(self) -> str:
+        """Versioned canonical result fingerprint for exact scientific-product binding."""
+        return "annual-result-v1:" + _fingerprint(self)
+
+    @property
+    def reference_identity(self) -> str:
+        return "annual-reference-v1:" + _fingerprint(self.reference)
 
     @property
     def probability_support_distance(self) -> Fraction:
@@ -352,7 +433,7 @@ class AnnualEstimate:
     def scope(self, intended_use: str) -> EvidenceScope:
         """Target/profile identity prevents accepting P99 with a generic annual finding."""
         p = self.target.value
-        product = f"annual_mean:{self.estimator.value}:{self.profile_version}:P={p}"
+        product = f"annual_mean:{self.estimator.value}:{self.profile_version}:P={p}:identity-v1={_fingerprint(self)}"
         return EvidenceScope(
             product,
             self.reference.location.reach.identifier,
@@ -362,9 +443,9 @@ class AnnualEstimate:
         )
 
 
-def empirical_estimate(
-    reference: AnnualReference, target: ExceedanceProbability, *, provenance: Provenance, profile_version: str
-) -> AnnualEstimate:
+def _empirical_values(
+    reference: AnnualReference, target: ExceedanceProbability
+) -> tuple[Flow | None, tuple[RankNeighbour, ...], tuple[str, ...]]:
     values = sorted(reference.values, key=lambda v: v.value, reverse=True)
     n = len(values)
     rank = target.value * (n + 1)
@@ -381,14 +462,21 @@ def empirical_estimate(
             for i in dict.fromkeys((lower, upper))
         )
         value = Flow(values[lower - 1].value + (rank - lower) * (values[upper - 1].value - values[lower - 1].value))
+    return value, neighbours, reasons
+
+
+def empirical_estimate(
+    reference: AnnualReference, target: ExceedanceProbability, *, provenance: Provenance, profile_version: str
+) -> AnnualEstimate:
+    value, neighbours, reasons = _empirical_values(reference, target)
     return AnnualEstimate(
         reference, target, AnnualEstimator.EMPIRICAL, profile_version, value, provenance, neighbours, None, reasons
     )
 
 
-def fitted_estimate(
-    reference: AnnualReference, target: ExceedanceProbability, *, provenance: Provenance, profile_version: str
-) -> AnnualEstimate:
+def _fitted_values(
+    reference: AnnualReference, target: ExceedanceProbability
+) -> tuple[Flow | None, ZeroMixtureFit, tuple[str, ...]]:
     fit = fit_zero_mixture(reference)
     value = None
     reasons = fit.reasons
@@ -397,11 +485,16 @@ def fitted_estimate(
         if u <= fit.zero_fraction:
             value = Flow(0)
         else:
-            probability = float((u - fit.zero_fraction) / (1 - fit.zero_fraction))
+            lower_probability = (u - fit.zero_fraction) / (1 - fit.zero_fraction)
+            upper_probability = target.value / (1 - fit.zero_fraction)
+            probability = float(min(lower_probability, upper_probability))
             if not 0 < probability < 1:
                 reasons = (*reasons, "target exceeds floating-point quantile resolution")
             else:
-                exponent = fit.log_mean + sqrt(fit.log_variance) * NormalDist().inv_cdf(probability)
+                normal = NormalDist().inv_cdf(probability)
+                if upper_probability < lower_probability:
+                    normal = -normal
+                exponent = fit.log_mean + sqrt(fit.log_variance) * normal
                 try:
                     quantile = exp(exponent)
                 except OverflowError:
@@ -410,6 +503,13 @@ def fitted_estimate(
                     value = Flow(quantile)
                 else:
                     reasons = (*reasons, "positive quantile outside floating-point range; not substituted with zero")
+    return value, fit, reasons
+
+
+def fitted_estimate(
+    reference: AnnualReference, target: ExceedanceProbability, *, provenance: Provenance, profile_version: str
+) -> AnnualEstimate:
+    value, fit, reasons = _fitted_values(reference, target)
     return AnnualEstimate(
         reference, target, AnnualEstimator.ZERO_MIXTURE, profile_version, value, provenance, (), fit, reasons
     )

@@ -221,7 +221,20 @@ def size_potential_floor(
         raise ValueError("additional conditions must retain exact candidate scope")
     if zero is not None and zero.scope != scope:
         raise ValueError("zero determination scope mismatch")
+    evidence = [c.evidence for c in (*additional_conditions, *active_quality)]
+    for inputs in (habitat, hydraulics):
+        if inputs.selection is not None:
+            evidence.append(inputs.selection.evidence)
+    if conveyance is not None:
+        evidence.extend(d.evidence for d in conveyance.duties)
+        if conveyance.relation is not None:
+            evidence.append(conveyance.relation.evidence)
+    if zero is not None:
+        evidence.append(zero.evidence)
+    if len({e.provenance.configuration_version for e in evidence}) > 1:
+        raise ValueError("incompatible potential configuration versions")
     routes = []
+    calculated = None
     flow = None
     selected = None
     for route, inputs in ((PotentialRoute.HABITAT, habitat), (PotentialRoute.HYDRAULIC, hydraulics)):
@@ -296,6 +309,24 @@ def size_potential_floor(
                 (Check("zero", CheckFinding.UNKNOWN, ("supported zero determination not supplied",)),)
             )
         if zero is not None or flow is not None:
+            if conveyance is not None and (calculated is None or calculated.zero_candidate is None):
+                finding = (
+                    CheckFinding.FAIL
+                    if calculated is not None and calculated.status is ConveyanceStatus.INFEASIBLE
+                    else CheckFinding.UNKNOWN
+                )
+                checks = CheckSummary(
+                    (
+                        *checks.checks,
+                        Check(
+                            "zero_service_balance",
+                            finding,
+                            (
+                                "a supplied service account must support zero; a determination cannot erase duties or physical failure",
+                            ),
+                        ),
+                    )
+                )
             accepted = checks.finding is CheckFinding.PASS
             flow = Flow(0) if accepted else None
             selected = PotentialRoute.ZERO if accepted else None

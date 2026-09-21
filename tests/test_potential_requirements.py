@@ -210,3 +210,76 @@ def test_pending_official_replacement_cannot_displace_issued_requirement():
     new = IssuedRequirementVersion("potential-v2", Track.POTENTIAL, (), "proposed act")
     decision = ReplacementDecision("natural-v1", new, "revision file", EVIDENCE)
     assert retain_requirement_history(proposal, (old,), decision).in_force == old
+
+
+def test_zero_cannot_replace_infeasible_positive_service_duties():
+    req = request()
+    scope = StudyScope("candidate", req.location, req.interval, "scenario", "member", "sizing", "summer")
+    evidence = replace(
+        EVIDENCE,
+        scope=replace(EVIDENCE.scope, product=scope.candidate, period=scope.period, member="member"),
+        provenance=replace(
+            EVIDENCE.provenance, scenario="scenario", reference_member="member", configuration_version="v1"
+        ),
+    )
+    determination = replace(zero(), scope=scope, evidence=evidence)
+    result = size_potential_floor(
+        scope, POTENTIAL, MISSING, MISSING, replace(req, capacity=Flow(1)), NEED, zero=determination
+    )
+    assert result.floor is None
+    assert result.routes[2].checks.finding is CheckFinding.FAIL
+    assert result.routes[-1].checks.finding is not CheckFinding.PASS
+
+
+def test_adopted_zero_candidate_retains_separate_official_admissibility():
+    result = run(zero=replace(zero(ZeroInterpretation.DESIGNED_DRY), basis=AuthorityBasis.ADOPTED))
+    assert result.floor == Flow(0)
+    assert result.zero_determination.evidence.official_admissibility is OfficialAdmissibility.PENDING
+    assert result.obligation_state == "pending_new_delivery_obligation"
+    adopted = replace(
+        zero(ZeroInterpretation.DESIGNED_DRY),
+        basis=AuthorityBasis.ADOPTED,
+        evidence=replace(EVIDENCE, official_admissibility=OfficialAdmissibility.ADMISSIBLE),
+    )
+    assert run(zero=adopted).floor == Flow(0)
+
+
+def test_supported_service_zero_balance_requires_and_accepts_determination():
+    from fishy.quantities import Volume
+
+    req = request()
+    assert req.ramp is not None
+    req = replace(
+        req,
+        duties=(replace(req.duties[0], volume=Volume(0)),),
+        initial_flow=Flow(0),
+        ramp=replace(req.ramp, previous_flow=Flow(0)),
+    )
+    scope = StudyScope("candidate", req.location, req.interval, "scenario", "member", "sizing", "summer")
+    evidence = replace(
+        EVIDENCE,
+        scope=replace(EVIDENCE.scope, product=scope.candidate, period=scope.period, member="member"),
+        provenance=replace(
+            EVIDENCE.provenance, scenario="scenario", reference_member="member", configuration_version="v1"
+        ),
+    )
+    determination = replace(zero(), scope=scope, evidence=evidence)
+    result = size_potential_floor(scope, POTENTIAL, MISSING, MISSING, req, NEED, zero=determination)
+    assert result.floor == Flow(0)
+    assert result.routes[2].conveyance is not None
+    assert result.routes[2].conveyance.zero_candidate == Flow(0)
+    assert result.routes[2].conveyance.flow is None
+
+
+@pytest.mark.parametrize("target", ["zero", "additional", "active_quality"])
+def test_potential_handoff_rejects_mixed_configuration(target):
+    changed = replace(EVIDENCE, provenance=replace(EVIDENCE.provenance, configuration_version="other-policy"))
+    kwargs = {}
+    if target == "zero":
+        kwargs["zero"] = replace(zero(), evidence=changed)
+    elif target == "additional":
+        kwargs["additional_conditions"] = (replace(condition("thermal"), evidence=changed),)
+    else:
+        kwargs["active_quality"] = (replace(condition("quality"), evidence=changed),)
+    with pytest.raises(ValueError, match="configuration"):
+        run(HABITAT, **kwargs)

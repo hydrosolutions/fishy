@@ -231,6 +231,8 @@ class ServiceConveyanceRequest:
         identities = {(e.provenance.scenario, e.provenance.reference_member) for e in evidence}
         if len(identities) > 1:
             raise ValueError("incompatible scenario/reference member")
+        if len({e.provenance.configuration_version for e in evidence}) > 1:
+            raise ValueError("incompatible service configuration versions")
 
 
 @dataclass(frozen=True)
@@ -254,6 +256,7 @@ class ServiceConveyanceResult:
     trace: tuple[ConveyanceTrial, ...]
     reasons: tuple[str, ...]
     limitations: tuple[str, ...] = ("service balance only; no ecological adequacy or issued obligation",)
+    zero_candidate: Flow | None = None
 
 
 def _support_reasons(evidence: EvidenceFindings, product: str, location: Location, period: Interval) -> tuple[str, ...]:
@@ -292,8 +295,12 @@ def solve_service_conveyance(request: ServiceConveyanceRequest) -> ServiceConvey
     selected: list[ServiceDuty] = []
     trace: list[ConveyanceTrial] = []
 
-    def result(status: ConveyanceStatus, *reasons: str, flow: Flow | None = None) -> ServiceConveyanceResult:
-        return ServiceConveyanceResult(request, status, flow, tuple(selected), tuple(trace), reasons)
+    def result(
+        status: ConveyanceStatus, *reasons: str, flow: Flow | None = None, zero_candidate: Flow | None = None
+    ) -> ServiceConveyanceResult:
+        return ServiceConveyanceResult(
+            request, status, flow, tuple(selected), tuple(trace), reasons, zero_candidate=zero_candidate
+        )
 
     for location in dict.fromkeys(d.location for d in request.duties):
         candidates = [
@@ -358,7 +365,16 @@ def solve_service_conveyance(request: ServiceConveyanceRequest) -> ServiceConvey
             if capacity is CheckFinding.FAIL or ramp_check is CheckFinding.FAIL:
                 return result(ConveyanceStatus.INFEASIBLE, "converged candidate fails capacity/ramping checks")
             if flow.value == 0:
-                return result(ConveyanceStatus.UNSUPPORTED, "zero requires separate approved service determination")
+                if required != 0:
+                    return result(
+                        ConveyanceStatus.UNSUPPORTED,
+                        "positive service residual cannot be rounded into a zero candidate",
+                    )
+                return result(
+                    ConveyanceStatus.UNSUPPORTED,
+                    "zero requires separate approved service determination",
+                    zero_candidate=Flow(0),
+                )
             return result(
                 ConveyanceStatus.SUPPORTED, "balance converged within predeclared volume tolerance", flow=flow
             )

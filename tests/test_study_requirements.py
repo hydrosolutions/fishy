@@ -319,3 +319,54 @@ def test_supported_imported_holistic_objective_can_supply_selected_requirement()
         candidate.holistic_assessment, evidence=replace(EVIDENCE, scientific_adequacy=ScientificAdequacy.NOT_ACCEPTED)
     )
     assert assess_study(replace(candidate, holistic_assessment=unsupported), ()).supported_flow is None
+
+
+@pytest.mark.parametrize("component", ["relation", "condition"])
+def test_mixed_study_configuration_versions_rejected(component):
+    evidence = replace(EVIDENCE, provenance=replace(PROVENANCE, configuration_version="different-policy"))
+    candidate = selection()
+    relations = (relation(),)
+    if component == "relation":
+        relations = (replace(relation(), evidence=evidence),)
+    else:
+        candidate = replace(candidate, conditions=(replace(condition("ramping"), evidence=evidence),))
+    with pytest.raises(ValueError, match="configuration"):
+        assess_study(candidate, relations)
+
+
+def test_unsupported_selected_threshold_failure_stays_exploratory():
+    candidate = replace(selection(10), evidence=replace(EVIDENCE, scientific_adequacy=ScientificAdequacy.NOT_ACCEPTED))
+    result = assess_study(candidate, (relation(),))
+    assert result.responses[0].value == StateBounds(Fraction(20), Fraction(20))
+    assert result.checks.finding is CheckFinding.UNKNOWN
+    assert result.responses[0].numerical_finding is CheckFinding.FAIL
+    assert result.supported_flow is None
+
+
+def test_unsupported_selection_does_not_hide_independent_supported_failure():
+    candidate = replace(
+        selection(10),
+        evidence=replace(EVIDENCE, scientific_adequacy=ScientificAdequacy.NOT_ACCEPTED),
+        conditions=(condition("ramping", CheckFinding.FAIL),),
+    )
+    result = assess_study(candidate, (relation(),))
+    assert result.responses[0].check.finding is CheckFinding.UNKNOWN
+    assert result.checks.finding is CheckFinding.FAIL
+    assert result.checks.completeness is Completeness.INCOMPLETE
+
+
+def test_natural_components_cannot_mix_policy_configurations():
+    first = NaturalStudyComponent("summer", selection(), (relation(),), "seasonal")
+    evidence = replace(EVIDENCE, provenance=replace(PROVENANCE, configuration_version="other-policy"))
+    candidate = replace(selection(), evidence=evidence, conditions=(replace(condition("ramping"), evidence=evidence),))
+    second = NaturalStudyComponent("winter", candidate, (replace(relation(), evidence=evidence),), "seasonal")
+    with pytest.raises(ValueError, match="configuration"):
+        assess_natural_study(
+            NATURAL,
+            TopTierEligibility.PRIORITY,
+            ("summer", "winter"),
+            (first, second),
+            HighFlowTrigger.NONE,
+            NEED,
+            "fallback",
+        )

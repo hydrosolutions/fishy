@@ -254,6 +254,7 @@ class ResponseAssessment:
     relation: FlowResponseRelation | None
     value: StateBounds | None
     check: Check
+    numerical_finding: CheckFinding | None = None
 
 
 @dataclass(frozen=True)
@@ -273,6 +274,11 @@ def assess_study(selection: StudySelection, relations: tuple[FlowResponseRelatio
         raise ValueError("relation must assess the same candidate, location, time and scenario")
     if len({r.variable for r in relations}) != len(relations):
         raise ValueError("duplicate response relations")
+    evidence = (selection.evidence, *(r.evidence for r in relations), *(c.evidence for c in selection.conditions))
+    if selection.holistic_assessment is not None:
+        evidence += (selection.holistic_assessment.evidence,)
+    if len({e.provenance.configuration_version for e in evidence}) > 1:
+        raise ValueError("incompatible study configuration versions")
     by_variable = {r.variable: r for r in relations}
     checks = [
         Check(
@@ -297,18 +303,20 @@ def assess_study(selection: StudySelection, relations: tuple[FlowResponseRelatio
         relation = by_variable.get(criterion.variable)
         value = relation.evaluate(selection.selected_flow) if relation else None
         finding = CheckFinding.UNKNOWN
-        reasons = ("required accepted relation or supported operating domain missing",)
+        numerical = _compare(value, criterion) if value is not None else None
+        reasons = ("required accepted relation, selected criterion or supported operating domain missing",)
         if (
             relation
             and value is not None
             and _supported(relation.evidence)
+            and _supported(selection.evidence)
             and relation.metadata.domain_state is RelationDomain.SUPPORTED
         ):
             finding = _compare(value, criterion)
             reasons = (criterion.source, "configured criterion only; not ecological certification")
         check = Check(criterion.identifier, finding, reasons)
         checks.append(check)
-        responses.append(ResponseAssessment(criterion, relation, value, check))
+        responses.append(ResponseAssessment(criterion, relation, value, check, numerical))
     by_component = {c.component: c for c in selection.conditions}
     for component in selection.required_conditions:
         supplied = by_component.get(component)
@@ -398,6 +406,8 @@ def assess_natural_study(
         raise ValueError("duplicate natural components")
     if {c.name for c in components} - set(required_components):
         raise ValueError("undeclared natural component")
+    if len({c.study.evidence.provenance.configuration_version for c in components}) > 1:
+        raise ValueError("incompatible natural component configuration versions")
     if components:
         first = components[0].study.scope
         if first.reference_member is None:

@@ -55,7 +55,12 @@ Test prefixes: S=`tests/test_study_requirements.py`, P=`tests/test_potential_req
 
 | U8; official replacement guard | scientifically supported but official-admissibility pending replacement | existing issued version stays in force | P `test_pending_official_replacement_cannot_displace_issued_requirement` |
 
-Review regression evidence: the six eligibility/reference cases failed on the real public path before guards were added, then passed. The pending-official replacement test failed before adding its separate admissibility guard. The excluded-warmup service test likewise failed before the shared warmup exclusion was applied.
+| Common C2; configuration isolation | mismatched selection/relation/condition, natural components, service and potential handoff configuration versions | ValueError before supported assessment | S `test_mixed_study_configuration_versions_rejected`, `test_natural_components_cannot_mix_policy_configurations`; C `test_mixed_service_configuration_versions_rejected`; P `test_potential_handoff_rejects_mixed_configuration` |
+| Scientific support vs exploratory failure | unsupported selected threshold gives numeric20 below40 | numerical FAIL retained, supported UNKNOWN; independent ramp FAIL still dominates | S `test_unsupported_selected_threshold_failure_stays_exploratory`, `test_unsupported_selection_does_not_hide_independent_supported_failure` |
+| U8; service/zero reconciliation | positive duty80 with capacity1 and no-service declaration | floor None, failure retained; exact supported zero balance can proceed to determination | P `test_zero_cannot_replace_infeasible_positive_service_duties`, `test_supported_service_zero_balance_requires_and_accepts_determination`; C `test_residual_tolerance_cannot_turn_positive_service_into_zero_candidate` |
+| Authority separation | adopted designed-dry candidate with official evidence pending | candidate0 retains official PENDING, no new obligation | P `test_adopted_zero_candidate_retains_separate_official_admissibility` |
+
+Review regression evidence: the six eligibility/reference cases failed on the real public path before guards were added, then passed. The fresh review configuration, selection-support and contradictory-zero probes also failed before their fixes; exact zero refuses even a positive residual smaller than numerical tolerance. The pending-official replacement test failed before adding its separate admissibility guard. The excluded-warmup service test likewise failed before the shared warmup exclusion was applied.
 
 Conveyance tolerance is predeclared 10⁻⁶ m³ for a contraction factor0.2 and limit30; exact rational residuals are retained. The displayed fixed-point comparison permits 10⁻⁷ m³/s, narrower than the configured interval residual divided by10 seconds. Other numeric comparisons are exact `Fraction` equality. Neither tolerance represents scientific uncertainty.
 
@@ -75,4 +80,4 @@ uv run --extra taqsim ty check
 uv run python examples/study_requirements.py
 ```
 
-Executed on the integrated target: **1442 tests passed**, including **53 focused study/potential/conveyance cases**. Global ruff format/check and ty passed. The executable example returned pulse8, habitat52 and `pass not_granted_by_calculation`. The example uses no live simulator. No private report originals are published.
+Executed on the integrated target: **1455 tests passed**, including **66 focused study/potential/conveyance cases**. Global ruff format/check and ty passed. The executable example returned pulse8, habitat52 and `pass not_granted_by_calculation`. The example uses no live simulator. No private report originals are published.

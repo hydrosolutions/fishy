@@ -290,3 +290,29 @@ def test_excluded_warmup_invalidates_relation_support():
     assert result.status is ConveyanceStatus.UNSUPPORTED
     assert result.flow is None
     assert any("warm-up" in reason for reason in result.reasons)
+
+
+def test_mixed_service_configuration_versions_rejected():
+    req = request()
+    duty = req.duties[0]
+    duty = replace(
+        duty,
+        evidence=replace(
+            duty.evidence, provenance=replace(duty.evidence.provenance, configuration_version="different-policy")
+        ),
+    )
+    with pytest.raises(ValueError, match="configuration"):
+        solve_service_conveyance(replace(req, duties=(duty,)))
+
+
+def test_residual_tolerance_cannot_turn_positive_service_into_zero_candidate():
+    req = request()
+    assert req.ramp is not None
+    req = replace(
+        req,
+        duties=(replace(req.duties[0], volume=Volume("0.0000001")),),
+        initial_flow=Flow(0),
+        ramp=replace(req.ramp, previous_flow=Flow(0)),
+    )
+    result = solve_service_conveyance(req)
+    assert result.zero_candidate is None

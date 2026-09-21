@@ -118,3 +118,19 @@ def mean_discharge(volume: Volume, interval: Interval) -> Flow:
 
 def interval_volume(flow: Flow, interval: Interval) -> Volume:
     return Volume(flow.value * interval.seconds)
+
+
+@dataclass(frozen=True, init=False)
+class Area:
+    """Nonnegative physical area, canonically square metres."""
+
+    value: Fraction
+
+    def __init__(self, value: Number, unit: str = "m2") -> None:
+        factors = {"m2": 1, "km2": 1_000_000, "ha": 10_000}
+        if unit not in factors:
+            raise ValueError(f"unsupported area unit {unit!r}")
+        amount = finite_number(value) * factors[unit]
+        if amount < 0:
+            raise ValueError("area cannot be negative")
+        object.__setattr__(self, "value", amount)

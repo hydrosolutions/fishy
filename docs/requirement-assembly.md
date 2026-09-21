@@ -175,7 +175,9 @@ A seasonal potential threshold can apply to daily floors only with separate
 constant-threshold support. Use `source_period_scope(selection, relations)` to bind
 that permission to the complete original study, relations and full source period.
 Place the accepted findings in `PotentialFloorSource.constant_thresholds`. One
-full-period permission can support all contained daily intervals; each final daily
+full-period permission can support all contained daily intervals, including an
+underlying study whose accepted outcome is zero. Construction, policy comparison
+and final checks use the same native source-origin accessor. Each final daily
 quality and study check still needs exact-candidate evidence. Supplemental process
 conditions need their own bound temporal permissions. Missing permission stays
 unknown; an interval outside the supported season fails. This does not disaggregate

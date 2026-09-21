@@ -23,6 +23,7 @@ from fishy.potential_requirements import (
     PotentialRoute,
     PotentialStudy,
     ServiceZeroDetermination,
+    potential_source_routes,
     size_potential_floor,
 )
 from fishy.presumptive_floor import PresumptiveFloor, presumptive_floor
@@ -264,11 +265,12 @@ def assess_floor_construction(
                     ("separate constant-threshold support required; interval means cannot be disaggregated",),
                 )
                 if isinstance(source, PotentialFloorSource):
+                    origins = potential_source_routes(result)
                     study = (
                         source.habitat
-                        if result.selected_route is PotentialRoute.HABITAT
+                        if PotentialRoute.HABITAT in origins
                         else source.hydraulics
-                        if result.selected_route is PotentialRoute.HYDRAULIC
+                        if PotentialRoute.HYDRAULIC in origins
                         else None
                     )
                     if study is not None and study.selection is not None:

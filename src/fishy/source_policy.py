@@ -14,7 +14,7 @@ from fishy.daily_patterns import DailyPattern, PatternMethod
 from fishy.ecological_transfer import TransferResult
 from fishy.evidence import Check, CheckFinding, CheckSummary
 from fishy.floor_construction import DirectFloorSource, EntryFloorSource, PresumptiveFloorSource, assess_floor_source
-from fishy.potential_requirements import PotentialFloorResult, PotentialRoute
+from fishy.potential_requirements import PotentialFloorResult, PotentialRoute, potential_source_routes
 from fishy.quality_activation import ComponentStatus, QualityComponent, apply_quality_component
 from fishy.requirement_construction import BaselineSource, StudySource
 from fishy.scientific_acceptance import ScientificAssessment, ScientificCriterion
@@ -229,23 +229,6 @@ def quality_policy_matches(left: QualityComponent | None, right: QualityComponen
         present.final_check.arrival if present.final_check else None,
     )
     return checked.status is ComponentStatus.ADVISORY
-
-
-def potential_source_routes(result: PotentialFloorResult) -> tuple[PotentialRoute, ...]:
-    """Return recorded numerical origins and any service reconciliation of accepted zero."""
-    origins = tuple(
-        r.route
-        for r in result.routes
-        if r.flow is not None
-        and r.route in (PotentialRoute.HABITAT, PotentialRoute.HYDRAULIC, PotentialRoute.CONVEYANCE)
-    )
-    if (
-        result.selected_route is PotentialRoute.ZERO
-        and any(r.route is PotentialRoute.ZERO and r.conveyance is not None for r in result.routes)
-        and PotentialRoute.CONVEYANCE not in origins
-    ):
-        return (*origins, PotentialRoute.CONVEYANCE)
-    return origins
 
 
 def floor_policy_components(source: DirectFloorSource) -> tuple[PolicyComponent, ...]:

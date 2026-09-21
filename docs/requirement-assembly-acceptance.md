@@ -150,3 +150,10 @@ one location's source as another's.
 | ZERO keeps service reconciliation | `tests/test_conveyance_floor.py`: accepted zero service with final quality 10 is unsupported outside domain 0..8 and valid inside 0..12; the actual zero authorization is checked separately. Unused nonzero-study fallback service does not gate. |
 | Median is not a contributor envelope | `tests/test_selected_quality_constraints.py`: full-year valid median and fixed lateral withdrawal 1 pass without reimposing contributor ecological bases; an original concentration violation still fails. |
 | Advisory remains a diagnostic | `tests/test_advisory_source_conditions.py`: source advisory demand 10 does not change supported habitat floor 5 or require a final quality condition. Binding quality and explicit activation inconsistencies remain checked. |
+
+
+Seasonal ZERO coverage in `tests/test_floor_temporal_support.py` checks both habitat
+and joint-hydraulic origins over all 365 days. Exact full-source constant-threshold
+permission supports daily floor 6 after quality uplift from zero. Missing or foreign
+permission remains UNKNOWN; dates outside the source period FAIL. A study threshold
+permission does not disaggregate a seasonal service account into daily accounts.

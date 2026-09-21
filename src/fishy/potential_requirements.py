@@ -359,6 +359,23 @@ def size_potential_floor(
     )
 
 
+def potential_source_routes(result: PotentialFloorResult) -> tuple[PotentialRoute, ...]:
+    """Return recorded numerical origins and any service reconciliation of accepted zero."""
+    origins = tuple(
+        r.route
+        for r in result.routes
+        if r.flow is not None
+        and r.route in (PotentialRoute.HABITAT, PotentialRoute.HYDRAULIC, PotentialRoute.CONVEYANCE)
+    )
+    if (
+        result.selected_route is PotentialRoute.ZERO
+        and any(r.route is PotentialRoute.ZERO and r.conveyance is not None for r in result.routes)
+        and PotentialRoute.CONVEYANCE not in origins
+    ):
+        return (*origins, PotentialRoute.CONVEYANCE)
+    return origins
+
+
 @dataclass(frozen=True)
 class IssuedRequirementVersion:
     identifier: str

@@ -27,7 +27,7 @@ from fishy.mixing import CheckOutcome, recheck_mixing
 from fishy.natural_baseline import EcologicalRegimeMethod
 from fishy.natural_floor import FloorInvariant, natural_floor
 from fishy.natural_routing import NaturalRoute, RouteFailure
-from fishy.potential_requirements import PotentialRoute
+from fishy.potential_requirements import PotentialRoute, potential_source_routes
 from fishy.provisional_duration import ProvisionalDurationAssessment, recompute_provisional_duration
 from fishy.quality_activation import ComponentStatus, apply_quality_component
 from fishy.quantities import Flow
@@ -58,7 +58,6 @@ from fishy.source_conditions import (
 )
 from fishy.source_policy import (
     floor_policy_checks,
-    potential_source_routes,
     quality_policy_matches,
     source_policy_checks,
 )

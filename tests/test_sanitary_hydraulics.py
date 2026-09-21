@@ -365,3 +365,24 @@ def test_passed_direction_cannot_hide_missing_other_bound():
     assert result.check.finding is CheckFinding.UNKNOWN
     assert result.completeness is Completeness.INCOMPLETE
     assert result.rate_bounds == bounds(".1")
+
+
+def test_incomplete_scalar_rate_transfer_is_rejected_instead_of_claiming_complete_duty():
+    from fishy.duties import DutyApplicability, SuppliedDuty, assess_duty
+    from fishy.evidence import Completeness
+
+    criterion, transition = inputs("1", "1.12")
+    criterion = replace(criterion, fall=RateBound(BoundState.MISSING, None))
+    rate = assess_sanitary_rate(criterion, transition)
+    duty = SuppliedDuty(
+        "instrument",
+        "v1",
+        "supplied criterion",
+        DutyApplicability.HYPOTHETICAL,
+        (),
+        "documented search",
+        required_components=(criterion.scope.component,),
+    )
+    assert rate.completeness is Completeness.INCOMPLETE
+    with pytest.raises(ValueError, match="lossless"):
+        assess_duty(duty, (), component_checks=(rate_check(criterion.scope, rate),))

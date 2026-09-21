@@ -422,7 +422,16 @@ def assess_sanitary_rate(criterion: RateCriterion, transition: HydraulicTransiti
 
 
 def rate_check(required: HydraulicScope, assessment: RateAssessment) -> Check:
-    """Transfer a native rate finding only to the exact requested component scope."""
+    """Transfer complete native findings only; refuse loss of directional coverage.
+
+    For incomplete evidence use the RateAssessment returned by
+    assess_sanitary_rate and its directional_checks summary as the lossless result.
+    """
     if required != assessment.criterion.scope:
         return Check(required.component, CheckFinding.UNKNOWN, ("rate assessment scope mismatch",))
+    if assessment.completeness is Completeness.INCOMPLETE:
+        raise ValueError(
+            "incomplete rate assessment requires lossless inspection of RateAssessment.directional_checks; "
+            "a scalar Check cannot preserve directional coverage"
+        )
     return assessment.check

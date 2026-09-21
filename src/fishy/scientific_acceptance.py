@@ -8,6 +8,7 @@ predeclared comparisons. It neither conducts validation nor grants official appr
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from fractions import Fraction
 from math import isfinite
 from statistics import fmean
 
@@ -26,7 +27,8 @@ from fishy.evidence import (
     UseRestriction,
     permitted_use,
 )
-from fishy.quantities import Flow
+from fishy.low_flow_frequency import LowFlowReturnPeriod
+from fishy.quantities import Flow, finite_number
 from fishy.spatial import Location
 from fishy.time import Interval
 
@@ -91,7 +93,7 @@ class HydrologicalProduct:
     calendar: str
     resolution: TemporalResolution
     purpose: UsePurpose
-    target_probability: float | None
+    target_probability: float | Fraction | None
     duration_days: int | None
     location: Location
     climate_basis: str
@@ -100,6 +102,7 @@ class HydrologicalProduct:
     result_identity: str
     result_value: Flow | None
     intervals: tuple[Interval, ...] = ()
+    low_flow_return_period: LowFlowReturnPeriod | None = None
 
     def __post_init__(self) -> None:
         for value, kind in (
@@ -139,6 +142,18 @@ class HydrologicalProduct:
             raise ValueError("duration must be positive integer days")
         if self.kind is HydrologicalProductKind.DURATION_MINIMUM and self.duration_days is None:
             raise ValueError("minimum population needs duration")
+        if self.low_flow_return_period is not None:
+            _enum(self.low_flow_return_period, LowFlowReturnPeriod)
+            if self.kind is not HydrologicalProductKind.DURATION_MINIMUM:
+                raise ValueError("low-flow return period belongs only to a duration-minimum population")
+            if self.resolution is not TemporalResolution.ANNUAL:
+                raise ValueError("return period needs annual/seasonal minima, not daily exceedance")
+            if self.target_probability is None:
+                raise ValueError("return-period product requires its declared target probability")
+            probability = finite_number(self.target_probability)
+            if probability != self.low_flow_return_period.exceedance_probability:
+                raise ValueError("target exceedance probability disagrees with the low-flow return period")
+            object.__setattr__(self, "target_probability", probability)
         if (
             self.kind in (HydrologicalProductKind.DAILY_PATTERN, HydrologicalProductKind.RARE_TAIL)
             and self.target_probability is None

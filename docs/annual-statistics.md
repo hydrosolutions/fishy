@@ -46,7 +46,8 @@ annual interval mean can be used directly without fabricating daily values.
 `AnnualEstimate` retains the reference, estimator/profile, target, provenance,
 rank neighbours or fitted parameters, and reasons. Probability and discharge
 support distances are separate. No observed zeros proves neither perennial flow
-nor tail validity. Annual-mean targets are not return periods for duration minima.
+nor tail validity. Annual-mean targets are not return periods for duration minima. For recurrence
+identity on supplied duration-minimum products, see [low-flow recurrence](low-flow-frequency.md).
 
 ## Import specialist estimates
 

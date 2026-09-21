@@ -588,3 +588,41 @@ def test_public_complete_calendar_example(capsys):
     assert result.uncertainty.finding is CheckFinding.PASS
     assert result.permission.finding is CheckFinding.UNKNOWN
     assert "no regime is issued" in capsys.readouterr().out
+
+
+def test_nested_known_failure_keeps_incomplete_aggregate_coverage():
+    t = threshold(uncertainty=bounds(10))
+    record, evidence = supplied(t.product(UsePurpose.SIZING))
+    scientific = assess_scientific_use(record, evidence)
+    data = samples(date(2019, 12, 26), [5] * 372, bounds(5))
+    data = data[:100] + data[101:]
+    result = assess(data, year_period(2020), t, scientific_assessment=scientific)
+    assert result.point.finding is CheckFinding.FAIL
+    assert result.uncertainty.finding is CheckFinding.FAIL
+    assert result.point.completeness is Completeness.INCOMPLETE
+    assert result.uncertainty.completeness is Completeness.INCOMPLETE
+    assert result.permission.finding is CheckFinding.PASS
+    assert result.checks.finding is CheckFinding.FAIL
+    assert result.checks.completeness is Completeness.INCOMPLETE
+
+
+def test_changed_reference_meaning_requires_explicit_supported_relation():
+    t = threshold(uncertainty=bounds(10))
+    record, evidence = supplied(t.product(UsePurpose.SIZING))
+    scientific = assess_scientific_use(record, evidence)
+    future = replace(PROVENANCE, reference_kind=ReferenceKind.FUTURE_CLIMATE_STRESS)
+    data = samples(date(2019, 12, 26), [10] * 372, bounds(10), provenance=future)
+    with pytest.raises(ValueError, match="explicit reference relation"):
+        assess(data, year_period(2020), t, provenance=future, scientific_assessment=scientific)
+    relation = CandidateReferenceRelation(
+        future,
+        t.reference.identity,
+        "explicit hypothetical future-stress test against unchanged present-climate threshold",
+    )
+    result = assess(
+        data, year_period(2020), t, provenance=future, scientific_assessment=scientific, reference_relation=relation
+    )
+    assert result.checks.finding is CheckFinding.PASS
+    assert result.reference_relation == relation
+    assert result.windows.provenance.reference_kind is ReferenceKind.FUTURE_CLIMATE_STRESS
+    assert result.threshold.reference.provenance.reference_kind is ReferenceKind.PRESENT_CLIMATE_NATURAL

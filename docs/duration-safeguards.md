@@ -64,7 +64,8 @@ Results expose:
 - Every eligible window, mean, volume, contributors and missing-evidence reasons.
 - Minimum and all attaining windows; nominal per-window shortfalls.
 - Separate point, uncertainty and scientific-permission findings.
-- Coverage that remains incomplete even when a known violation establishes failure.
+- Coverage that remains incomplete even when a known violation establishes failure,
+  including the combined `checks` summary.
 
 For an annual test, each assessed day ends one window. Windows may begin before
 the year, but real predecessor inputs and a justification are required. No circular
@@ -85,7 +86,8 @@ the threshold upper bound; it certainly fails when its upper bound is below the
 threshold lower bound. Otherwise it is indeterminate. Missing bounds are not
 measured certainty. Fixed singleton synthetic assumptions remain labelled.
 
-A selected family or realised scenario with different provenance uses an explicit
+A selected family, realised scenario or changed natural/observed/future-stress
+reference meaning uses an explicit
 `CandidateReferenceRelation` to the retained reference identity. Multiple durations
 and classes stay separate. Family issuance, component activation, floor tests and
 fallback decisions belong to the composition layer, not this standalone operation.

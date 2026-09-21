@@ -10,7 +10,7 @@ from enum import StrEnum
 from fishy.annual_statistics import TrendTreatment
 from fishy.duration_minima import DurationEstimator, DurationThreshold
 from fishy.duration_windows import DurationWindow, DurationWindows, WindowUncertaintySupport, duration_windows
-from fishy.evidence import Check, CheckFinding, CheckSummary, Provenance
+from fishy.evidence import Check, CheckFinding, CheckSummary, Completeness, Provenance
 from fishy.flows import FlowSample
 from fishy.quantities import Flow
 from fishy.scientific_acceptance import ScientificAssessment, UsePurpose
@@ -67,6 +67,18 @@ class LowFlowAssessment:
                 Check("point", self.point.finding),
                 Check("uncertainty", self.uncertainty.finding),
                 Check("scientific_permission", self.permission.finding, self.permission.reasons),
+                Check(
+                    "point_coverage",
+                    CheckFinding.PASS if self.point.completeness is Completeness.COMPLETE else CheckFinding.UNKNOWN,
+                    ("all required window point comparisons must be evaluated",),
+                ),
+                Check(
+                    "uncertainty_coverage",
+                    CheckFinding.PASS
+                    if self.uncertainty.completeness is Completeness.COMPLETE
+                    else CheckFinding.UNKNOWN,
+                    ("all required window uncertainty comparisons must be evaluated",),
+                ),
             )
         )
 
@@ -101,8 +113,11 @@ def assess_low_flow(
             or reference_relation.reference_identity != reference.identity
         ):
             raise ValueError("candidate/reference relation does not bind these exact inputs")
-    elif any(getattr(provenance, f) != getattr(reference.provenance, f) for f in ("scenario", "reference_member")):
-        raise ValueError("changed member/scenario needs explicit reference relation")
+    elif any(
+        getattr(provenance, f) != getattr(reference.provenance, f)
+        for f in ("scenario", "reference_member", "reference_kind")
+    ):
+        raise ValueError("changed member/scenario/reference meaning needs explicit reference relation")
     windows = duration_windows(
         candidate,
         period,

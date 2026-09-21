@@ -368,6 +368,35 @@ class DailyPattern:
         ):
             if self.support != _support(self.retained, self.profile):
                 raise ValueError("support diagnostics must match actual retained sources")
+            donors = {donor.location: donor for donor in self.profile.donors}
+            lower = max(Fraction(), self.profile.target.value - self.profile.band)
+            upper = min(Fraction(1), self.profile.target.value + self.profile.band)
+            expected_sources: dict[tuple[Location, Interval], tuple[DailyReferenceYear, ExceedanceProbability]] = {}
+            for reference in self.references:
+                if (
+                    reference.reference.reference_period.start < self.profile.reference_period.start
+                    or reference.reference.reference_period.end > self.profile.reference_period.end
+                ):
+                    raise ValueError("source reference outside frozen profile reference period")
+                probabilities = {p.interval: p.exceedance for p in _probabilities(reference, self.profile.estimator)}
+                for year in reference.years:
+                    key = (year.location, year.calendar.interval)
+                    probability = probabilities[year.calendar.interval]
+                    if (
+                        year.location in donors
+                        and donors[year.location].checks.finding is CheckFinding.PASS
+                        and year.quality_checks.finding is CheckFinding.PASS
+                        and year.annual_mean.value > 0
+                        and lower <= probability.value <= upper
+                    ):
+                        if key in expected_sources:
+                            raise ValueError("duplicate source reference membership")
+                        expected_sources[key] = (year, probability)
+            if set(selected) != set(expected_sources):
+                raise ValueError("selected years must equal the eligible full-reference closed-band membership")
+            for key, contribution in selected.items():
+                if (contribution.source, contribution.probability) != expected_sources[key]:
+                    raise ValueError("selected source/probability differs from full accepted reference")
             for contribution in self.selected:
                 if not isinstance(contribution.mapped_shares, tuple) or contribution.mapped_shares != normalize_shares(
                     map_calendar(contribution.source.calendar, contribution.source.volumes, self.calendar)

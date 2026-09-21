@@ -513,8 +513,14 @@ def test_advisory_label_cannot_waive_required_daily_metric():
         replace(c, role=CriterionRole.ADVISORY) if c.requirement is EvidenceRequirement.MINIMA else c
         for c in record.criteria
     )
-    result = assess_scientific_use(replace(record, criteria=criteria), evidence)
-    assert check(result, "daily_numeric_criteria").finding is CheckFinding.UNKNOWN
+    record = replace(record, criteria=criteria)
+    observations = tuple(
+        replace(o, candidate=2.0) if o.criterion_id == EvidenceRequirement.MINIMA.value else o
+        for o in evidence.observations
+    )
+    result = assess_scientific_use(record, replace(evidence, observations=observations, frozen_record=record))
+    assert check(result, "daily_numeric_criteria").finding is CheckFinding.PASS
+    assert any(c.finding is CheckFinding.FAIL for c in result.checks.checks if "duration_minimum" in c.check_id)
     assert result.findings.scientific_adequacy is ScientificAdequacy.NOT_ACCEPTED
 
 
@@ -650,3 +656,24 @@ def test_partial_aggregate_only_claims_mathematically_proven_failure(aggregation
     assert result.comparisons[0].actual is None
     assert result.checks.finding is expected
     assert result.checks.completeness is Completeness.INCOMPLETE
+
+
+def test_nonwaivable_advisory_cannot_select_favourable_validation_subset():
+    record, evidence = supported_daily()
+    transfer = replace(
+        record.criteria[0],
+        criterion_id="target-transfer",
+        requirement=EvidenceRequirement.TARGET_TRANSFER,
+        role=CriterionRole.ADVISORY,
+        cases=("heldout-a",),
+    )
+    observations = tuple(
+        replace(o, criterion_id=transfer.criterion_id)
+        for o in evidence.observations
+        if o.criterion_id == record.criteria[0].criterion_id and o.case == "heldout-a"
+    )
+    record = replace(record, criteria=record.criteria + (transfer,))
+    result = assess_scientific_use(
+        record, replace(evidence, frozen_record=record, observations=evidence.observations + observations)
+    )
+    assert result.findings.scientific_adequacy is ScientificAdequacy.NOT_ACCEPTED

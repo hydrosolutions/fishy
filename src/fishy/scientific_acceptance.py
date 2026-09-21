@@ -631,6 +631,12 @@ def compare_criterion(
     return (CriterionComparison(criterion, None, observations, actual, finding),)
 
 
+def _required_criterion(
+    criterion: ScientificCriterion, product: HydrologicalProduct, derivation: DailyDerivation
+) -> bool:
+    return criterion.role is CriterionRole.MANDATORY or criterion.requirement in minimum_evidence(product, derivation)
+
+
 def _validation_checks(record: AcceptanceRecord, evidence: ScientificEvidence) -> tuple[Check, ...]:
     validation = evidence.validation
     if validation is None:
@@ -673,7 +679,7 @@ def _validation_checks(record: AcceptanceRecord, evidence: ScientificEvidence) -
             all(
                 set(c.cases) == set(validation.validation_cases)
                 for c in record.criteria
-                if c.role is CriterionRole.MANDATORY
+                if _required_criterion(c, record.product, evidence.daily_derivation)
             ),
             "mandatory diagnostic cases must match declared withheld cases",
         )
@@ -739,7 +745,7 @@ def assess_scientific_use(record: AcceptanceRecord, evidence: ScientificEvidence
                 () if record.product.result_value is not None else ("declared scalar result missing",),
             )
         )
-    mandatory = tuple(c for c in record.criteria if c.role is CriterionRole.MANDATORY)
+    mandatory = tuple(c for c in record.criteria if _required_criterion(c, record.product, evidence.daily_derivation))
     checks.append(
         Check(
             "acceptance_basis",
@@ -781,9 +787,7 @@ def assess_scientific_use(record: AcceptanceRecord, evidence: ScientificEvidence
         )
     )
     for i, comparison in enumerate(comparisons):
-        if comparison.criterion.role is CriterionRole.MANDATORY or comparison.criterion.requirement in minimum_evidence(
-            record.product, evidence.daily_derivation
-        ):
+        if _required_criterion(comparison.criterion, record.product, evidence.daily_derivation):
             if comparison.criterion.aggregation is not Aggregation.EACH_CASE and comparison.actual is None:
                 checks.append(
                     Check(

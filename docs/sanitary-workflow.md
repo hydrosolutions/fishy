@@ -185,8 +185,13 @@ reports coverage through `completeness`. A supported failure against one supplie
 bound remains `FAIL` when the opposite bound is missing, with `INCOMPLETE`
 coverage. With no known failure, a missing bound remains unknown. Supported
 change bounds, elapsed time and rate bounds remain available in both cases.
-Inspect these fields together: the aggregate `check` and `rate_check` projection
-alone cannot encode incomplete directional coverage.
+Inspect these fields together. `rate_check` refuses a matching incomplete
+assessment with `ValueError`, because a scalar `Check` cannot preserve directional
+coverage. The lossless public operation is `assess_sanitary_rate`: retain its
+`RateAssessment` and inspect `directional_checks.finding` together with
+`directional_checks.completeness`. Do not reduce that result to a scalar check
+when composing a duty. Fully complete rates can use `rate_check`; a scope mismatch
+returns unknown rather than transferring the unrelated finding.
 
 For state bounds `[l0, u0]` and `[l1, u1]`, conservative rate bounds are
 `[(l1-u0)/dt, (u1-l0)/dt]`. Supported tighter joint evidence may narrow them.

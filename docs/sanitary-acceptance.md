@@ -89,6 +89,7 @@ All operation names below are public; module names are `fishy.sanitary_duties`,
 | S4 D.9 strict bounds | Same operation with strict rise/fall equality; empty strict zero range | Equality fails; empty admissible range is disjoint even with uncertainty | H `test_strict_equality_fails`; `test_empty_strict_zero_range_is_disjoint_even_with_uncertainty` |
 | S4/C1–C6 empty directional criterion | `assess_sanitary_rate` with both directional bounds intentionally absent | Unknown, not manufactured satisfaction | H `test_no_directional_criteria_cannot_manufacture_satisfaction` |
 | S4 D.9 uncertainty | `StateBounds`, `HydraulicTransition`, supplied criterion | Conservative rate interval; containment pass, disjoint fail, overlap unknown; tighter supported joint evidence retained | H `test_conservative_uncertainty`; `test_irregular_elapsed_and_tighter_supported_joint_evidence` |
+| S4/C3 safe native transfer | `rate_check` attempts to transfer a matching incomplete native rate into foundation `assess_duty` | Raises rather than silently reporting complete duty coverage; `assess_sanitary_rate` and `directional_checks` retain the lossless failure/incomplete result | H `test_incomplete_scalar_rate_transfer_is_rejected_instead_of_claiming_complete_duty` |
 | S4 D.9 directional completeness | `assess_sanitary_rate` with rise `6/25 > 1/5` and fall bound missing, or fall `-2/5 < -3/10` and rise missing | Failure survives with incomplete directional coverage; change/rate/elapsed and attribution remain; pass plus missing stays unknown | H `test_supported_direction_failure_survives_missing_other_bound`; `test_passed_direction_cannot_hide_missing_other_bound` |
 | S4 D.9 gaps and seasons | Same operation: missing predecessor/state, expected gap, unresolved boundary, missing required bound | Unknown; no gap bridging, wrapping, invented state or missing-bound default | H `test_expected_gaps_never_bridged`; `test_missing_state_season_boundary_and_required_bound` |
 | S4 §4.4 temporal/domain support | Native rate or import with daily-only support or mismatched scope | Daily means do not certify within-day maxima; endpoint changes remain discrete; no variable/domain substitution | H `test_daily_means_cannot_certify_within_day_or_endpoints_peak`; D `test_scope_mismatch_and_daily_only_cannot_certify_within_day` |
@@ -109,14 +110,14 @@ findings, not falsely labelled native calculations.
 ## Executed validation
 
 Production code, tests and executable example were validated at Fishy
-`86ee896724fbbdc4e84413bd2d514936ecc2a16c`. Documentation records that revision;
+`7df5a2d9cff5deb77820351b24db276687c8e9ed`. Documentation records that revision;
 subsequent documentation-only edits do not change the tested source identity.
 The execution log is `.implementation-evidence/sanitary-validation.txt`.
 
 | Executed command | Result |
 |---|---|
-| `uv run --all-extras pytest -q` | 1,354 passed in 22.06 s |
-| `uv run --all-extras pytest tests/test_duties.py tests/test_sanitary_duties.py tests/test_sanitary_profile.py tests/test_sanitary_hydraulics.py -q` | 92 passed in 0.71 s |
+| `uv run --all-extras pytest -q` | 1,355 passed in 23.39 s |
+| `uv run --all-extras pytest tests/test_duties.py tests/test_sanitary_duties.py tests/test_sanitary_profile.py tests/test_sanitary_hydraulics.py -q` | 93 passed in 0.74 s |
 | `uv run --all-extras ruff format --check` | 100 files already formatted |
 | `uv run --all-extras ruff check` | All checks passed |
 | `uv run --all-extras ty check` | All checks passed |

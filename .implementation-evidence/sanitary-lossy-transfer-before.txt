@@ -1,0 +1,22 @@
+...................................F                                     [100%]
+=================================== FAILURES ===================================
+_ test_incomplete_scalar_rate_transfer_is_rejected_instead_of_claiming_complete_duty _
+
+    def test_incomplete_scalar_rate_transfer_is_rejected_instead_of_claiming_complete_duty():
+        from fishy.duties import DutyApplicability, SuppliedDuty, assess_duty
+        from fishy.evidence import Completeness
+
+        criterion, transition = inputs("1", "1.12")
+        criterion = replace(criterion, fall=RateBound(BoundState.MISSING, None))
+        rate = assess_sanitary_rate(criterion, transition)
+        duty = SuppliedDuty("instrument", "v1", "supplied criterion", DutyApplicability.HYPOTHETICAL,
+                            (), "documented search", required_components=(criterion.scope.component,))
+        assert rate.completeness is Completeness.INCOMPLETE
+>       with pytest.raises(ValueError, match="lossless"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_sanitary_hydraulics.py:380: Failed
+=========================== short test summary info ============================
+FAILED tests/test_sanitary_hydraulics.py::test_incomplete_scalar_rate_transfer_is_rejected_instead_of_claiming_complete_duty
+1 failed, 35 passed in 0.14s

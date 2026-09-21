@@ -874,17 +874,36 @@ class AbstractionReturn:
 def reuse_pre_abstraction(
     context: AssessmentContext, findings: tuple[IndicatorResult, ...], relation: AbstractionReturn
 ) -> tuple[IndicatorResult, ...]:
-    """§5.1 reuse pre-abstraction findings only for a supplied close return relationship."""
+    """§5.1 reuse supported findings in the same scenario/member/configuration and period.
+
+    Upstream readings and the relationship study may have distinct source/data histories.
+    Their original records remain in inputs; this operation does not relabel those histories.
+    """
     if len({item.indicator for item in findings}) != len(findings):
         raise ValueError("duplicate pre-abstraction indicator")
+    identity = ("scenario", "reference_member", "configuration_version", "reference_kind")
+    if any(getattr(relation.provenance, field) != getattr(context.provenance, field) for field in identity):
+        raise ValueError("abstraction-return relationship context identity differs")
     results = []
     for finding in findings:
-        if (
-            finding.context.period != context.period
-            or finding.context.provenance.scenario != context.provenance.scenario
+        if finding.context.period != context.period or any(
+            getattr(finding.context.provenance, field) != getattr(context.provenance, field) for field in identity
         ):
-            raise ValueError("pre-abstraction findings need matching scenario and period")
-        supported = relation.relation is ReturnRelation.CLOSE_IN_SPACE_AND_TIME
+            raise ValueError("pre-abstraction findings need matching context identity and actual interval")
+        limitations = []
+        for label, provenance in (
+            ("pre-abstraction finding", finding.context.provenance),
+            ("return relationship", relation.provenance),
+            ("receiving context", context.provenance),
+        ):
+            if provenance.correction_state is CorrectionState.MISSING:
+                limitations.append(f"{label} correction state is missing")
+            if any(
+                period.start < context.period.end and context.period.start < period.end
+                for period in provenance.excluded_warmup
+            ):
+                limitations.append(f"{label} overlaps excluded warm-up")
+        supported = relation.relation is ReturnRelation.CLOSE_IN_SPACE_AND_TIME and not limitations
         results.append(
             IndicatorResult(
                 finding.indicator,
@@ -893,7 +912,7 @@ def reuse_pre_abstraction(
                 finding.classification if supported else None,
                 finding.metrics,
                 "BAFU 2011 HYDMOD-F §5.1 close abstraction/return",
-                finding.reasons + (relation.relation.value, relation.basis),
+                finding.reasons + (relation.relation.value, relation.basis) + tuple(limitations),
                 (finding, relation),
                 coverage=finding.coverage,
             )

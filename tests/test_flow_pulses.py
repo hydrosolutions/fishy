@@ -466,3 +466,142 @@ def test_flushing_annual_catalogue_rejects_outside_window_and_mixed_types():
     )
     with pytest.raises(ValueError, match="type"):
         assess_flushing_events(CONTEXT, records, InstantaneousDischarge(2), None, None, Flow(2), "source")
+
+
+@pytest.mark.parametrize("unavailable", ["warmup", "missing"])
+@pytest.mark.parametrize(
+    "route",
+    [
+        "hydropeaking_import",
+        "hydropeaking_operation",
+        "hydropeaking_residual",
+        "flushing_import",
+        "flushing_operation",
+        "flushing_catalogue",
+    ],
+)
+def test_imported_and_operating_pulse_source_support_retains_raw_metrics(unavailable, route):
+    from fishy.flow_pulses import FlushingAnnualEvents, assess_flushing_events, estimate_hydropeaking_from_residuals
+
+    provenance = (
+        replace(PROVENANCE, excluded_warmup=(CONTEXT.period,))
+        if unavailable == "warmup"
+        else replace(PROVENANCE, correction_state=CorrectionState.MISSING)
+    )
+    context = replace(CONTEXT, provenance=provenance)
+    rate = StageRate(Fraction(2))
+    peak, base = InstantaneousDischarge(5), InstantaneousDischarge(2)
+    stage0 = SignedState(StateVariable.STAGE, 0, "m", "datum")
+    stage1 = SignedState(StateVariable.STAGE, 0.2, "m", "datum")
+    if route == "hydropeaking_import":
+        result = assess_hydropeaking(context, pulse(1, 2.2), Flow(1), AREA)
+    elif route == "hydropeaking_operation":
+        result = estimate_hydropeaking(
+            context, HydropeakingOperation(InstantaneousDischarge(3), base, rate, rate, "operation"), Flow(5), AREA
+        )
+    elif route == "hydropeaking_residual":
+        result = estimate_hydropeaking_from_residuals(
+            context, InstantaneousDischarge(3), (Flow(1),), Flow(1), rate, rate, Flow(5), AREA, "record"
+        )
+    elif route == "flushing_import":
+        result = assess_flushing(
+            context, (FlushingMetrics(peak, Fraction(1), rate, FlushingTiming.MEAN_FLOW, "record"),), Flow(10)
+        )
+    elif route == "flushing_operation":
+        result = estimate_flushing(
+            context,
+            (
+                FlushingOperation(
+                    peak,
+                    base,
+                    stage0,
+                    stage1,
+                    timedelta(minutes=10),
+                    Fraction(1),
+                    FlushingTiming.MEAN_FLOW,
+                    "operation",
+                ),
+            ),
+            Flow(10),
+        )
+    else:
+        result = assess_flushing_events(
+            context,
+            (FlushingAnnualEvents(2001, (peak,), "record", "complete"),),
+            peak,
+            rate,
+            FlushingTiming.MEAN_FLOW,
+            Flow(10),
+            "record",
+        )
+    assert result.classification is None
+    assert result.state is AssessmentState.UNDETERMINED
+    assert result.coverage is Completeness.INCOMPLETE
+    assert any(unavailable in reason for reason in result.reasons)
+    assert result.metrics  # unavailable support must not erase arithmetic diagnostics
+
+
+def test_partial_flushing_catalogue_retains_class_and_original_coverage():
+    from fishy.flow_pulses import FlushingAnnualEvents, assess_flushing_events
+
+    years = (FlushingAnnualEvents(2001, (InstantaneousDischarge(2),), "register", "complete year"),)
+    result = assess_flushing_events(
+        CONTEXT, years, InstantaneousDischarge(2), StageRate(Fraction(2)), FlushingTiming.MEAN_FLOW, Flow(10), "typical"
+    )
+    assert result.classification == 1
+    assert result.coverage is Completeness.INCOMPLETE
+    assert any("partial" in reason for reason in result.reasons)
+
+
+def test_observed_pulses_ignore_warmup_outside_actual_selection(observations):
+    sampling, data = observations
+    warmup = Interval(datetime(2005, 1, 1, tzinfo=UTC), datetime(2005, 2, 1, tzinfo=UTC))
+    context = replace(CONTEXT, provenance=replace(PROVENANCE, excluded_warmup=(warmup,)))
+    result = observe_hydropeaking(context, sampling, data, Flow(80), AREA)
+    assert result.classification == 2
+    event = data[:2]
+    result = observe_flushing(context, event, Fraction(1), FlushingTiming.MEAN_FLOW, Flow(10), "event")
+    assert result.classification is not None
+
+
+def test_flushing_catalogue_support_uses_selected_years_not_whole_context():
+    from fishy.flow_pulses import FlushingAnnualEvents, assess_flushing_events
+
+    warmup = Interval(datetime(2005, 1, 1, tzinfo=UTC), datetime(2005, 2, 1, tzinfo=UTC))
+    context = replace(CONTEXT, provenance=replace(PROVENANCE, excluded_warmup=(warmup,)))
+    result = assess_flushing_events(
+        context,
+        (FlushingAnnualEvents(2001, (InstantaneousDischarge(2),), "record", "complete"),),
+        InstantaneousDischarge(2),
+        StageRate(Fraction(2)),
+        FlushingTiming.MEAN_FLOW,
+        Flow(10),
+        "typical",
+    )
+    assert result.classification == 1
+    assert result.coverage is Completeness.INCOMPLETE
+
+
+def test_complete_annual_flushing_catalogue_preserves_complete_coverage():
+    from fishy.flow_pulses import FlushingAnnualEvents, assess_flushing_events
+
+    years = tuple(
+        FlushingAnnualEvents(year, (InstantaneousDischarge(2),), "register", "complete") for year in range(2000, 2006)
+    )
+    result = assess_flushing_events(
+        CONTEXT, years, InstantaneousDischarge(2), StageRate(Fraction(2)), FlushingTiming.MEAN_FLOW, Flow(10), "typical"
+    )
+    assert result.classification == 1
+    assert result.coverage is Completeness.COMPLETE
+    assert metrics(result)["type_0.frequency"] == 1
+
+
+def test_observed_pulses_missing_source_retains_computable_metrics(observations):
+    sampling, data = observations
+    context = replace(CONTEXT, provenance=replace(PROVENANCE, correction_state=CorrectionState.MISSING))
+    result = observe_hydropeaking(context, sampling, data, Flow(80), AREA)
+    assert result.classification is None
+    assert metrics(result)["peak"] == 40
+    result = observe_flushing(context, data[:2], Fraction(1), FlushingTiming.MEAN_FLOW, Flow(10), "event")
+    assert result.classification is None
+    assert result.metrics

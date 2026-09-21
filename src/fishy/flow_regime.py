@@ -13,9 +13,9 @@ from dataclasses import dataclass, replace
 from datetime import date
 from enum import StrEnum
 from fractions import Fraction
-from math import cos, hypot, isfinite, pi, sin, sqrt
+from math import cos, hypot, isclose, isfinite, pi, sin, sqrt
 
-from fishy.evidence import Completeness
+from fishy.evidence import Completeness, CorrectionState
 from fishy.flows import Coverage, FlowSample, IntervalUse, Presence, check_flow_intervals, interval_use
 from fishy.hydrological_condition import (
     AssessmentContext,
@@ -26,6 +26,7 @@ from fishy.hydrological_condition import (
     Metric,
 )
 from fishy.quantities import Area, Flow, finite_number
+from fishy.time import Interval
 
 SOURCE = "BAFU 2011 HYDMOD-F"
 
@@ -245,16 +246,22 @@ def _complete_years(samples: tuple[FlowSample, ...]) -> dict[int, tuple[FlowSamp
     return years
 
 
-def monthly_from_observations(samples: tuple[FlowSample, ...]) -> MonthlyRegime:
+def _complete_month_samples(samples: tuple[FlowSample, ...]) -> tuple[FlowSample, ...]:
     ordered = _daily(samples)
     retained: list[FlowSample] = []
-    excluded = 0
     for year, month in sorted({(s.interval.start.year, s.interval.start.month) for s in ordered}):
         group = tuple(s for s in ordered if (s.interval.start.year, s.interval.start.month) == (year, month))
         if len(group) == monthrange(year, month)[1] and all(_supported(s) for s in group):
             retained.extend(group)
-        else:
-            excluded += 1
+    return tuple(retained)
+
+
+def monthly_from_observations(samples: tuple[FlowSample, ...]) -> MonthlyRegime:
+    ordered = _daily(samples)
+    retained = _complete_month_samples(ordered)
+    all_months = {(s.interval.start.year, s.interval.start.month) for s in ordered}
+    retained_months = {(s.interval.start.year, s.interval.start.month) for s in retained}
+    excluded = len(all_months - retained_months)
     monthly: list[Flow | None] = []
     for month in range(1, 13):
         values = [s.value.value for s in retained if s.interval.start.month == month and s.value is not None]
@@ -322,6 +329,24 @@ def _input_coverage(inputs: tuple[object, ...]) -> Completeness:
     return Completeness.COMPLETE
 
 
+def _warmup_overlap(result: IndicatorResult, intervals: tuple[Interval, ...]) -> IndicatorResult:
+    if any(
+        interval.start < excluded.end and excluded.start < interval.end
+        for interval in intervals
+        for excluded in result.context.provenance.excluded_warmup
+    ):
+        return replace(
+            result,
+            state=AssessmentState.UNDETERMINED,
+            classification=None,
+            reasons=(
+                *result.reasons,
+                "assessment context warmup overlaps the statistic's retained support; raw metrics are diagnostic only",
+            ),
+        )
+    return result
+
+
 def _result(
     indicator: Indicator,
     context: AssessmentContext,
@@ -331,6 +356,9 @@ def _result(
     inputs: tuple[object, ...],
     reasons: tuple[str, ...] = (),
 ) -> IndicatorResult:
+    if context.provenance.correction_state is CorrectionState.MISSING:
+        classification = None
+        reasons = (*reasons, "assessment context is marked missing; raw metrics are diagnostic only")
     return IndicatorResult(
         indicator=indicator,
         context=context,
@@ -344,7 +372,7 @@ def _result(
     )
 
 
-def assess_mean_flow(
+def _calculate_mean_flow(
     context: AssessmentContext,
     reference: MonthlyRegime | None,
     influenced: MonthlyRegime | None,
@@ -554,7 +582,7 @@ def low_flow_thresholds(reference: Flow) -> tuple[Fraction, ...]:
     raise AssertionError("unreachable anchor interval")
 
 
-def assess_low_flow_magnitude(
+def _calculate_low_flow_magnitude(
     context: AssessmentContext,
     reference: LowFlowStatistics | None,
     influenced: LowFlowStatistics | None,
@@ -709,7 +737,7 @@ def ellipse_distance(point: SeasonalityPoint, ellipse: ReferenceEllipse) -> floa
     return hypot(x - a * a * x / (t + a * a), y - b * b * y / (t + b * b))
 
 
-def assess_seasonality(
+def _calculate_seasonality(
     context: AssessmentContext,
     indicator: Indicator,
     influenced: SeasonalityPoint | None,
@@ -730,7 +758,17 @@ def assess_seasonality(
         distance = hypot(influenced.x - reference.x, influenced.y - reference.y)
         thresholds = (0.3, 0.6, 0.9, 1.2)
         route = "direct"
-    classification = next((i for i, limit in enumerate(thresholds, 1) if distance <= limit), 5)
+    # Figure21 has inclusive numerical boundaries, unlike the source's colour
+    # plots. Absorb binary64 geometric error only at the declared absolute
+    # precision; retain the unrounded raw distance for inspection.
+    classification = next(
+        (
+            i
+            for i, limit in enumerate(thresholds, 1)
+            if distance <= limit or isclose(distance, limit, rel_tol=0.0, abs_tol=1e-12)
+        ),
+        5,
+    )
     return _result(
         indicator,
         context,
@@ -738,7 +776,10 @@ def assess_seasonality(
         (Metric("seasonality_distance", distance, "1"),),
         "§§5.4,5.6 Fig.21 " + route,
         inputs,
-        ("floating geometry precision 1e-12; specialist geometry is not a local suitability finding",),
+        (
+            "inclusive boundary comparison uses absolute distance tolerance 1e-12, relative tolerance 0; "
+            "raw binary64 distance retained; specialist geometry is not a local suitability finding",
+        ),
     )
 
 
@@ -794,7 +835,7 @@ def low_flow_duration(samples: tuple[FlowSample, ...], threshold: Flow) -> LowFl
     )
 
 
-def assess_low_flow_duration(context: AssessmentContext, duration: LowFlowDuration | None) -> IndicatorResult:
+def _calculate_low_flow_duration(context: AssessmentContext, duration: LowFlowDuration | None) -> IndicatorResult:
     if duration is None:
         return _result(
             Indicator.LOW_FLOW_DURATION,
@@ -866,10 +907,12 @@ def assess_mean_flow_observations(
     """Prepare complete-month statistics and retain every original interval."""
     _check_assessment_samples(context, influenced)
     _check_reference_samples(context, reference)
-    result = assess_mean_flow(
+    result = _calculate_mean_flow(
         context, monthly_from_observations(reference), monthly_from_observations(influenced), regime
     )
-    return _observation_window(result, influenced)
+    return _observation_window(
+        _warmup_overlap(result, tuple(s.interval for s in _complete_month_samples(influenced))), influenced
+    )
 
 
 def assess_low_flow_observations(
@@ -884,14 +927,17 @@ def assess_low_flow_observations(
     """Source Q347/CV preparation and Fig.22 assessment, independent of prescriptions."""
     _check_assessment_samples(context, influenced)
     _check_reference_samples(context, reference)
-    result = assess_low_flow_magnitude(
+    result = _calculate_low_flow_magnitude(
         context,
         low_flow_from_observations(reference, reference_flushing),
         low_flow_from_observations(influenced, influenced_flushing),
         trough_applicability,
         trough,
     )
-    return _observation_window(result, influenced)
+    return _observation_window(
+        _warmup_overlap(result, tuple(s.interval for group in _complete_years(influenced).values() for s in group)),
+        influenced,
+    )
 
 
 def assess_seasonality_observations(
@@ -914,7 +960,8 @@ def assess_seasonality_observations(
         if isinstance(reference, ReferenceEllipse)
         else seasonality_from_observations(reference, extremum, ties)
     )
-    result = assess_seasonality(context, indicator, point, ref)
+    result = _calculate_seasonality(context, indicator, point, ref)
+    result = _warmup_overlap(result, tuple(s.interval for group in _complete_years(influenced).values() for s in group))
     return _observation_window(
         replace(
             result,
@@ -933,7 +980,8 @@ def assess_duration_observations(
     """Keep missing and censored daily evidence on the ordinary indicator result."""
     _check_assessment_samples(context, influenced)
     duration = low_flow_duration(influenced, reference_q347) if reference_q347 is not None else None
-    result = assess_low_flow_duration(context, duration)
+    result = _calculate_low_flow_duration(context, duration)
+    result = _warmup_overlap(result, tuple(s.interval for s in influenced) if duration is not None else ())
     return _observation_window(
         replace(result, inputs=(influenced, reference_q347, *result.inputs), coverage=_input_coverage((influenced,))),
         influenced,
@@ -1040,3 +1088,41 @@ def match_parde_regime(coefficients: PardeCoefficients, envelopes: tuple[PardeEn
         inputs,
         ("supplied Swiss A2 envelopes; numerical matching does not establish local applicability",),
     )
+
+
+def assess_mean_flow(
+    context: AssessmentContext,
+    reference: MonthlyRegime | None,
+    influenced: MonthlyRegime | None,
+    regime: RegimeReference | None,
+) -> IndicatorResult:
+    """Assess supplied scalar monthly statistics over their full declared context."""
+    return _warmup_overlap(_calculate_mean_flow(context, reference, influenced, regime), (context.period,))
+
+
+def assess_low_flow_magnitude(
+    context: AssessmentContext,
+    reference: LowFlowStatistics | None,
+    influenced: LowFlowStatistics | None,
+    trough_applicability: TroughApplicability,
+    trough: TroughDischarge | None = None,
+) -> IndicatorResult:
+    """Assess supplied scalar Q347/CV/trough statistics over their full context."""
+    return _warmup_overlap(
+        _calculate_low_flow_magnitude(context, reference, influenced, trough_applicability, trough), (context.period,)
+    )
+
+
+def assess_seasonality(
+    context: AssessmentContext,
+    indicator: Indicator,
+    influenced: SeasonalityPoint | None,
+    reference: SeasonalityPoint | ReferenceEllipse | None,
+) -> IndicatorResult:
+    """Assess supplied circular points or reference zones over their full context."""
+    return _warmup_overlap(_calculate_seasonality(context, indicator, influenced, reference), (context.period,))
+
+
+def assess_low_flow_duration(context: AssessmentContext, duration: LowFlowDuration | None) -> IndicatorResult:
+    """Assess a supplied longest-spell statistic over its full declared context."""
+    return _warmup_overlap(_calculate_low_flow_duration(context, duration), (context.period,))

@@ -9,6 +9,7 @@ from dataclasses import dataclass, replace
 from fishy.evidence import Completeness
 from fishy.flow_interventions import (
     InterventionScreen,
+    InterventionType,
     LandscapeBasis,
     ReferenceConditions,
     ReferenceSuitability,
@@ -120,13 +121,34 @@ def assess_river_hydrology(
         )
         choices = {s.indicator for s in site_selection}
         selection = tuple(s if s.indicator in choices else b for s, b in zip(selection, base, strict=True))
+    local_impoundment = any(
+        intervention.kind is InterventionType.IMPOUNDMENT
+        for screen in inventory.local
+        for intervention in screen.interventions
+    )
+    if local_impoundment:
+        selection = tuple(
+            IndicatorResult(
+                indicator,
+                context,
+                AssessmentState.NOT_APPLICABLE,
+                None,
+                (),
+                MANUAL + ", §4.2",
+                ("local impounded reach is inventoried, not classified as a river",),
+                (inventory,),
+            )
+            for indicator in Indicator
+        )
     usable_reference = (
         reference.water_body is WaterBodyKind.RIVER
         and reference.landscape is LandscapeBasis.CURRENT
         and reference.suitability is ReferenceSuitability.SUPPORTED
         and not reference_limitations(context, reference)
     )
-    if not usable_reference:
+    if local_impoundment:
+        condition = assess_hydrology(context, selection)
+    elif not usable_reference:
         limited = tuple(reference_eligibility(context, i, reference) for i in Indicator)
         condition = assess_hydrology(context, limited)
     else:

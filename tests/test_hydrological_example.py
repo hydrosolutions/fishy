@@ -66,3 +66,18 @@ def test_computed_conditions_do_not_change_swiss_prescription_or_delivery():
     assert assessments[0].nominal_duty == assessments[1].nominal_duty == prescribed
     assert assessments[0].delivery == assessments[1].delivery
     assert assessments[0].conditions != assessments[1].conditions
+
+
+def test_actual_nine_calculations_cannot_classify_an_impounded_reach():
+    from fishy.flow_interventions import Intervention, InterventionType, ReferenceDischarges, screen_intervention
+    from fishy.hydrological_assessment import InventorySurvey, assess_river_hydrology
+    from fishy.quantities import Area, Flow
+
+    point = scenario().point
+    ctx = point.condition.context
+    impounded = Intervention("impounded reach", InterventionType.IMPOUNDMENT, ctx, "river", Area(10, "km2"))
+    screened = screen_intervention(impounded, ReferenceDischarges(Flow(1), None, ctx.provenance))
+    inventory = InventorySurvey((screened,), (), Completeness.COMPLETE, "survey", "1")
+    output = assess_river_hydrology(ctx, point.reference, inventory, point.calculations)
+    assert output.condition.classification is None
+    assert output.calculations == point.calculations

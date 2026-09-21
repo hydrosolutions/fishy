@@ -7,6 +7,7 @@ from fractions import Fraction
 import pytest
 
 from fishy.evidence import (
+    Completeness,
     Computability,
     CorrectionState,
     Disclosure,
@@ -51,7 +52,7 @@ from fishy.flow_interventions import (
     selection_advice,
 )
 from fishy.flows import FlowSample, Presence
-from fishy.hydrological_condition import AssessmentContext, AssessmentState, HydrologyClass, Indicator
+from fishy.hydrological_condition import AssessmentContext, AssessmentState, HydrologyClass, Indicator, IndicatorResult
 from fishy.quantities import Area, Flow
 from fishy.spatial import CalculationSection, Location, Reach, WaterBody
 from fishy.time import Interval
@@ -805,3 +806,110 @@ def test_application_evidence_provenance_restrictions_survive_positive_flags(con
         application=relation,
     )
     assert reference_limitations(context, conditions)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("reference_member", "foreign"),
+        ("configuration_version", "foreign"),
+        ("reference_kind", ReferenceKind.FUTURE_CLIMATE_STRESS),
+    ],
+)
+def test_reuse_cannot_relabel_foreign_identity(context, field, value):
+    donor = replace(context, provenance=replace(context.provenance, **{field: value}))
+    finding = IndicatorResult(
+        Indicator.MEAN_FLOW, donor, AssessmentState.ASSESSED, HydrologyClass.BAD, (), "supplied metric"
+    )
+    relation = AbstractionReturn(ReturnRelation.CLOSE_IN_SPACE_AND_TIME, context.provenance, "nearby return")
+    with pytest.raises(ValueError, match="identity"):
+        reuse_pre_abstraction(context, (finding,), relation)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("scenario", "foreign"),
+        ("reference_member", "foreign"),
+        ("configuration_version", "foreign"),
+        ("reference_kind", ReferenceKind.FUTURE_CLIMATE_STRESS),
+    ],
+)
+def test_return_relationship_cannot_use_foreign_identity(context, field, value):
+    finding = IndicatorResult(
+        Indicator.MEAN_FLOW, context, AssessmentState.ASSESSED, HydrologyClass.BAD, (), "supplied metric"
+    )
+    relation = AbstractionReturn(
+        ReturnRelation.CLOSE_IN_SPACE_AND_TIME, replace(context.provenance, **{field: value}), "nearby return"
+    )
+    with pytest.raises(ValueError, match="identity"):
+        reuse_pre_abstraction(context, (finding,), relation)
+
+
+def test_reuse_preserves_incomplete_coverage_and_original_histories(context):
+    donor = replace(
+        context, provenance=replace(context.provenance, source="upstream gauge", data_version="gauge archive")
+    )
+    finding = IndicatorResult(
+        Indicator.MEAN_FLOW,
+        donor,
+        AssessmentState.ASSESSED,
+        HydrologyClass.BAD,
+        (),
+        "supplied metric",
+        coverage=Completeness.INCOMPLETE,
+    )
+    relation = AbstractionReturn(
+        ReturnRelation.CLOSE_IN_SPACE_AND_TIME,
+        replace(context.provenance, source="specialist study", data_version="study archive"),
+        "nearby return",
+    )
+    result = reuse_pre_abstraction(context, (finding,), relation)[0]
+    assert result.coverage is Completeness.INCOMPLETE
+    assert result.inputs == (finding, relation)
+    assert finding.context.provenance.source == "upstream gauge"
+    assert relation.provenance.data_version == "study archive"
+
+
+@pytest.mark.parametrize("restriction", ["missing", "warmup"])
+def test_return_relationship_support_not_inferred_from_close_label(context, restriction):
+    finding = IndicatorResult(
+        Indicator.MEAN_FLOW, context, AssessmentState.ASSESSED, HydrologyClass.BAD, (), "supplied metric"
+    )
+    provenance = (
+        replace(context.provenance, correction_state=CorrectionState.MISSING)
+        if restriction == "missing"
+        else replace(context.provenance, excluded_warmup=(context.period,))
+    )
+    relation = AbstractionReturn(ReturnRelation.CLOSE_IN_SPACE_AND_TIME, provenance, "nearby return")
+    result = reuse_pre_abstraction(context, (finding,), relation)[0]
+    assert result.classification is None
+
+
+@pytest.mark.parametrize("restriction", ["missing", "warmup"])
+@pytest.mark.parametrize("operand", ["finding", "target"])
+def test_reuse_preserves_source_and_target_support_restrictions(context, restriction, operand):
+    provenance = (
+        replace(context.provenance, correction_state=CorrectionState.MISSING)
+        if restriction == "missing"
+        else replace(context.provenance, excluded_warmup=(context.period,))
+    )
+    donor = replace(context, provenance=provenance) if operand == "finding" else context
+    target = replace(context, provenance=provenance) if operand == "target" else context
+    finding = IndicatorResult(
+        Indicator.MEAN_FLOW, donor, AssessmentState.ASSESSED, HydrologyClass.BAD, (), "supplied metric"
+    )
+    relation = AbstractionReturn(ReturnRelation.CLOSE_IN_SPACE_AND_TIME, context.provenance, "nearby return")
+    result = reuse_pre_abstraction(target, (finding,), relation)[0]
+    assert result.classification is None and result.coverage is Completeness.INCOMPLETE
+    assert result.inputs == (finding, relation)
+
+
+def test_reuse_requires_identical_actual_interval(context):
+    donor = replace(context, period=Interval(context.period.start + timedelta(days=1), context.period.end))
+    finding = IndicatorResult(
+        Indicator.MEAN_FLOW, donor, AssessmentState.ASSESSED, HydrologyClass.BAD, (), "supplied metric"
+    )
+    relation = AbstractionReturn(ReturnRelation.CLOSE_IN_SPACE_AND_TIME, context.provenance, "nearby return")
+    with pytest.raises(ValueError, match="actual interval"):
+        reuse_pre_abstraction(context, (finding,), relation)

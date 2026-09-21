@@ -13,6 +13,7 @@ from fractions import Fraction
 from math import log10
 from zoneinfo import ZoneInfo
 
+from fishy.evidence import Completeness, CorrectionState
 from fishy.flow_events import InstantaneousDischarge
 from fishy.flows import Presence
 from fishy.hydrological_condition import (
@@ -382,6 +383,9 @@ def _result(
     classification: HydrologyClass | None = None,
     reasons: tuple[str, ...] = (),
 ) -> IndicatorResult:
+    if context.provenance.correction_state is CorrectionState.MISSING:
+        classification = None
+        reasons += ("pulse source correction state is missing",)
     return IndicatorResult(
         indicator,
         context,
@@ -394,7 +398,31 @@ def _result(
     )
 
 
+def _warmup_support(result: IndicatorResult, periods: tuple[Interval, ...]) -> IndicatorResult:
+    """Restrict source use on the supplied route's actual temporal support."""
+    if any(
+        period.start < excluded.end and excluded.start < period.end
+        for period in periods
+        for excluded in result.context.provenance.excluded_warmup
+    ):
+        return replace(
+            result,
+            state=AssessmentState.UNDETERMINED,
+            classification=None,
+            coverage=Completeness.INCOMPLETE,
+            reasons=result.reasons + ("pulse source support intersects excluded warmup",),
+        )
+    return result
+
+
 def assess_hydropeaking(
+    context: AssessmentContext, pulse: HydropeakingMetrics | None, reference_mean: Flow, area: Area
+) -> IndicatorResult:
+    """Assess imported metrics attributed to the full context period."""
+    return _warmup_support(_calculate_hydropeaking(context, pulse, reference_mean, area), (context.period,))
+
+
+def _calculate_hydropeaking(
     context: AssessmentContext, pulse: HydropeakingMetrics | None, reference_mean: Flow, area: Area
 ) -> IndicatorResult:
     inputs = (pulse, reference_mean, area)
@@ -530,7 +558,7 @@ def observe_hydropeaking(
         StageRate(_quantile(falls, Fraction(1, 2))) if not stage_missing else None,
         sampling.operating_regime_evidence,
     )
-    result = assess_hydropeaking(context, pulse, reference_mean, area)
+    result = _calculate_hydropeaking(context, pulse, reference_mean, area)
     return replace(
         result,
         inputs=inputs + (pulse,),
@@ -590,6 +618,16 @@ def assess_flushing(
     reference_mean: Flow,
     review: HydropeakingReview | None = None,
 ) -> IndicatorResult:
+    """Assess imported/operating magnitudes attributed to the full context."""
+    return _warmup_support(_calculate_flushing(context, pulses, reference_mean, review), (context.period,))
+
+
+def _calculate_flushing(
+    context: AssessmentContext,
+    pulses: tuple[FlushingMetrics, ...],
+    reference_mean: Flow,
+    review: HydropeakingReview | None = None,
+) -> IndicatorResult:
     inputs = (pulses, reference_mean, review)
     if not pulses or reference_mean.value == 0:
         return _result(
@@ -637,8 +675,6 @@ def assess_flushing(
         reasons.append("flushing classification unsupported")
     result = _result(context, Indicator.FLUSHING, tuple(metrics), inputs, classification, tuple(dict.fromkeys(reasons)))
     if len(classes) < len(pulses):
-        from fishy.evidence import Completeness
-
         result = replace(result, coverage=Completeness.INCOMPLETE)
     return result
 
@@ -770,7 +806,7 @@ def observe_flushing(
             )
     rate = StageRate(max(rates)) if len(rates) == len(observations) - 1 else None
     pulse = FlushingMetrics(InstantaneousDischarge(max(flows) - flows[0]), events_per_year, rate, timing, source)
-    result = assess_flushing(context, (pulse,), reference_mean, review)
+    result = _calculate_flushing(context, (pulse,), reference_mean, review)
     return replace(result, inputs=inputs + (pulse,))
 
 
@@ -861,5 +897,14 @@ def assess_flushing_events(
             raise ValueError("complete annual operating window outside assessment period")
     frequency = Fraction(sum(q.value >= selected_excess.value for year in years for q in year.excesses), len(years))
     pulse = FlushingMetrics(selected_excess, frequency, rise, timing, source)
-    result = assess_flushing(context, (pulse,), reference_mean, review)
+    result = _warmup_support(
+        _calculate_flushing(context, (pulse,), reference_mean, review), tuple(year.period for year in years)
+    )
+    covered_seconds = sum((year.period.seconds for year in years), Fraction(0))
+    if covered_seconds < context.period.seconds:
+        result = replace(
+            result,
+            coverage=Completeness.INCOMPLETE,
+            reasons=result.reasons + ("partial annual catalogue coverage of original assessment period",),
+        )
     return replace(result, inputs=(years,) + result.inputs)

@@ -73,3 +73,46 @@ def test_unrelated_reference_cannot_authorise_composed_river_class(field, value)
     output = assess_river_hydrology(context(), unrelated, inventory, tuple(result(i, 1) for i in Indicator))
     assert output.condition.classification is None
     assert len(output.calculations) == 9
+
+
+@pytest.mark.parametrize("other_local", [(), ("intake",)])
+def test_local_impoundment_cannot_acquire_river_class_from_calculations(other_local):
+    from fishy.flow_interventions import (
+        Intervention,
+        InterventionType,
+        ReferenceDischarges,
+        SelectionAction,
+        SiteSelection,
+        screen_intervention,
+    )
+    from fishy.quantities import Area, Flow
+
+    ctx = context()
+    impounded = Intervention("impounded reach", InterventionType.IMPOUNDMENT, ctx, "river", Area(10, "km2"))
+    discharges = ReferenceDischarges(Flow(1), None, ctx.provenance)
+    screens = (screen_intervention(impounded, discharges),)
+    if other_local:
+        intake = Intervention("intake", InterventionType.A1, ctx, "river", Area(10, "km2"))
+        screens += (screen_intervention(intake, discharges),)
+    inventory = InventorySurvey(screens, (), Completeness.COMPLETE, "survey", "1")
+    calculations = tuple(result(i, 1, ctx) for i in Indicator)
+    site = tuple(
+        SiteSelection(i, SelectionAction.INCLUDE, "supplied additional calculation", ctx.provenance) for i in Indicator
+    )
+    output = assess_river_hydrology(ctx, reference(), inventory, calculations, site)
+    assert output.condition.classification is None
+    assert output.calculations == calculations
+    assert all(r.classification is None for r in output.condition.indicators)
+
+
+def test_upstream_impoundment_does_not_exclude_receiving_river_computation():
+    from fishy.flow_interventions import Intervention, InterventionType, ReferenceDischarges, screen_intervention
+    from fishy.quantities import Area, Flow
+
+    upstream = context("upstream reservoir")
+    impounded = Intervention("reservoir", InterventionType.IMPOUNDMENT, upstream, "river", Area(10, "km2"))
+    screen = screen_intervention(impounded, ReferenceDischarges(Flow(1), None, upstream.provenance))
+    inventory = InventorySurvey((), (screen,), Completeness.COMPLETE, "survey", "1")
+    calculations = tuple(result(i, 1) for i in Indicator)
+    output = assess_river_hydrology(context(), reference(), inventory, calculations)
+    assert output.condition.classification == 1

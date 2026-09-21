@@ -376,3 +376,28 @@ def test_unaffected_warmup_period_does_not_block_events(context):
     context = replace(context, provenance=replace(context.provenance, excluded_warmup=(previous,)))
     result = flood_frequency_from_record(record(context, [(0, 0, EventCause.NATURAL)]), Flow(10), 1)
     assert result.classification == 5
+
+
+@pytest.mark.parametrize("route", ["flood", "stormwater"])
+@pytest.mark.parametrize("support", ["missing", "warmup", "previous_warmup"])
+def test_imported_event_frequency_honors_context_support_and_retains_inputs(context, route, support):
+    if support == "missing":
+        provenance = replace(context.provenance, correction_state=CorrectionState.MISSING)
+    elif support == "warmup":
+        provenance = replace(context.provenance, excluded_warmup=(context.period,))
+    else:
+        previous = Interval(datetime(2019, 1, 1, tzinfo=UTC), context.period.start)
+        provenance = replace(context.provenance, excluded_warmup=(previous,))
+    context = replace(context, provenance=provenance)
+    frequency = EventFrequency(2, "prepared imported annual event estimate")
+    result = flood_frequency(context, frequency, 1) if route == "flood" else stormwater_frequency(context, frequency)
+    assert result.context is context
+    assert frequency in result.inputs
+    assert result.metrics[0].value == 2
+    if support == "previous_warmup":
+        assert result.state is AssessmentState.ASSESSED
+        assert result.classification is not None
+    else:
+        assert result.state is AssessmentState.UNDETERMINED
+        assert result.classification is None
+        assert result.reasons

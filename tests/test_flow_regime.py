@@ -665,3 +665,183 @@ def test_table3_all_192_cells_from_primary_pdf_columns(regime, column):
     result = regime_mean_flow(RegimeReference(regime, "explicit Swiss type"), Area(2, "km2"))
     mean = SPECIFIC_MEAN[regime - 1] * Fraction(2, 1000)
     assert result.monthly_means == tuple(Flow(mean * coefficient) for coefficient in expected)
+
+
+@pytest.mark.parametrize("indicator", [Indicator.FLOOD_SEASONALITY, Indicator.LOW_FLOW_SEASONALITY])
+@pytest.mark.parametrize("limit,origin,expected", [(0.3, -0.1, 1), (0.6, -0.2, 2), (0.9, -0.4, 3), (1.2, -0.4, 4)])
+def test_translated_direct_seasonality_inclusive_boundary(indicator, limit, origin, expected):
+    reference = SeasonalityPoint(origin, 0, "translated reference")
+    influenced = SeasonalityPoint(origin + limit, 0, "translated influenced")
+    result = assess_seasonality(C, indicator, influenced, reference)
+    assert result.classification == expected
+    # Binary64 error at inclusive boundaries is not evidence of a worse class.
+    within_precision = replace(influenced, x=influenced.x + 5e-13)
+    assert assess_seasonality(C, indicator, within_precision, reference).classification == expected
+    above_precision = replace(influenced, x=influenced.x + 2e-12)
+    assert assess_seasonality(C, indicator, above_precision, reference).classification == expected + 1
+
+
+@pytest.mark.parametrize("indicator", [Indicator.FLOOD_SEASONALITY, Indicator.LOW_FLOW_SEASONALITY])
+def test_decimal_translation_point_two_minus_negative_point_one(indicator):
+    result = assess_seasonality(C, indicator, SeasonalityPoint(0.2, 0, "b"), SeasonalityPoint(-0.1, 0, "r"))
+    assert result.metrics[0].value > 0.3  # Real failing binary64 path, not mocked arithmetic.
+    assert result.classification == 1
+
+
+@pytest.mark.parametrize("indicator", [Indicator.FLOOD_SEASONALITY, Indicator.LOW_FLOW_SEASONALITY])
+@pytest.mark.parametrize("limit,expected", [(0.25, 1), (0.5, 2), (0.75, 3), (1, 4)])
+def test_ellipse_seasonality_tolerance_preserves_above_boundary(indicator, limit, expected):
+    ellipse = ReferenceEllipse(
+        SeasonalityPoint(-0.9, 0, "centre"), 0.1, 0.1, 0, RegimeReference(3, "Swiss source"), "supplied ellipse"
+    )
+    influenced = SeasonalityPoint(-0.8 + limit, 0, "influenced")
+    assert (
+        assess_seasonality(C, indicator, replace(influenced, x=influenced.x + 5e-13), ellipse).classification
+        == expected
+    )
+    assert (
+        assess_seasonality(C, indicator, replace(influenced, x=influenced.x + 2e-12), ellipse).classification
+        == expected + 1
+    )
+
+
+@pytest.mark.parametrize("unavailable", ["missing", "warmup", "partial_warmup"])
+@pytest.mark.parametrize("route", ["mean", "magnitude", "seasonality", "duration"])
+def test_imported_regime_assessment_cannot_certify_unavailable_context(route, unavailable):
+    context = (
+        replace(C, provenance=replace(P, correction_state=CorrectionState.MISSING))
+        if unavailable == "missing"
+        else replace(C, provenance=replace(P, excluded_warmup=(C.period,)))
+    )
+    if unavailable == "partial_warmup":
+        context = replace(
+            C, provenance=replace(P, excluded_warmup=(Interval(C.period.start, datetime(2001, 1, 1, tzinfo=UTC)),))
+        )
+    if route == "mean":
+        result = assess_mean_flow(context, monthly(100), monthly(90), RegimeReference(3, "s"))
+    elif route == "magnitude":
+        result = assess_low_flow_magnitude(context, low(50, 20), low(45), TroughApplicability.ABSENT)
+    elif route == "seasonality":
+        result = assess_seasonality(
+            context, Indicator.LOW_FLOW_SEASONALITY, SeasonalityPoint(0.1, 0, "b"), SeasonalityPoint(0, 0, "r")
+        )
+    else:
+        result = assess_low_flow_duration(context, LowFlowDuration(Fraction(10), ((2001, 10),), "import"))
+    assert result.state is AssessmentState.UNDETERMINED
+    assert result.classification is None
+    assert result.metrics
+    assert result.inputs
+    assert any("context" in reason for reason in result.reasons)
+
+
+def test_import_context_warmup_union_and_unrelated_period():
+    midpoint = datetime(2005, 1, 1, tzinfo=UTC)
+    excluded = (Interval(C.period.start, midpoint), Interval(midpoint, C.period.end))
+    context = replace(C, provenance=replace(P, excluded_warmup=excluded))
+    assert assess_mean_flow(context, monthly(100), monthly(90), RegimeReference(3, "s")).classification is None
+    unrelated = Interval(datetime(1990, 1, 1, tzinfo=UTC), datetime(1991, 1, 1, tzinfo=UTC))
+    context = replace(C, provenance=replace(P, excluded_warmup=(unrelated,)))
+    assert assess_mean_flow(context, monthly(100), monthly(90), RegimeReference(3, "s")).classification == 1
+
+
+def test_observation_coverage_uses_retained_samples_not_blanket_context_warmup():
+    from fishy.evidence import Completeness
+    from fishy.flow_regime import assess_low_flow_observations, assess_mean_flow_observations
+
+    samples = observations(2001, 2, lambda i: 1 if i < 365 else 10)
+    first_year = Interval(samples[0].interval.start, samples[364].interval.end)
+    provenance = replace(P, excluded_warmup=(first_year,))
+    samples = tuple(replace(s, provenance=provenance) for s in samples)
+    context = replace(C, provenance=provenance, period=Interval(samples[0].interval.start, samples[-1].interval.end))
+    mean = assess_mean_flow_observations(context, samples, samples, RegimeReference(3, "s"))
+    magnitude = assess_low_flow_observations(context, samples, samples, NO_FLUSH, NO_FLUSH, TroughApplicability.ABSENT)
+    assert mean.classification == 1
+    assert mean.coverage is Completeness.INCOMPLETE
+    # Only retained 2002 is available: Q34710 is numerical, CV needs another year.
+    assert isinstance(magnitude.inputs[0], LowFlowStatistics)
+    assert magnitude.inputs[0].q347 == Flow(10)
+    assert magnitude.classification is None
+
+
+def test_observed_reference_does_not_certify_missing_imported_influenced_context():
+    context = replace(C, provenance=replace(P, correction_state=CorrectionState.MISSING))
+    reference = monthly_from_observations(observations())
+    result = assess_mean_flow(context, reference, monthly(9), RegimeReference(3, "s"))
+    assert result.classification is None
+    assert result.metrics
+
+
+def test_unrelated_history_cannot_bypass_unavailable_context():
+    context = replace(C, provenance=replace(P, correction_state=CorrectionState.MISSING))
+    imported = replace(monthly(9), inputs=(observations()[0],))
+    result = assess_mean_flow(context, monthly(10), imported, RegimeReference(3, "s"))
+    assert result.classification is None
+    assert result.metrics
+
+
+def test_observed_inputs_cannot_bypass_wholly_excluded_context():
+    from fishy.flow_regime import assess_mean_flow_observations
+
+    samples = observations()
+    context = replace(C, provenance=replace(P, excluded_warmup=(C.period,)))
+    result = assess_mean_flow_observations(context, samples, samples, RegimeReference(3, "s"))
+    assert result.classification is None
+    assert result.metrics
+
+
+@pytest.mark.parametrize("route", ["mean", "magnitude", "seasonality", "duration"])
+def test_observation_warmup_checks_only_actual_retained_support(route):
+    from fishy.evidence import Completeness
+    from fishy.flow_regime import (
+        assess_duration_observations,
+        assess_low_flow_observations,
+        assess_mean_flow_observations,
+        assess_seasonality_observations,
+    )
+
+    samples = observations(2001, 3, lambda i: 1 if i < 365 else (10 if i < 730 else 20))
+    excluded = Interval(samples[0].interval.start, samples[364].interval.end)
+    provenance = replace(P, excluded_warmup=(excluded,))
+    samples = tuple(replace(s, provenance=provenance) for s in samples)
+    context = replace(C, provenance=provenance, period=Interval(samples[0].interval.start, samples[-1].interval.end))
+    if route == "mean":
+        result = assess_mean_flow_observations(context, samples, samples, RegimeReference(3, "s"))
+    elif route == "magnitude":
+        result = assess_low_flow_observations(context, samples, samples, NO_FLUSH, NO_FLUSH, TroughApplicability.ABSENT)
+    elif route == "seasonality":
+        result = assess_seasonality_observations(
+            context, Indicator.LOW_FLOW_SEASONALITY, samples, samples, ExtremumTie.EARLIEST
+        )
+    else:
+        # Duration needs a continuous supported record; earlier excluded years
+        # are not passed off as a gap inside a spell.
+        result = assess_duration_observations(context, samples[365:], Flow(1))
+    assert result.classification == 1
+    assert result.coverage is Completeness.INCOMPLETE
+
+
+@pytest.mark.parametrize("route", ["mean", "magnitude", "seasonality", "duration"])
+def test_observation_context_exclusion_over_used_support_is_unavailable(route):
+    from fishy.flow_regime import (
+        assess_duration_observations,
+        assess_low_flow_observations,
+        assess_mean_flow_observations,
+        assess_seasonality_observations,
+    )
+
+    samples = observations(2001, 2, lambda i: 10 if i < 365 else 20)
+    # Source samples have not already excluded this day, so the metric actually uses it.
+    context = replace(C, provenance=replace(P, excluded_warmup=(samples[20].interval,)))
+    if route == "mean":
+        result = assess_mean_flow_observations(context, samples, samples, RegimeReference(3, "s"))
+    elif route == "magnitude":
+        result = assess_low_flow_observations(context, samples, samples, NO_FLUSH, NO_FLUSH, TroughApplicability.ABSENT)
+    elif route == "seasonality":
+        result = assess_seasonality_observations(
+            context, Indicator.LOW_FLOW_SEASONALITY, samples, samples, ExtremumTie.EARLIEST
+        )
+    else:
+        result = assess_duration_observations(context, samples, Flow(1))
+    assert result.classification is None
+    assert result.metrics
+    assert result.inputs

@@ -10,10 +10,23 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum, StrEnum
 from fractions import Fraction
 from hashlib import sha256
-from math import erfc, exp, isfinite, log, sqrt
-from statistics import NormalDist
+from math import erfc, log, sqrt
 from typing import Any
 
+from fishy.discharge_distribution import (
+    DistributionJump as DistributionJump,
+)
+from fishy.discharge_distribution import (
+    ExceedanceProbability as ExceedanceProbability,
+)
+from fishy.discharge_distribution import (
+    RankNeighbour as RankNeighbour,
+)
+from fishy.discharge_distribution import (
+    empirical_quantile,
+    fit_discharge_distribution,
+    fitted_quantile,
+)
 from fishy.evidence import (
     Check,
     CheckFinding,
@@ -33,7 +46,7 @@ from fishy.flows import (
     check_flow_intervals,
     interval_use,
 )
-from fishy.quantities import Flow, Number, finite_number
+from fishy.quantities import Flow
 from fishy.spatial import Location
 from fishy.time import Interval
 
@@ -41,17 +54,6 @@ from fishy.time import Interval
 def _text(value: str) -> None:
     if not isinstance(value, str) or not value.strip():
         raise ValueError("nonempty attribution required")
-
-
-@dataclass(frozen=True, init=False)
-class ExceedanceProbability:
-    value: Fraction
-
-    def __init__(self, value: Number) -> None:
-        probability = finite_number(value)
-        if not 0 < probability < 1:
-            raise ValueError("exceedance probability must be strictly between zero and one")
-        object.__setattr__(self, "value", probability)
 
 
 class TrendTreatment(StrEnum):
@@ -229,26 +231,6 @@ def empirical_membership(reference: AnnualReference) -> tuple[YearProbability, .
 
 
 @dataclass(frozen=True)
-class RankNeighbour:
-    rank: int
-    probability: ExceedanceProbability
-    discharge: Flow
-
-
-@dataclass(frozen=True)
-class DistributionJump:
-    discharge: Flow
-    empirical_left: float
-    empirical_right: float
-    fitted_left: float
-    fitted_right: float
-
-    @property
-    def distance(self) -> float:
-        return max(abs(self.empirical_left - self.fitted_left), abs(self.empirical_right - self.fitted_right))
-
-
-@dataclass(frozen=True)
 class ZeroMixtureFit:
     reference: AnnualReference
     zero_fraction: Fraction
@@ -263,36 +245,8 @@ class ZeroMixtureFit:
 
 
 def fit_zero_mixture(reference: AnnualReference) -> ZeroMixtureFit:
-    positive = [v.value for v in reference.values if v.value > 0]
-    pi0 = Fraction(len(reference.values) - len(positive), len(reference.values))
-    if len(positive) < 2:
-        return ZeroMixtureFit(reference, pi0, None, None, (), ("at least two positive observations required",))
-    # log(Fraction) can overflow before logarithm; subtract integer logarithms instead.
-    logs = [log(v.numerator) - log(v.denominator) for v in positive]
-    mu = sum(logs) / len(logs)
-    variance = sum((z - mu) ** 2 for z in logs) / len(logs)
-    if variance <= 0 or not isfinite(variance):
-        return ZeroMixtureFit(reference, pi0, None, None, (), ("positive log standard deviation required",))
-    values = sorted(v.value for v in reference.values)
-    jumps = []
-    for value in sorted(set(values)):
-        left = sum(x < value for x in values) / len(values)
-        right = sum(x <= value for x in values) / len(values)
-        fitted = (
-            float(pi0)
-            if value == 0
-            else float(pi0)
-            + float(1 - pi0) * NormalDist(mu, sqrt(variance)).cdf(log(value.numerator) - log(value.denominator))
-        )
-        jumps.append(DistributionJump(Flow(value), left, right, 0.0 if value == 0 else fitted, fitted))
-    return ZeroMixtureFit(
-        reference,
-        pi0,
-        mu,
-        variance,
-        tuple(jumps),
-        ("candidate fit is not tail validation; zero frequency is not proof of perennial flow",),
-    )
+    fit = fit_discharge_distribution(reference.values)
+    return ZeroMixtureFit(reference, fit.zero_fraction, fit.log_mean, fit.log_variance, fit.jumps, fit.reasons)
 
 
 def fitted_membership(reference: AnnualReference, fit: ZeroMixtureFit) -> tuple[YearProbability, ...]:
@@ -446,23 +400,7 @@ class AnnualEstimate:
 def _empirical_values(
     reference: AnnualReference, target: ExceedanceProbability
 ) -> tuple[Flow | None, tuple[RankNeighbour, ...], tuple[str, ...]]:
-    values = sorted(reference.values, key=lambda v: v.value, reverse=True)
-    n = len(values)
-    rank = target.value * (n + 1)
-    neighbours: tuple[RankNeighbour, ...] = ()
-    value = None
-    reasons: tuple[str, ...] = ()
-    if not 1 <= rank <= n:
-        reasons = ("not computable by ranking: target outside Weibull support",)
-    else:
-        lower = rank.numerator // rank.denominator
-        upper = lower if rank.denominator == 1 else lower + 1
-        neighbours = tuple(
-            RankNeighbour(i, ExceedanceProbability(Fraction(i, n + 1)), values[i - 1])
-            for i in dict.fromkeys((lower, upper))
-        )
-        value = Flow(values[lower - 1].value + (rank - lower) * (values[upper - 1].value - values[lower - 1].value))
-    return value, neighbours, reasons
+    return empirical_quantile(reference.values, target)
 
 
 def empirical_estimate(
@@ -477,33 +415,12 @@ def empirical_estimate(
 def _fitted_values(
     reference: AnnualReference, target: ExceedanceProbability
 ) -> tuple[Flow | None, ZeroMixtureFit, tuple[str, ...]]:
-    fit = fit_zero_mixture(reference)
-    value = None
-    reasons = fit.reasons
-    if fit.log_variance is not None and fit.log_mean is not None:
-        u = 1 - target.value
-        if u <= fit.zero_fraction:
-            value = Flow(0)
-        else:
-            lower_probability = (u - fit.zero_fraction) / (1 - fit.zero_fraction)
-            upper_probability = target.value / (1 - fit.zero_fraction)
-            probability = float(min(lower_probability, upper_probability))
-            if not 0 < probability < 1:
-                reasons = (*reasons, "target exceeds floating-point quantile resolution")
-            else:
-                normal = NormalDist().inv_cdf(probability)
-                if upper_probability < lower_probability:
-                    normal = -normal
-                exponent = fit.log_mean + sqrt(fit.log_variance) * normal
-                try:
-                    quantile = exp(exponent)
-                except OverflowError:
-                    quantile = float("inf")
-                if isfinite(quantile) and quantile > 0:
-                    value = Flow(quantile)
-                else:
-                    reasons = (*reasons, "positive quantile outside floating-point range; not substituted with zero")
-    return value, fit, reasons
+    value, fit, reasons = fitted_quantile(reference.values, target)
+    return (
+        value,
+        ZeroMixtureFit(reference, fit.zero_fraction, fit.log_mean, fit.log_variance, fit.jumps, fit.reasons),
+        reasons,
+    )
 
 
 def fitted_estimate(

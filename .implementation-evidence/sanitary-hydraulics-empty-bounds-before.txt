@@ -1,0 +1,19 @@
+Command: uv run pytest tests/test_sanitary_hydraulics.py -q
+...............................F                                         [100%]
+=================================== FAILURES ===================================
+_________ test_no_directional_criteria_cannot_manufacture_satisfaction _________
+
+    def test_no_directional_criteria_cannot_manufacture_satisfaction():
+        c, t = inputs()
+        absent = RateBound(BoundState.INTENTIONALLY_ABSENT, None)
+        result = assess_sanitary_rate(replace(c, rise=absent, fall=absent), t)
+>       assert result.check.finding is CheckFinding.UNKNOWN
+E       AssertionError: assert <CheckFinding.PASS: 'pass'> is <CheckFinding.UNKNOWN: 'unknown'>
+E        +  where <CheckFinding.PASS: 'pass'> = Check(check_id='within_day_stage', finding=<CheckFinding.PASS: 'pass'>, reasons=('hypothetical criterion: hypothetical...s maxima or legal compliance', 'interval overlap is indeterminate; bounds are not probabilistic confidence intervals')).finding
+E        +    where Check(check_id='within_day_stage', finding=<CheckFinding.PASS: 'pass'>, reasons=('hypothetical criterion: hypothetical...s maxima or legal compliance', 'interval overlap is indeterminate; bounds are not probabilistic confidence intervals')) = RateAssessment(criterion=RateCriterion(scope=HydraulicScope(component='within_day_stage', location=Location(reach=Reac...=Fraction(3, 25)), elapsed_hours=Fraction(1, 2), rate_bounds=StateBounds(lower=Fraction(6, 25), upper=Fraction(6, 25))).check
+E        +  and   <CheckFinding.UNKNOWN: 'unknown'> = CheckFinding.UNKNOWN
+
+tests/test_sanitary_hydraulics.py:335: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_sanitary_hydraulics.py::test_no_directional_criteria_cannot_manufacture_satisfaction
+1 failed, 31 passed in 0.04s

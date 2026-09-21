@@ -1,0 +1,35 @@
+Command: uv run pytest tests/test_sanitary_hydraulics.py -q
+Exit: 1
+..........................FF                                             [100%]
+=================================== FAILURES ===================================
+___ test_numeric_finding_does_not_promote_or_depend_on_scientific_acceptance ___
+
+    def test_numeric_finding_does_not_promote_or_depend_on_scientific_acceptance():
+        c, t = inputs()
+        rejected = replace(t.evidence, scientific_adequacy=ScientificAdequacy.NOT_ACCEPTED)
+        result = assess_sanitary_rate(c, replace(t, evidence=rejected))
+>       assert result.check.finding is CheckFinding.FAIL
+E       AssertionError: assert <CheckFinding.UNKNOWN: 'unknown'> is <CheckFinding.FAIL: 'fail'>
+E        +  where <CheckFinding.UNKNOWN: 'unknown'> = Check(check_id='within_day_stage', finding=<CheckFinding.UNKNOWN: 'unknown'>, reasons=('state evidence unsupported', 'scientifically not accepted for requested use', 'synthetic acceptance witness only')).finding
+E        +    where Check(check_id='within_day_stage', finding=<CheckFinding.UNKNOWN: 'unknown'>, reasons=('state evidence unsupported', 'scientifically not accepted for requested use', 'synthetic acceptance witness only')) = RateAssessment(criterion=RateCriterion(scope=HydraulicScope(component='within_day_stage', location=Location(reach=Reac...uested use', 'synthetic acceptance witness only')), change_bounds=None, elapsed_hours=Fraction(1, 2), rate_bounds=None).check
+E        +  and   <CheckFinding.FAIL: 'fail'> = CheckFinding.FAIL
+
+tests/test_sanitary_hydraulics.py:272: AssertionError
+______________________ test_warmup_states_cannot_certify _______________________
+
+    def test_warmup_states_cannot_certify():
+        c, t = inputs("1", "1")
+        excluded = replace(t.evidence, provenance=replace(t.evidence.provenance, excluded_warmup=(t.scope.period,)))
+>       assert assess_sanitary_rate(c, replace(t, evidence=excluded)).check.finding is CheckFinding.UNKNOWN
+E       AssertionError: assert <CheckFinding.PASS: 'pass'> is <CheckFinding.UNKNOWN: 'unknown'>
+E        +  where <CheckFinding.PASS: 'pass'> = Check(check_id='within_day_stage', finding=<CheckFinding.PASS: 'pass'>, reasons=('hypothetical criterion: hypothetical...s maxima or legal compliance', 'interval overlap is indeterminate; bounds are not probabilistic confidence intervals')).finding
+E        +    where Check(check_id='within_day_stage', finding=<CheckFinding.PASS: 'pass'>, reasons=('hypothetical criterion: hypothetical...s maxima or legal compliance', 'interval overlap is indeterminate; bounds are not probabilistic confidence intervals')) = RateAssessment(criterion=RateCriterion(scope=HydraulicScope(component='within_day_stage', location=Location(reach=Reac...per=Fraction(0, 1)), elapsed_hours=Fraction(1, 2), rate_bounds=StateBounds(lower=Fraction(0, 1), upper=Fraction(0, 1))).check
+E        +      where RateAssessment(criterion=RateCriterion(scope=HydraulicScope(component='within_day_stage', location=Location(reach=Reac...per=Fraction(0, 1)), elapsed_hours=Fraction(1, 2), rate_bounds=StateBounds(lower=Fraction(0, 1), upper=Fraction(0, 1))) = assess_sanitary_rate(RateCriterion(scope=HydraulicScope(component='within_day_stage', location=Location(reach=Reach(identifier='reach', ver...mparison.INCLUSIVE: 'inclusive'>), applicability=<CriterionApplicability.APPLICABLE: 'applicable_to_whole_transition'>), HydraulicTransition(scope=HydraulicScope(component='within_day_stage', location=Location(reach=Reach(identifier='reach...nding'>, reasons=('synthetic acceptance witness only',), restrictions=()), joint_rate_bounds=None, joint_evidence=None))
+E        +        where HydraulicTransition(scope=HydraulicScope(component='within_day_stage', location=Location(reach=Reach(identifier='reach...nding'>, reasons=('synthetic acceptance witness only',), restrictions=()), joint_rate_bounds=None, joint_evidence=None) = replace(HydraulicTransition(scope=HydraulicScope(component='within_day_stage', location=Location(reach=Reach(identifier='reach...nding'>, reasons=('synthetic acceptance witness only',), restrictions=()), joint_rate_bounds=None, joint_evidence=None), evidence=EvidenceFindings(scope=EvidenceScope(product='candidate-A', reach='reach', member=None, period=Interval(start=datetime...issibility=<OfficialAdmissibility.PENDING: 'pending'>, reasons=('synthetic acceptance witness only',), restrictions=()))
+E        +  and   <CheckFinding.UNKNOWN: 'unknown'> = CheckFinding.UNKNOWN
+
+tests/test_sanitary_hydraulics.py:279: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_sanitary_hydraulics.py::test_numeric_finding_does_not_promote_or_depend_on_scientific_acceptance
+FAILED tests/test_sanitary_hydraulics.py::test_warmup_states_cannot_certify
+2 failed, 26 passed in 0.04s

@@ -106,10 +106,12 @@ class SuppliedDuty:
             check_flow_intervals(tuple(item.sample for item in self.schedule))
             if any(item.version != self.version for item in self.schedule):
                 raise ValueError("schedule must retain the supplied duty version")
-        if self.applicability in (DutyApplicability.APPLICABLE, DutyApplicability.HYPOTHETICAL):
-            if not self.schedule or "discharge" not in self.required_components:
-                raise ValueError("a supplied discharge duty needs a schedule and discharge component")
-        elif not self.reasons:
+        if self.schedule and "discharge" not in self.required_components:
+            raise ValueError("a supplied schedule needs a discharge component")
+        if (
+            self.applicability not in (DutyApplicability.APPLICABLE, DutyApplicability.HYPOTHETICAL)
+            and not self.reasons
+        ):
             raise ValueError("unresolved/inapplicable/unlocated duties need attributable reasons")
         if len(set(self.required_components)) != len(self.required_components) or any(
             not s for s in self.required_components
@@ -140,6 +142,7 @@ class DutyAssessment:
     intervals: tuple[IntervalAssessment, ...]
     summary: CheckSummary
     interpretation: ComparisonKind
+    uncompared_deliveries: tuple[Delivery, ...] | tuple[Deliverability, ...] = ()
 
     @property
     def known_shortfall_volume(self) -> Volume:
@@ -189,14 +192,19 @@ def _assess(
         check_flow_intervals(samples)
     schedule = {item.sample.interval: item for item in duty.schedule}
     by_interval = {item.sample.interval: item for item in delivered}
-    if set(by_interval) - set(schedule):
-        raise ValueError("delivery interval does not match the exact duty interval; no implicit resampling")
-    for item in delivered:
-        if item.sample.location != schedule[item.sample.interval].sample.location:
-            raise ValueError("delivery has incompatible physical location/mapping")
+    if schedule:
+        if set(by_interval) - set(schedule):
+            raise ValueError("delivery interval does not match the exact duty interval; no implicit resampling")
+        for item in delivered:
+            if item.sample.location != schedule[item.sample.interval].sample.location:
+                raise ValueError("delivery has incompatible physical location/mapping")
+    applicability_checks = ()
     if duty.applicability not in (DutyApplicability.APPLICABLE, DutyApplicability.HYPOTHETICAL):
         check = Check("applicability", CheckFinding.UNKNOWN, (duty.applicability.value, *duty.reasons))
-        return DutyAssessment(duty, (), CheckSummary((check,)), kind)
+        if duty.applicability is not DutyApplicability.UNRESOLVED:
+            return DutyAssessment(duty, (), CheckSummary((check,)), kind, delivered)
+        # Unresolved authority does not erase the supplied operands or physical findings.
+        applicability_checks = (check,)
     rows = []
     for obligation in duty.schedule:
         target = obligation.sample
@@ -242,9 +250,12 @@ def _assess(
     # Keep every interval check in the summary, rather than lose incomplete coverage
     # when a known failure survives an unknown interval.
     expected = tuple(row.numerical.check_id for row in rows) + tuple(
-        name for name in duty.required_components if name != "discharge"
+        name for name in duty.required_components if name != "discharge" or not rows
     )
     if any(check.check_id == "discharge" for check in component_checks):
         raise ValueError("discharge check is computed, not supplied")
-    summary = aggregate_checks(expected, tuple(row.numerical for row in rows) + component_checks)
-    return DutyAssessment(duty, tuple(rows), summary, kind)
+    summary = aggregate_checks(
+        expected + tuple(check.check_id for check in applicability_checks),
+        tuple(row.numerical for row in rows) + component_checks + applicability_checks,
+    )
+    return DutyAssessment(duty, tuple(rows), summary, kind, delivered if not schedule else ())

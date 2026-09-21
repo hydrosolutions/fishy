@@ -1,0 +1,10 @@
+Command: uv run pytest tests/test_sanitary_hydraulics.py -q
+Exit: 0
+................................                                         [100%]
+32 passed in 0.02s
+
+Command: uv run ty check src/fishy/sanitary_hydraulics.py tests/test_sanitary_hydraulics.py
+All checks passed!
+
+Command: uv run ruff check src/fishy/sanitary_hydraulics.py tests/test_sanitary_hydraulics.py
+All checks passed!

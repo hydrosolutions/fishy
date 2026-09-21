@@ -1,0 +1,99 @@
+Using CPython 3.13.8
+Creating virtual environment at: .venv
+   Building fishy @ file://<worktree>
+      Built fishy @ file://<worktree>
+Downloading pygments (1.2MiB)
+Downloading ruff (9.6MiB)
+Downloading polars-runtime-32 (41.3MiB)
+Downloading ty (11.0MiB)
+ Downloaded pygments
+ Downloaded ruff
+ Downloaded ty
+ Downloaded polars-runtime-32
+Installed 12 packages in 13ms
+.................FF.                                                     [100%]
+=================================== FAILURES ===================================
+_ test_missing_schedule_preserves_unknown_discharge_and_supported_other_components _
+
+    def test_missing_schedule_preserves_unknown_discharge_and_supported_other_components():
+>       prescribed = replace(duty(), schedule=(), required_components=("discharge", "velocity"))
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_duties.py:271:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+../../../../../../.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/dataclasses.py:1596: in replace
+    return _replace(obj, **changes)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../../../.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/dataclasses.py:1630: in _replace
+    return self.__class__(**changes)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+<string>:11: in __init__
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = SuppliedDuty(identifier='issued-schedule', version='v1', provision='supplied independent provision', applicability=<Du..., schedule=(), search_record='documented instrument search', reasons=(), required_components=('discharge', 'velocity'))
+
+    def __post_init__(self) -> None:
+        for name in ("identifier", "version", "provision", "search_record"):
+            if not isinstance(getattr(self, name), str) or not getattr(self, name).strip():
+                raise ValueError(f"duty requires {name}")
+        if not isinstance(self.applicability, DutyApplicability):
+            raise TypeError("duty applicability requires DutyApplicability")
+        for name in ("schedule", "reasons", "required_components"):
+            object.__setattr__(self, name, tuple(getattr(self, name)))
+        if any(type(item) is not Obligation for item in self.schedule):
+            raise TypeError("duty schedule requires Obligation, not a floor or available water")
+        if self.schedule:
+            check_flow_intervals(tuple(item.sample for item in self.schedule))
+            if any(item.version != self.version for item in self.schedule):
+                raise ValueError("schedule must retain the supplied duty version")
+        if self.applicability in (DutyApplicability.APPLICABLE, DutyApplicability.HYPOTHETICAL):
+            if not self.schedule or "discharge" not in self.required_components:
+>               raise ValueError("a supplied discharge duty needs a schedule and discharge component")
+E               ValueError: a supplied discharge duty needs a schedule and discharge component
+
+src/fishy/duties.py:111: ValueError
+_ test_non_flow_instrument_can_be_retained_and_assessed_without_inventing_discharge _
+
+    def test_non_flow_instrument_can_be_retained_and_assessed_without_inventing_discharge():
+>       prescribed = replace(duty(), schedule=(), required_components=("velocity",))
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_duties.py:281:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+../../../../../../.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/dataclasses.py:1596: in replace
+    return _replace(obj, **changes)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../../../.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/dataclasses.py:1630: in _replace
+    return self.__class__(**changes)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+<string>:11: in __init__
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = SuppliedDuty(identifier='issued-schedule', version='v1', provision='supplied independent provision', applicability=<Du...applicable'>, schedule=(), search_record='documented instrument search', reasons=(), required_components=('velocity',))
+
+    def __post_init__(self) -> None:
+        for name in ("identifier", "version", "provision", "search_record"):
+            if not isinstance(getattr(self, name), str) or not getattr(self, name).strip():
+                raise ValueError(f"duty requires {name}")
+        if not isinstance(self.applicability, DutyApplicability):
+            raise TypeError("duty applicability requires DutyApplicability")
+        for name in ("schedule", "reasons", "required_components"):
+            object.__setattr__(self, name, tuple(getattr(self, name)))
+        if any(type(item) is not Obligation for item in self.schedule):
+            raise TypeError("duty schedule requires Obligation, not a floor or available water")
+        if self.schedule:
+            check_flow_intervals(tuple(item.sample for item in self.schedule))
+            if any(item.version != self.version for item in self.schedule):
+                raise ValueError("schedule must retain the supplied duty version")
+        if self.applicability in (DutyApplicability.APPLICABLE, DutyApplicability.HYPOTHETICAL):
+            if not self.schedule or "discharge" not in self.required_components:
+>               raise ValueError("a supplied discharge duty needs a schedule and discharge component")
+E               ValueError: a supplied discharge duty needs a schedule and discharge component
+
+src/fishy/duties.py:111: ValueError
+=========================== short test summary info ============================
+FAILED tests/test_duties.py::test_missing_schedule_preserves_unknown_discharge_and_supported_other_components
+FAILED tests/test_duties.py::test_non_flow_instrument_can_be_retained_and_assessed_without_inventing_discharge
+2 failed, 18 passed in 1.53s

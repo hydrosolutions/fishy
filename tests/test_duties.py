@@ -265,3 +265,52 @@ def test_heterogeneous_observation_corrections_and_source_history_remain_attribu
     assert aggregate.provenance == aggregate_provenance
     with pytest.raises(ValueError, match="aggregate provenance"):
         aggregate_flow(readings)
+
+
+def test_missing_schedule_preserves_unknown_discharge_and_supported_other_components():
+    prescribed = replace(duty(), schedule=(), required_components=("discharge", "velocity"))
+    result = assess_duty(prescribed, (), component_checks=(Check("velocity", CheckFinding.FAIL),))
+    assert result.summary.finding is CheckFinding.FAIL
+    assert result.summary.completeness is Completeness.INCOMPLETE
+    assert result.summary.checks[0].check_id == "discharge"
+    assert result.summary.checks[0].finding is CheckFinding.UNKNOWN
+    assert result.known_shortfall_volume == Volume(0)  # known subtotal, not a zero duty
+
+
+def test_non_flow_instrument_can_be_retained_and_assessed_without_inventing_discharge():
+    prescribed = replace(duty(), schedule=(), required_components=("velocity",))
+    result = assess_duty(prescribed, (), component_checks=(Check("velocity", CheckFinding.PASS),))
+    assert result.summary.finding is CheckFinding.PASS
+    assert result.intervals == ()
+
+
+def test_schedule_cannot_be_hidden_by_omitting_discharge_component():
+    with pytest.raises(ValueError, match="discharge component"):
+        replace(duty(), required_components=("velocity",))
+
+
+def test_unresolved_instrument_retains_supported_findings_without_whole_duty_pass():
+    prescribed = replace(
+        duty((2,)),
+        applicability=DutyApplicability.UNRESOLVED,
+        reasons=("currency pending",),
+        required_components=("discharge", "velocity"),
+    )
+    result = assess_duty(
+        prescribed, (Delivery(samples((1,))[0], "v1"),), component_checks=(Check("velocity", CheckFinding.PASS),)
+    )
+    assert result.intervals[0].shortfall == Flow(1)
+    assert result.summary.finding is CheckFinding.FAIL
+    assert result.summary.completeness is Completeness.INCOMPLETE
+    assert any(c.check_id == "velocity" and c.finding is CheckFinding.PASS for c in result.summary.checks)
+    assert any(c.check_id == "applicability" and c.finding is CheckFinding.UNKNOWN for c in result.summary.checks)
+
+
+def test_missing_magnitude_can_retain_delivery_without_inventing_comparison():
+    prescribed = replace(duty(), schedule=(), required_components=("discharge", "velocity"))
+    delivered = tuple(Delivery(s, "v1") for s in samples((1, 2)))
+    result = assess_duty(prescribed, delivered, component_checks=(Check("velocity", CheckFinding.FAIL),))
+    assert result.intervals == ()
+    assert result.uncompared_deliveries == delivered
+    assert result.summary.finding is CheckFinding.FAIL
+    assert result.summary.completeness is Completeness.INCOMPLETE

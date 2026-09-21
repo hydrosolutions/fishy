@@ -1,0 +1,63 @@
+................................FFF                                      [100%]
+=================================== FAILURES ===================================
+_ test_supported_direction_failure_survives_missing_other_bound[1-1.12-fall-.24] _
+
+previous = '1', current = '1.12', missing = 'fall', rate = '.24'
+
+    @pytest.mark.parametrize(
+        ("previous", "current", "missing", "rate"),
+        [("1", "1.12", "fall", ".24"), ("1.20", "1", "rise", "-.4")],
+    )
+    def test_supported_direction_failure_survives_missing_other_bound(previous, current, missing, rate):
+        from fishy.evidence import Completeness
+
+        criterion, transition = inputs(previous, current)
+        criterion = replace(criterion, **{missing: RateBound(BoundState.MISSING, None)})
+        result = assess_sanitary_rate(criterion, transition)
+>       assert result.check.finding is CheckFinding.FAIL
+E       AssertionError: assert <CheckFinding.UNKNOWN: 'unknown'> is <CheckFinding.FAIL: 'fail'>
+E        +  where <CheckFinding.UNKNOWN: 'unknown'> = Check(check_id='within_day_stage', finding=<CheckFinding.UNKNOWN: 'unknown'>, reasons=('required directional bound missing',)).finding
+E        +    where Check(check_id='within_day_stage', finding=<CheckFinding.UNKNOWN: 'unknown'>, reasons=('required directional bound missing',)) = RateAssessment(criterion=RateCriterion(scope=HydraulicScope(component='within_day_stage', location=Location(reach=Reac..., reasons=('required directional bound missing',)), change_bounds=None, elapsed_hours=Fraction(1, 2), rate_bounds=None).check
+E        +  and   <CheckFinding.FAIL: 'fail'> = CheckFinding.FAIL
+
+tests/test_sanitary_hydraulics.py:349: AssertionError
+_ test_supported_direction_failure_survives_missing_other_bound[1.20-1-rise--.4] _
+
+previous = '1.20', current = '1', missing = 'rise', rate = '-.4'
+
+    @pytest.mark.parametrize(
+        ("previous", "current", "missing", "rate"),
+        [("1", "1.12", "fall", ".24"), ("1.20", "1", "rise", "-.4")],
+    )
+    def test_supported_direction_failure_survives_missing_other_bound(previous, current, missing, rate):
+        from fishy.evidence import Completeness
+
+        criterion, transition = inputs(previous, current)
+        criterion = replace(criterion, **{missing: RateBound(BoundState.MISSING, None)})
+        result = assess_sanitary_rate(criterion, transition)
+>       assert result.check.finding is CheckFinding.FAIL
+E       AssertionError: assert <CheckFinding.UNKNOWN: 'unknown'> is <CheckFinding.FAIL: 'fail'>
+E        +  where <CheckFinding.UNKNOWN: 'unknown'> = Check(check_id='within_day_stage', finding=<CheckFinding.UNKNOWN: 'unknown'>, reasons=('required directional bound missing',)).finding
+E        +    where Check(check_id='within_day_stage', finding=<CheckFinding.UNKNOWN: 'unknown'>, reasons=('required directional bound missing',)) = RateAssessment(criterion=RateCriterion(scope=HydraulicScope(component='within_day_stage', location=Location(reach=Reac..., reasons=('required directional bound missing',)), change_bounds=None, elapsed_hours=Fraction(1, 2), rate_bounds=None).check
+E        +  and   <CheckFinding.FAIL: 'fail'> = CheckFinding.FAIL
+
+tests/test_sanitary_hydraulics.py:349: AssertionError
+____________ test_passed_direction_cannot_hide_missing_other_bound _____________
+
+    def test_passed_direction_cannot_hide_missing_other_bound():
+        from fishy.evidence import Completeness
+
+        criterion, transition = inputs("1", "1.05")
+        criterion = replace(criterion, fall=RateBound(BoundState.MISSING, None))
+        result = assess_sanitary_rate(criterion, transition)
+        assert result.check.finding is CheckFinding.UNKNOWN
+>       assert result.completeness is Completeness.INCOMPLETE
+               ^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'RateAssessment' object has no attribute 'completeness'
+
+tests/test_sanitary_hydraulics.py:366: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_sanitary_hydraulics.py::test_supported_direction_failure_survives_missing_other_bound[1-1.12-fall-.24]
+FAILED tests/test_sanitary_hydraulics.py::test_supported_direction_failure_survives_missing_other_bound[1.20-1-rise--.4]
+FAILED tests/test_sanitary_hydraulics.py::test_passed_direction_cannot_hide_missing_other_bound
+3 failed, 32 passed in 0.07s

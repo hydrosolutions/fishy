@@ -9,7 +9,7 @@ from dataclasses import dataclass, replace
 from fishy.evidence import Check, CheckFinding, CheckSummary, EvidenceFindings, Provenance
 from fishy.flows import Coverage, FlowSample, Presence
 from fishy.quality_activation import ComponentStatus, QualityComponent
-from fishy.receptor_delivery import ControlEquivalent, ControlMapping, control_equivalent
+from fishy.receptor_delivery import ControlEquivalent, ControlMapping, DeliveryStep, control_equivalent
 
 
 @dataclass(frozen=True)
@@ -19,6 +19,7 @@ class IntervalComposition:
     mapping: ControlEquivalent | None
     candidate: FlowSample | None
     checks: CheckSummary
+    receptor_source: DeliveryStep | None = None
 
 
 def compose_requirement(
@@ -28,6 +29,7 @@ def compose_requirement(
     quality: QualityComponent | None = None,
     mapping: ControlMapping | None = None,
     mapping_evidence: EvidenceFindings | None = None,
+    receptor_source: DeliveryStep | None = None,
 ) -> IntervalComposition:
     """Compose one supported interval; this operation neither issues nor derives a floor.
 
@@ -42,6 +44,19 @@ def compose_requirement(
             raise ValueError("composition cannot change scenario/reference/configuration identity")
     if mapping_evidence is not None and mapping is None:
         raise ValueError("mapping evidence supplied without a mapping")
+    if receptor_source is not None:
+        if not isinstance(receptor_source, DeliveryStep) or mapping is None:
+            raise ValueError("original receptor source needs its explicit control mapping")
+        context = receptor_source.balance.context
+        if (context.receptor, context.period, context.candidate) != (
+            mapping.context.receptor,
+            mapping.context.period,
+            mapping.context.candidate,
+        ):
+            raise ValueError("original receptor obligations must bind the original mapping subject")
+        for field in ("scenario", "reference_member", "reference_kind", "configuration_version"):
+            if getattr(context.provenance, field) != getattr(base.provenance, field):
+                raise ValueError("original receptor source belongs to another source scenario/reference")
     checks = []
     value = base.value
     available = base.presence is Presence.PRESENT and base.coverage is Coverage.COMPLETE and value is not None
@@ -101,4 +116,4 @@ def compose_requirement(
             components=(base,),
             reasons=(*base.reasons, "uncapped composition; final checks required; derived uncertainty not supplied"),
         )
-    return IntervalComposition(base, quality, equivalent, candidate, CheckSummary(tuple(checks)))
+    return IntervalComposition(base, quality, equivalent, candidate, CheckSummary(tuple(checks)), receptor_source)

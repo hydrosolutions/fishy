@@ -189,3 +189,163 @@ def test_recomputed_rejected_composition_still_assesses_native_source(prepared):
     records = run((members, tuple(changed), tests))
     assert all(all(s.value == Flow(8) for s in r.source) for r in records)
     assert all(r.result.point.finding is CheckFinding.FAIL for r in records)
+
+
+@pytest.fixture(scope="module")
+def mapped_chain():
+    from examples.requirement_chain import run_chain
+
+    chain = run_chain()
+    final = chain.final
+    contexts = []
+    for item in final.duration:
+        test = item.test
+        classes = chain.families[test.member].classes
+        index = next(i for i, cls in enumerate(classes) if cls.design is test.design)
+        local = chain.provisional[test.member][index]
+        prefix = tuple(s for s in local.candidate if s.interval.end <= final.selection.supplied.basis.period.start)
+        contexts.append(
+            replace(
+                test,
+                threshold=local.threshold,
+                predecessors=prefix,
+                predecessor_basis=local.windows.predecessor_basis,
+                scientific_assessment=local.scientific_assessment,
+                uncertainty_support=local.windows.uncertainty_support,
+                reference_relation=local.reference_relation,
+                candidate_support=tuple(
+                    s for s in local.candidate if s.interval.start >= final.selection.supplied.basis.period.start
+                ),
+            )
+        )
+    return chain, tuple(contexts)
+
+
+def test_u9_public_finalization_retains_actual_local_source_tests(mapped_chain):
+    from fishy.requirement_finalization import finalize_regime
+
+    chain, contexts = mapped_chain
+    final = chain.final
+    assert len(final.provisional) == 8
+    assert all(local.checks.finding is CheckFinding.PASS for local in final.provisional)
+    result = finalize_regime(
+        final.selection,
+        final.method,
+        final.physical[0].result.required,
+        final.physical,
+        duration_tests=tuple(d.test for d in final.duration),
+        expected_duration_tests=(("A", "annual7-T100"), ("B", "annual7-T100")),
+        version="U9-local-provisional-regression",
+        provenance=final.floor.sample.provenance,
+        constructions=tuple(c.construction for c in final.constructions),
+        member_physical=final.member_physical,
+        member_duration_tests=tuple(d.test for d in final.member_duration),
+        provisional_duration_tests=contexts,
+    )
+    assert result.checks.finding is CheckFinding.PASS
+    assert len(result.provisional_diagnostics) == len(result.provisional) == 8
+    assert result.requirement is not None
+    local_tests = {(t.member, t.identifier, t.design): t for t in contexts}
+    for diagnostic in result.provisional_diagnostics:
+        test = local_tests[diagnostic.member, diagnostic.identifier, diagnostic.design]
+        assert diagnostic.result is not None
+        assert diagnostic.result.threshold == test.threshold
+        assert diagnostic.result.scientific_assessment == test.scientific_assessment
+        assert diagnostic.result.permission.finding is CheckFinding.PASS
+        assert diagnostic.result.point.finding is CheckFinding.PASS
+        assert diagnostic.result.checks.finding is CheckFinding.PASS
+        assert diagnostic.result.stage is AssessmentStage.PROVISIONAL
+        assert all(s.location == test.threshold.reference.location for s in diagnostic.source)
+        assert diagnostic.source[0].location != result.requirement.basis.location
+
+
+def test_u9_local_threshold_never_borrows_final_scientific_permission(mapped_chain):
+    chain, contexts = mapped_chain
+    final = chain.final
+    results = recompute_provisional_duration(
+        final.selection.members,
+        final.constructions,
+        tuple(d.test for d in final.duration),
+        (("A", "annual7-T100"), ("B", "annual7-T100")),
+        provisional_duration_tests=tuple(replace(t, scientific_assessment=None) for t in contexts),
+    )
+    for record in results:
+        assert record.result is not None
+        assert record.result.permission.finding is CheckFinding.UNKNOWN
+        assert record.result.scientific_assessment is None
+
+
+@pytest.mark.parametrize("changed_policy", ("return_period", "purpose"))
+def test_explicit_local_reference_cannot_change_configured_policy(prepared, changed_policy):
+    from fishy.low_flow_frequency import LowFlowReturnPeriod
+    from fishy.scientific_acceptance import UsePurpose
+
+    _, _, tests = prepared
+    test = tests[0]
+    if changed_policy == "return_period":
+        changed = replace(test, threshold=replace(test.threshold, return_period=LowFlowReturnPeriod(3)))
+    else:
+        changed = replace(test, purpose=UsePurpose.SCREENING)
+    with pytest.raises(ValueError, match="threshold policy or purpose"):
+        run(prepared, provisional_duration_tests=(changed,))
+
+
+def test_local_reference_rejects_final_location_scientific_permission(mapped_chain):
+    chain, contexts = mapped_chain
+    final = chain.final
+    final_tests = {(d.test.member, d.test.identifier, d.test.design): d.test for d in final.duration}
+    results = recompute_provisional_duration(
+        final.selection.members,
+        final.constructions,
+        tuple(d.test for d in final.duration),
+        (("A", "annual7-T100"), ("B", "annual7-T100")),
+        provisional_duration_tests=tuple(
+            replace(t, scientific_assessment=final_tests[t.member, t.identifier, t.design].scientific_assessment)
+            for t in contexts
+        ),
+    )
+    for record in results:
+        assert record.result is not None
+        assert record.result.permission.finding is not CheckFinding.PASS
+
+
+@pytest.mark.parametrize("mutation", ("value", "location", "interval", "provenance", "duplicate"))
+def test_candidate_uncertainty_support_cannot_replace_native_source(prepared, mutation):
+    from fishy.quantities import Flow
+
+    _, _, tests = prepared
+    source = run(prepared)[0].source[0]
+    if mutation == "value":
+        changed = replace(source, value=Flow(999), uncertainty=None)
+    elif mutation == "location":
+        changed = replace(source, location=replace(source.location, mapping_version="wrong-scope"))
+    elif mutation == "interval":
+        changed = replace(
+            source,
+            interval=Interval(source.interval.start - timedelta(days=1), source.interval.end - timedelta(days=1)),
+        )
+    elif mutation == "provenance":
+        changed = replace(source, provenance=replace(source.provenance, configuration_version="wrong-source"))
+    else:
+        changed = source
+    support = (changed, changed) if mutation == "duplicate" else (changed,)
+    context = replace(tests[0], candidate_support=support)
+    with pytest.raises(ValueError, match="candidate support"):
+        run(prepared, provisional_duration_tests=(context,))
+
+
+def test_u9_missing_local_candidate_support_remains_unknown(mapped_chain):
+    chain, contexts = mapped_chain
+    final = chain.final
+    records = recompute_provisional_duration(
+        final.selection.members,
+        final.constructions,
+        tuple(d.test for d in final.duration),
+        (("A", "annual7-T100"), ("B", "annual7-T100")),
+        provisional_duration_tests=tuple(replace(t, candidate_support=()) for t in contexts),
+    )
+    for record in records:
+        assert record.result is not None
+        assert record.result.point.finding is CheckFinding.PASS
+        assert record.result.uncertainty.finding is CheckFinding.UNKNOWN
+        assert record.result.checks.finding is CheckFinding.UNKNOWN

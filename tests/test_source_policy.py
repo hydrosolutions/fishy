@@ -193,3 +193,53 @@ def test_unresolved_unused_habitat_does_not_gate_supported_hydraulic_policy():
     assert result.selected_route is PotentialRoute.HYDRAULIC
     assert result.routes[0].checks.finding is CheckFinding.UNKNOWN
     assert floor_policy_checks((source,)).finding is CheckFinding.PASS
+
+
+@pytest.fixture
+def conveyance_source():
+    from datetime import date
+
+    from test_service_conveyance import request
+
+    from examples.study_requirements import POTENTIAL
+    from fishy.floor_construction import PotentialFloorSource
+    from fishy.potential_requirements import Applicability, PotentialStudy
+    from fishy.study_requirements import StudyNeed, StudyScope
+
+    supplied = request()
+    scope = StudyScope(
+        "service-floor", supplied.location, supplied.interval, "scenario", "member", "sizing", "service season"
+    )
+    pending = PotentialStudy(Applicability.UNRESOLVED, "study pending", None, ())
+    return PotentialFloorSource(
+        scope, POTENTIAL, pending, pending, supplied, StudyNeed("ecological studies", "review owner", date(2027, 1, 1))
+    )
+
+
+@pytest.mark.parametrize("field", ("capacity", "ramp", "stopping", "duty"))
+def test_selected_conveyance_policy_changes_fail(conveyance_source, field):
+    from fishy.quantities import Volume
+
+    req = conveyance_source.conveyance
+    assert req is not None and req.ramp is not None
+    change = {
+        "capacity": {"capacity": Flow(21)},
+        "ramp": {"ramp": replace(req.ramp, rise=Flow(6))},
+        "stopping": {"stopping": replace(req.stopping, iteration_limit=31)},
+        "duty": {"duties": (replace(req.duties[0], volume=Volume(81)),)},
+    }[field]
+    changed = replace(conveyance_source, conveyance=replace(req, **change))
+    assert floor_policy_checks((conveyance_source,)).finding is CheckFinding.PASS
+    assert floor_policy_checks((conveyance_source, changed)).finding is CheckFinding.FAIL
+
+
+def test_missing_conveyance_request_is_unknown(conveyance_source):
+    missing = replace(conveyance_source, conveyance=None)
+    assert floor_policy_checks((conveyance_source, missing)).finding is CheckFinding.UNKNOWN
+
+
+def test_conveyance_previous_flow_is_reference_not_policy(conveyance_source):
+    req = conveyance_source.conveyance
+    assert req is not None and req.ramp is not None
+    changed = replace(conveyance_source, conveyance=replace(req, ramp=replace(req.ramp, previous_flow=Flow(9))))
+    assert floor_policy_checks((conveyance_source, changed)).finding is CheckFinding.PASS

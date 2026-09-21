@@ -128,3 +128,15 @@ Known supplied policy differences remain failures. Both original and selected so
 constraints are recomputed and retained. Provisional diagnostics never enter the
 final gate; a source/control location mismatch stays unknown rather than relabelling
 one location's source as another's.
+
+
+## Final-flow source constraints
+
+| Contract | Regression evidence |
+| --- | --- |
+| Service domain and surplus | `tests/test_conveyance_floor.py`: 365 quality-adjusted values 10 outside original domain 0..8 produce no floors; domain 0..12 produces 365 floors and 730 retained/selected source checks without resizing duty 5. |
+| Service physical limits | `tests/test_conveyance_conditions.py`: original capacity, rise/fall bounds, interpolated losses/storage and numerical tolerance remain binding; known deficit survives missing context. |
+| Complete local diagnostics | `tests/test_provisional_duration.py`: eight actual local-R assessments retain full PASS; changed values or scope cannot borrow uncertainty support, and final-U acceptance cannot certify R. |
+| Original receptor quantity and policy | `test_u9_original_receptor_obligations_survive_fresh_final_checks`: all 4,380 fresh native physical checks can PASS after changing receiver 1→0 or relaxing salinity, but 5,840 original-obligation checks reject issuance. |
+| Missing original receptor proof | `test_u9_missing_original_receptor_proof_is_pending`: complete final physical evidence cannot replace the original source obligations. |
+| Receiver physical/state continuity | `tests/test_receptor_conditions.py`: exact storage endpoint, coupled quantity criteria, salinity bounds, original accounts/pathways and shared/lateral release semantics remain explicit. |

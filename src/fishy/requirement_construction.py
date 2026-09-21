@@ -370,6 +370,7 @@ def assess_construction(member: RequirementMember, construction: MemberConstruct
             quality=q,
             mapping=mapping.mapping if mapping else None,
             mapping_evidence=mapping.evidence if mapping else None,
+            receptor_source=original.receptor_source,
         )
         compositions.append(ClassComposition(key[0], result))
         checks.extend(Check(label + ":" + c.check_id, c.finding, c.reasons) for c in result.checks.checks)

@@ -799,7 +799,12 @@ def assembled_member(member, reference, years, patterns):
             q = quality(sample.value, sample.interval, member)
             mapping = lateral(q.combined, sample.interval, member, "U9-member-composition")
             component = compose_requirement(
-                sample, provenance(member), quality=q, mapping=mapping.mapping, mapping_evidence=mapping.evidence
+                sample,
+                provenance(member),
+                quality=q,
+                mapping=mapping.mapping,
+                mapping_evidence=mapping.evidence,
+                receptor_source=wetland_step(sample.interval, member, mapping.mapping.context.candidate),
             )
             assert component.candidate is not None and component.candidate.value is not None
             component = replace(
@@ -1129,6 +1134,27 @@ def run_chain(prepared=None):
         for member, family in families.items()
         for cls, result in zip(family.classes, member_duration[member], strict=True)
     )
+    provisional_tests = tuple(
+        DurationTest(
+            "annual7-T100",
+            member,
+            cls.design,
+            result.threshold,
+            tuple(s for s in result.windows.windows[0].contributors if s.interval.end <= TARGET.interval.start),
+            result.windows.predecessor_basis,
+            result.scientific_assessment,
+            result.windows.uncertainty_support,
+            result.reference_relation,
+            UsePurpose.SIZING,
+            tuple(
+                s
+                for s in result.candidate
+                if TARGET.interval.start <= s.interval.start and s.interval.end <= TARGET.interval.end
+            ),
+        )
+        for member, baseline in baselines.items()
+        for cls, result in zip(baseline.candidate.classes, provisional[member], strict=True)
+    )
     final = finalize_regime(
         selection,
         EcologicalRegimeMethod.BASELINE,
@@ -1142,6 +1168,7 @@ def run_chain(prepared=None):
         member_duration_tests=member_tests,
         provenance=provenance("selected"),
         provisional=tuple(result for results in provisional.values() for result in results),
+        provisional_duration_tests=provisional_tests,
     )
     assert final.requirement is not None and final.floor is not None
     issued = tuple(issue_and_assess(sample) for sample in final.requirement.samples(DesignClass.DRY))

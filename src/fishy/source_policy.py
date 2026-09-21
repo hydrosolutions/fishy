@@ -275,6 +275,56 @@ def floor_policy_components(source: DirectFloorSource) -> tuple[PolicyComponent,
             if chosen.selection is None
             else _known("potential:selected_criteria", _study(chosen.selection))
         )
+    if selected is PotentialRoute.CONVEYANCE:
+        request = source.conveyance
+        assert isinstance(result, PotentialFloorResult)
+        route = next(r for r in result.routes if r.route is PotentialRoute.CONVEYANCE)
+        conveyance = route.conveyance
+        if request is None or conveyance is None:
+            components.append(PolicyComponent("potential:conveyance", None))
+        else:
+            components.extend(
+                (
+                    _known("potential:conveyance:stopping", request.stopping),
+                    PolicyComponent("potential:conveyance:capacity", None)
+                    if request.capacity is None
+                    else _known("potential:conveyance:capacity", request.capacity),
+                    PolicyComponent("potential:conveyance:ramp", None)
+                    if request.ramp is None
+                    else _known(
+                        "potential:conveyance:ramp",
+                        (request.ramp.transition.seconds, request.ramp.rise, request.ramp.fall),
+                    ),
+                    _known(
+                        "potential:conveyance:duties",
+                        tuple(
+                            sorted(
+                                (
+                                    (d.identifier, d.location, d.source, d.authentication, d.volume, d.capacity)
+                                    for d in conveyance.selected_duties
+                                ),
+                                key=repr,
+                            )
+                        ),
+                    ),
+                )
+            )
+            relation = request.relation
+            components.append(
+                PolicyComponent("potential:conveyance:relation", None)
+                if relation is None
+                else _known(
+                    "potential:conveyance:relation",
+                    (
+                        relation.location,
+                        relation.storage_location,
+                        relation.geometry_version,
+                        relation.boundary_conditions,
+                        relation.interpolation,
+                        relation.uncertainty,
+                    ),
+                )
+            )
     components.append(
         _known(
             "potential:conditions",

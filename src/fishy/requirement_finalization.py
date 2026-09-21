@@ -6,6 +6,7 @@ versions remain unchanged. Route selection/descent is a separate caller operatio
 
 from dataclasses import dataclass, replace
 
+from fishy.conveyance_conditions import ConveyanceConditionAssessment, assess_conveyance_conditions
 from fishy.design_conditions import DesignClass
 from fishy.duration_minima import DurationThreshold
 from fishy.duration_windows import WindowUncertaintySupport
@@ -29,6 +30,7 @@ from fishy.potential_requirements import PotentialRoute
 from fishy.provisional_duration import ProvisionalDurationAssessment, recompute_provisional_duration
 from fishy.quality_activation import ComponentStatus, apply_quality_component
 from fishy.quantities import Flow
+from fishy.receptor_conditions import ReceptorConditionAssessment, assess_receptor_conditions
 from fishy.receptor_delivery import WaterRelationship
 from fishy.requirement_checks import FinalCondition, RequirementAssessment, recheck_requirement
 from fishy.requirement_construction import (
@@ -94,6 +96,7 @@ class DurationTest:
     uncertainty_support: WindowUncertaintySupport | None
     reference_relation: CandidateReferenceRelation | None
     purpose: UsePurpose
+    candidate_support: tuple[FlowSample, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.identifier.strip() or not self.member.strip():
@@ -104,6 +107,10 @@ class DurationTest:
             raise TypeError("predecessor samples must be immutable")
         if self.threshold.reference.provenance.reference_member != self.member:
             raise ValueError("duration test member must identify its threshold reference")
+        if not isinstance(self.candidate_support, tuple) or any(
+            not isinstance(s, FlowSample) for s in self.candidate_support
+        ):
+            raise TypeError("candidate uncertainty support requires immutable exact-source samples")
 
 
 @dataclass(frozen=True)
@@ -129,6 +136,7 @@ class FinalRegime:
     provisional_diagnostics: tuple[ProvisionalDurationAssessment, ...] = ()
     source_conditions: tuple[SourceConditionAssessment, ...] = ()
     source_process_conditions: tuple[ProcessConditionAssessment, ...] = ()
+    receptor_conditions: tuple[ReceptorConditionAssessment, ...] = ()
 
     @property
     def route_failure(self) -> RouteFailure | None:
@@ -181,7 +189,7 @@ def _physical_checks(family, required, assessments):
     return checks
 
 
-def _composition_obligations(composition, final):
+def _composition_obligations(composition, final, withdrawals=None):
     checks = []
     if composition.quality is not None and (final is None or final.original_quality is None):
         checks.append(Check("source_quality", CheckFinding.UNKNOWN, ("source quality requires a final recheck",)))
@@ -224,6 +232,14 @@ def _composition_obligations(composition, final):
                     )
                 )
     if composition.mapping is not None:
+        if composition.receptor_source is None:
+            checks.append(
+                Check(
+                    "source_receptor_obligations",
+                    CheckFinding.UNKNOWN,
+                    ("original receptor quantity, state and quality obligations are missing",),
+                )
+            )
         if final is None or final.mapping is None or final.receptor is None:
             checks.append(
                 Check(
@@ -234,6 +250,48 @@ def _composition_obligations(composition, final):
             )
         if final is not None and final.mapping is not None:
             original, mapped = composition.mapping.mapping, final.mapping.mapping
+            fixed = (
+                original.receptor
+                if withdrawals is None
+                else (
+                    withdrawals[0] if withdrawals and None not in withdrawals and len(set(withdrawals)) == 1 else None
+                )
+            )
+            if fixed is not None and mapped.receptor.value < fixed.value:
+                checks.append(
+                    Check(
+                        "source_receptor_quantity",
+                        CheckFinding.FAIL,
+                        ("final mapping lowers the original named receptor contribution",),
+                    )
+                )
+            if original.relationship is WaterRelationship.LATERAL:
+                if fixed is None:
+                    checks.append(
+                        Check(
+                            "source_schedule",
+                            CheckFinding.UNKNOWN,
+                            ("different or missing original schedules leave selected decomposition unresolved",),
+                        )
+                    )
+                elif mapped.receptor != fixed:
+                    checks.append(
+                        Check(
+                            "source_schedule",
+                            CheckFinding.UNKNOWN,
+                            (
+                                "changed withdrawal requires explicit alternative support and original river/receptor checks",
+                            ),
+                        )
+                    )
+                if withdrawals is None and mapped.continuing.value < original.continuing.value:
+                    checks.append(
+                        Check(
+                            "source_river_quantity",
+                            CheckFinding.FAIL,
+                            ("retained member reallocates water away from its continuing requirement",),
+                        )
+                    )
             if (original.control, original.continuing_location, original.relationship, original.context.receptor) != (
                 mapped.control,
                 mapped.continuing_location,
@@ -250,18 +308,31 @@ def _composition_obligations(composition, final):
     return checks
 
 
-def _regime_source_conditions(construction, family, assessments):
+def _regime_source_conditions(construction, family, assessments, schedules=None):
     by_key = {(a.design, a.result.sample.interval): a.result for a in assessments}
     samples = {(c.design, s.interval): s for c in family.classes for s in c.samples}
-    checks, studies = [], []
+    checks, studies, receptors = [], [], []
     for component in construction.compositions:
         key = component.design, component.result.base.interval
         result = by_key.get(key)
         label = f"source_final:{construction.member}:{key[0].value}:{key[1].start.isoformat()}"
         checks.extend(
             Check(label + ":" + c.check_id, c.finding, c.reasons)
-            for c in _composition_obligations(component.result, result)
+            for c in _composition_obligations(
+                component.result, result, schedules.get(key, ()) if schedules is not None else None
+            )
         )
+        if component.result.receptor_source is not None:
+            receptor = assess_receptor_conditions(
+                component.result.receptor_source,
+                samples[key],
+                result.receptor if result else None,
+                result.mapping if result else None,
+            )
+            receptors.append(receptor)
+            checks.extend(
+                Check(label + ":receptor:" + c.check_id, c.finding, c.reasons) for c in receptor.checks.checks
+            )
         if isinstance(construction.source, StudySource):
             for row in construction.source.studies:
                 if row.design is not key[0]:
@@ -281,13 +352,13 @@ def _regime_source_conditions(construction, family, assessments):
                         Check(label + ":study:" + original.name + ":" + c.check_id, c.finding, c.reasons)
                         for c in computed.checks.checks
                     )
-    return checks, studies
+    return checks, studies, receptors
 
 
-def _floor_source_conditions(construction, samples, assessments):
+def _floor_source_conditions(construction, samples, assessments, schedules=None):
     by_period = {r.sample.interval: r for r in assessments}
     finals = {s.interval: s for s in samples}
-    checks, studies, processes = [], [], []
+    checks, studies, processes, conveyances, receptors = [], [], [], [], []
     cache = {}
     for component in construction.components:
         period = component.composition.base.interval
@@ -295,8 +366,21 @@ def _floor_source_conditions(construction, samples, assessments):
         label = f"source_final:{construction.member}:{period.start.isoformat()}"
         checks.extend(
             Check(label + ":" + c.check_id, c.finding, c.reasons)
-            for c in _composition_obligations(component.composition, result)
+            for c in _composition_obligations(
+                component.composition, result, schedules.get(period, ()) if schedules is not None else None
+            )
         )
+        if component.composition.receptor_source is not None:
+            receptor = assess_receptor_conditions(
+                component.composition.receptor_source,
+                finals[period],
+                result.receptor if result else None,
+                result.mapping if result else None,
+            )
+            receptors.append(receptor)
+            checks.extend(
+                Check(label + ":receptor:" + c.check_id, c.finding, c.reasons) for c in receptor.checks.checks
+            )
         source = component.source
         if not isinstance(source, PotentialFloorSource):
             continue
@@ -305,6 +389,14 @@ def _floor_source_conditions(construction, samples, assessments):
         sized = cache[id(source)]
         if sized is None:
             continue
+        if sized.selected_route is PotentialRoute.CONVEYANCE and source.conveyance is not None:
+            conveyed = assess_conveyance_conditions(
+                source.conveyance, finals[period], mapping=result.mapping if result else None
+            )
+            conveyances.append(conveyed)
+            checks.extend(
+                Check(label + ":conveyance:" + c.check_id, c.finding, c.reasons) for c in conveyed.checks.checks
+            )
         original = (
             source.habitat
             if sized.selected_route is PotentialRoute.HABITAT
@@ -339,7 +431,7 @@ def _floor_source_conditions(construction, samples, assessments):
             )
             processes.append(process)
             checks.extend(Check(label + ":process:" + c.check_id, c.finding, c.reasons) for c in process.checks.checks)
-    return checks, studies, processes
+    return checks, studies, processes, conveyances, receptors
 
 
 def _duration_checks(family, duration_tests, expected, version):
@@ -567,16 +659,33 @@ def finalize_regime(
                         ("member final check changed its construction policy",),
                     )
                 )
-    source_conditions = []
+    source_conditions, receptor_conditions = [], []
+    member_maps = {
+        c.member: {(r.design, r.result.base.interval): r.result.mapping for r in c.compositions} for c in constructions
+    }
+    schedules = {
+        (c.design, sample.interval): tuple(
+            mapping.mapping.receptor
+            if (mapping := member_maps.get(member.identifier, {}).get((c.design, sample.interval))) is not None
+            and mapping.mapping.relationship is WaterRelationship.LATERAL
+            else None
+            for member in selection.members
+        )
+        for c in family.classes
+        for sample in c.samples
+    }
     for construction in constructions:
         local = next(m.candidate for m in selection.members if m.identifier == construction.member)
         for role, candidate, supplied_physics in (
             ("selected", family, physical),
             ("retained", local, tuple(a.assessment for a in assessed_members if a.member == construction.member)),
         ):
-            source_checks, conditions = _regime_source_conditions(construction, candidate, supplied_physics)
+            source_checks, conditions, receptors = _regime_source_conditions(
+                construction, candidate, supplied_physics, schedules if role == "selected" else None
+            )
             checks.extend(Check(role + ":" + c.check_id, c.finding, c.reasons) for c in source_checks)
             source_conditions.extend(conditions)
+            receptor_conditions.extend(receptors)
     provisional_diagnostics = recompute_provisional_duration(
         selection.members,
         tuple(source_results),
@@ -619,6 +728,7 @@ def finalize_regime(
         tuple(member_duration),
         provisional_diagnostics,
         tuple(source_conditions),
+        receptor_conditions=tuple(receptor_conditions),
     )
 
 
@@ -646,6 +756,8 @@ class FinalFloors:
     member_physical: tuple[FloorMemberAssessment, ...] = ()
     source_conditions: tuple[SourceConditionAssessment, ...] = ()
     source_process_conditions: tuple[ProcessConditionAssessment, ...] = ()
+    receptor_conditions: tuple[ReceptorConditionAssessment, ...] = ()
+    conveyance_conditions: tuple[ConveyanceConditionAssessment, ...] = ()
 
 
 def finalize_floors(
@@ -794,7 +906,20 @@ def finalize_floors(
         )
         if result and any(c.finding is CheckFinding.UNKNOWN for c in result.checks.checks):
             checks.append(Check(label + ":coverage", CheckFinding.UNKNOWN))
-    source_conditions, process_conditions = [], []
+    source_conditions, process_conditions, conveyance_conditions, receptor_conditions = [], [], [], []
+    member_maps = {
+        c.member: {r.composition.base.interval: r.composition.mapping for r in c.components} for c in constructions
+    }
+    schedules = {
+        sample.interval: tuple(
+            mapping.mapping.receptor
+            if (mapping := member_maps.get(member.identifier, {}).get(sample.interval)) is not None
+            and mapping.mapping.relationship is WaterRelationship.LATERAL
+            else None
+            for member in selection.members
+        )
+        for sample in series.samples
+    }
     for construction in constructions:
         member = next(m for m in selection.members if m.identifier == construction.member)
         if not isinstance(member.candidate, FloorSeries):
@@ -807,10 +932,14 @@ def finalize_floors(
                 tuple(a.result for a in original_checks if a.member == construction.member),
             ),
         ):
-            source_checks, conditions, processes = _floor_source_conditions(construction, samples, assessed)
+            source_checks, conditions, processes, conveyances, receptors = _floor_source_conditions(
+                construction, samples, assessed, schedules if role == "selected" else None
+            )
             checks.extend(Check(role + ":" + c.check_id, c.finding, c.reasons) for c in source_checks)
             source_conditions.extend(conditions)
             process_conditions.extend(processes)
+            conveyance_conditions.extend(conveyances)
+            receptor_conditions.extend(receptors)
     summary = CheckSummary(tuple(checks))
     floors = tuple(Floor(s, version) for s in series.samples) if summary.finding is CheckFinding.PASS else ()
     return FinalFloors(
@@ -820,6 +949,8 @@ def finalize_floors(
         floors,
         tuple(sources),
         original_checks,
-        tuple(source_conditions),
-        tuple(process_conditions),
+        source_conditions=tuple(source_conditions),
+        source_process_conditions=tuple(process_conditions),
+        receptor_conditions=tuple(receptor_conditions),
+        conveyance_conditions=tuple(conveyance_conditions),
     )

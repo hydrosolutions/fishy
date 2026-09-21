@@ -485,3 +485,127 @@ def test_u9_mapped_receptor_checks_cannot_be_omitted_from_final_manifest(chain):
     )
     assert original.checks.finding is CheckFinding.PASS
     assert float(original.floor.sample.value.value) == pytest.approx(12.112273310225769, rel=0, abs=TOLERANCE)
+
+
+@pytest.mark.parametrize("changed", ("zero_receptor", "relaxed_salinity"))
+def test_u9_original_receptor_obligations_survive_fresh_final_checks(chain, changed):
+    from examples.requirement_chain import accepted_evidence
+    from fishy.quantities import Volume
+    from fishy.receptor_delivery import control_equivalent
+    from fishy.requirement_checks import FinalCondition, assess_requirement
+    from fishy.requirement_finalization import finalize_regime
+
+    original = chain.final
+    assert original.floor is not None
+
+    def altered(old):
+        sample = old.sample
+        step = old.receptor.steps[0].step
+        context = step.balance.context
+        mapping = old.mapping
+        q = old.original_quality
+        if changed == "zero_receptor":
+            raw = replace(mapping.mapping, continuing=sample.value, receptor=Flow(0))
+            mapping = control_equivalent(
+                raw, accepted_evidence(delivery_scope(raw.context, raw), raw.context.provenance)
+            )
+            balance = replace(
+                step.balance, exchanges=tuple(replace(x, amount=Volume(0)) for x in step.balance.exchanges)
+            )
+            paths = tuple(
+                replace(p, pathway=replace(p.pathway, predecessor=Flow(0)), release=Volume(0)) for p in step.pathways
+            )
+            paths = tuple(
+                replace(p, evidence=accepted_evidence(delivery_scope(context, p.pathway), context.provenance))
+                for p in paths
+            )
+            step = replace(
+                step,
+                balance=balance,
+                pathways=paths,
+                evidence=accepted_evidence(delivery_scope(context, balance), context.provenance),
+            )
+            q = quality(sample.value, sample.interval, sample.provenance.reference_member)
+        else:
+            processes = tuple(replace(p, test=replace(p.test, upper=Fraction(1, 100))) for p in step.processes)
+            processes = tuple(
+                replace(p, evidence=accepted_evidence(delivery_scope(context, p.test), context.provenance))
+                for p in processes
+            )
+            step = replace(step, processes=processes)
+        step = replace(
+            step,
+            checking_evidence=accepted_evidence(
+                delivery_scope(context, step.checking_subject),
+                replace(context.provenance, source="independent exact modified schedule check"),
+            ),
+        )
+        result = assess_requirement(
+            sample,
+            old.required,
+            quality=q,
+            mapping=mapping,
+            receptor=step,
+            hydraulic_required=old.hydraulics.required,
+            hydraulic_components=old.hydraulics.components,
+            study_selection=old.study.selection,
+            study_relations=tuple(r.relation for r in old.study.responses if r.relation is not None),
+        )
+        assert result.checks.finding is CheckFinding.PASS
+        return result
+
+    selected = tuple(replace(a, result=altered(a.result)) for a in original.physical)
+    retained = tuple(
+        replace(a, assessment=replace(a.assessment, result=altered(a.assessment.result)))
+        for a in original.member_physical
+    )
+    declined = finalize_regime(
+        original.selection,
+        original.method,
+        tuple(FinalCondition),
+        selected,
+        duration_tests=tuple(a.test for a in original.duration),
+        expected_duration_tests=(("A", "annual7-T100"), ("B", "annual7-T100")),
+        version="changed-receptor-policy",
+        provenance=original.floor.sample.provenance,
+        constructions=tuple(a.construction for a in original.constructions),
+        member_physical=retained,
+        member_duration_tests=tuple(a.test for a in original.member_duration),
+    )
+    assert declined.checks.finding is CheckFinding.FAIL
+    assert declined.requirement is declined.floor is None
+    assert len(declined.receptor_conditions) == 5840
+    assert all(r.checks.finding is CheckFinding.FAIL for r in declined.receptor_conditions)
+    assert original.checks.finding is CheckFinding.PASS
+
+
+def test_u9_missing_original_receptor_proof_is_pending(chain):
+    from fishy.requirement_checks import FinalCondition
+    from fishy.requirement_finalization import finalize_regime
+
+    original = chain.final
+    assert original.floor is not None
+    sources = tuple(
+        replace(
+            a.construction,
+            compositions=tuple(
+                replace(c, result=replace(c.result, receptor_source=None)) for c in a.construction.compositions
+            ),
+        )
+        for a in original.constructions
+    )
+    declined = finalize_regime(
+        original.selection,
+        original.method,
+        tuple(FinalCondition),
+        original.physical,
+        duration_tests=tuple(a.test for a in original.duration),
+        expected_duration_tests=(("A", "annual7-T100"), ("B", "annual7-T100")),
+        version="missing-original-receptor-goals",
+        provenance=original.floor.sample.provenance,
+        constructions=sources,
+        member_physical=original.member_physical,
+        member_duration_tests=tuple(a.test for a in original.member_duration),
+    )
+    assert declined.checks.finding is CheckFinding.UNKNOWN
+    assert declined.requirement is declined.floor is None

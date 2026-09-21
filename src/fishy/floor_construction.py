@@ -324,6 +324,7 @@ def assess_floor_construction(
             quality=q,
             mapping=mapping.mapping if mapping else None,
             mapping_evidence=mapping.evidence if mapping else None,
+            receptor_source=component.composition.receptor_source,
         )
         compositions.append(recomputed)
         checks.extend(

@@ -187,6 +187,37 @@ requirement and deliverability. The complete requirement remains unchanged.
 issued comparators. An annual scalar floor can be carried unchanged onto its
 applicable daily control interval; do not change its value from actual delivery.
 
+## Original obligations at final flow
+
+`IntervalComposition.receptor_source` retains the original `DeliveryStep`.
+Finalization repeats its quantity, state, salinity, pathway and water-account checks
+in `receptor_conditions`. Fresh final evidence cannot remove an original duty or
+relax its limits. A native storage endpoint remains an exact endpoint, not an
+inferred minimum. Missing original proof stays unknown.
+
+For lateral water, keep the original supported withdrawal schedule. In the worked
+example it is 1 m³/s, so selected continuing flow is selected upstream flow minus
+1 m³/s. No second median or envelope is applied to components. Different original
+schedules leave the selected decomposition pending. A changed withdrawal is not
+an automatic reallocation: supply a supported alternative with the original river
+and receptor constraints, or recompose the family before selection. Shared water
+uses the actual shared flow for physical checks.
+
+For a selected service-conveyance route, `conveyance_conditions` evaluates the
+actual final local flow against the original relation domain, capacity, ramp and
+service balance. It does not resize the service requirement from the quality
+uplift. Excess remains separate from the fixed service duty. Only the original
+numerical stopping tolerance applies to the service balance; the raw deficit is
+retained and capacity/ramp limits are not relaxed.
+
+`provisional_duration_tests` can carry the original local threshold and scientific
+support independently of the final control-section test. Optional
+`DurationTest.candidate_support` supplies uncertainty for exact native source
+samples. Values, location, period and provenance must match; only uncertainty can
+be added. The worked example retains eight complete local-R provisional PASS
+assessments. Missing support remains unknown. These diagnostics never gate a
+supported repaired final requirement.
+
 ## Limits
 
 The report controls these proposed Uzbek operators. It supplies no adopted

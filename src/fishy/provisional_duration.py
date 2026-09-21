@@ -6,7 +6,7 @@ Final-flow predecessors and uncertainty support are not pre-quality evidence.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from fishy.design_conditions import DesignClass
@@ -80,6 +80,20 @@ def _actual_source(
     return tuple(sorted(samples, key=lambda sample: sample.interval.start)), tuple(checks)
 
 
+def _supported_source(source: tuple[FlowSample, ...], support: tuple[FlowSample, ...]) -> tuple[FlowSample, ...]:
+    """Attach supplied bounds only after exact native sample binding."""
+    native = {sample.interval: sample for sample in source}
+    supplied = {}
+    for sample in support:
+        if sample.interval not in native or sample.interval in supplied:
+            raise ValueError("candidate support requires unique actual native source intervals")
+        actual = native[sample.interval]
+        if replace(sample, uncertainty=actual.uncertainty) != actual:
+            raise ValueError("candidate support must equal the native source except for uncertainty")
+        supplied[sample.interval] = sample
+    return tuple(supplied.get(sample.interval, sample) for sample in source)
+
+
 def recompute_provisional_duration(
     members: tuple[RequirementMember, ...],
     constructions: tuple[ConstructionAssessment, ...],
@@ -91,7 +105,9 @@ def recompute_provisional_duration(
     """Retain each configured member/class diagnostic, including missing inputs.
 
     Construction assessments must be recomputed by the finalizer first. A supplied
-    provisional DurationTest is explicit pre-quality context, not a prior result.
+    provisional DurationTest supplies a separately accepted local threshold and
+    pre-quality context, not a prior result. Its duration rule, return period,
+    estimator, profile and purpose must preserve the configured test policy.
     """
     by_member = {m.identifier: m for m in members}
     if len(by_member) != len(members):
@@ -118,8 +134,22 @@ def recompute_provisional_duration(
     for key, context in contexts.items():
         if key not in tests:
             raise ValueError("pre-quality context requires configured duration test input")
-        if (context.threshold, context.purpose) != (tests[key].threshold, tests[key].purpose):
-            raise ValueError("pre-quality context cannot change threshold or purpose")
+        local = context.threshold
+        final = tests[key].threshold
+        if (
+            local.reference.rule,
+            local.return_period,
+            local.estimator,
+            local.profile_version,
+            context.purpose,
+        ) != (
+            final.reference.rule,
+            final.return_period,
+            final.estimator,
+            final.profile_version,
+            tests[key].purpose,
+        ):
+            raise ValueError("pre-quality context cannot change configured threshold policy or purpose")
     records = []
     for member, identifier, design in sorted(expected, key=lambda k: (k[0], k[1], k[2].value)):
         family = by_member[member].candidate
@@ -136,12 +166,16 @@ def recompute_provisional_duration(
             missing.append(Check("test", CheckFinding.UNKNOWN, ("configured duration input missing",)))
         result = None
         if source and test is not None:
+            # A local reference is a separate scientific product. Never borrow
+            # acceptance for the mapped/final location's threshold.
+            local_test = context if context is not None else test
+            candidate = _supported_source(source, context.candidate_support) if context is not None else source
             relation = context.reference_relation if context is not None else None
             identity_changed = any(
-                getattr(source[0].provenance, f) != getattr(test.threshold.reference.provenance, f)
+                getattr(source[0].provenance, f) != getattr(local_test.threshold.reference.provenance, f)
                 for f in ("scenario", "reference_member", "reference_kind")
             )
-            if any(sample.location != test.threshold.reference.location for sample in source):
+            if any(sample.location != local_test.threshold.reference.location for sample in source):
                 missing.append(
                     Check(
                         "reference_location",
@@ -150,6 +184,18 @@ def recompute_provisional_duration(
                             "pre-quality source location differs from the configured duration reference; "
                             "a provenance relation does not authorize spatial mapping",
                         ),
+                    )
+                )
+            elif context is not None and any(
+                getattr(sample.provenance, field) != getattr(local_test.threshold.reference.provenance, field)
+                for sample in source
+                for field in ("reference_member", "reference_kind")
+            ):
+                missing.append(
+                    Check(
+                        "reference_meaning",
+                        CheckFinding.UNKNOWN,
+                        ("local duration reference must retain the actual pre-quality member and reference meaning",),
                     )
                 )
             elif identity_changed and relation is None:
@@ -163,14 +209,14 @@ def recompute_provisional_duration(
                 if any(s.interval.end > family.basis.period.start for s in predecessors):
                     raise ValueError("pre-quality predecessors cannot replace source days")
                 result = assess_low_flow(
-                    (*predecessors, *source),
+                    (*predecessors, *candidate),
                     family.basis.period,
-                    test.threshold,
+                    local_test.threshold,
                     stage=AssessmentStage.PROVISIONAL,
                     candidate_basis=f"pre-quality:{member}:{identifier}:{design.value}",
                     provenance=source[0].provenance,
                     predecessor_basis=context.predecessor_basis if context is not None else None,
-                    scientific_assessment=test.scientific_assessment,
+                    scientific_assessment=local_test.scientific_assessment,
                     uncertainty_support=context.uncertainty_support if context is not None else None,
                     purpose=test.purpose,
                     reference_relation=relation,

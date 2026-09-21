@@ -17,6 +17,7 @@ from fishy.annual_statistics import (
     AnnualReference,
     ExceedanceProbability,
     ImportedDerivation,
+    TrendTreatment,
     YearProbability,
     annual_use_checks,
     empirical_membership,
@@ -327,6 +328,51 @@ class DailyPattern:
 
     def __post_init__(self) -> None:
         _receiving_calendar(self.magnitude, self.calendar)
+        for values, kind in (
+            (self.samples, FlowSample),
+            (self.selected, SourceContribution),
+            (self.retained, SourceContribution),
+            (self.exclusions, SourceExclusion),
+            (self.references, AnalogueReference),
+            (self.alignment_iterations, AlignmentIteration),
+            (self.reasons, str),
+        ):
+            if not isinstance(values, tuple) or any(not isinstance(value, kind) for value in values):
+                raise TypeError("daily pattern carriers must be immutable typed tuples")
+        if self.shape is not None and (
+            not isinstance(self.shape, tuple) or any(not isinstance(value, Fraction) for value in self.shape)
+        ):
+            raise TypeError("shape must be an immutable exact tuple")
+        for contributions in (self.selected, self.retained):
+            keys = [(c.source.location, c.source.calendar.interval) for c in contributions]
+            if len(set(keys)) != len(keys):
+                raise ValueError("duplicate donor/source-year contribution cannot manufacture support")
+        selected = {(c.source.location, c.source.calendar.interval): c for c in self.selected}
+        for contribution in self.retained:
+            key = (contribution.source.location, contribution.source.calendar.interval)
+            if key not in selected:
+                raise ValueError("retained contribution must belong to original selected set")
+            original = selected[key]
+            if (
+                contribution.source != original.source
+                or contribution.probability != original.probability
+                or contribution.mapped_shares != original.mapped_shares
+            ):
+                raise ValueError("retained contribution changed its original source/membership/mapping")
+        if self.membership != _summary(self.retained, self.magnitude.target.value):
+            raise ValueError("membership diagnostics must match actual retained sources")
+        if self.profile is not None and self.method in (
+            PatternMethod.CALENDAR,
+            PatternMethod.ALIGNED,
+            PatternMethod.FALLBACK,
+        ):
+            if self.support != _support(self.retained, self.profile):
+                raise ValueError("support diagnostics must match actual retained sources")
+            for contribution in self.selected:
+                if not isinstance(contribution.mapped_shares, tuple) or contribution.mapped_shares != normalize_shares(
+                    map_calendar(contribution.source.calendar, contribution.source.volumes, self.calendar)
+                ):
+                    raise ValueError("selected calendar mapping differs from complete original source")
         if not isinstance(self.purpose, UsePurpose) or not self.requested_use.strip():
             raise ValueError("pattern requires explicit scoped intended use")
         if self.magnitude_evidence != (
@@ -374,7 +420,8 @@ class DailyPattern:
         if self.retained:
             for contribution in self.retained:
                 if (
-                    len(contribution.retained_shares) != self.calendar.days
+                    not isinstance(contribution.retained_shares, tuple)
+                    or len(contribution.retained_shares) != self.calendar.days
                     or sum(contribution.retained_shares, Fraction()) != 1
                     or any(value < 0 for value in contribution.retained_shares)
                 ):
@@ -437,8 +484,26 @@ class DailyPattern:
                 CheckFinding.FAIL if overlap else CheckFinding.PASS,
                 tuple(f"actual source climate cluster also withheld: {cluster}" for cluster in sorted(overlap)),
             )
+        retained_locations = {c.source.location for c in self.retained}
+        source_climate = []
+        for index, reference in enumerate(self.references):
+            if reference.reference.location not in retained_locations:
+                continue
+            if reference.reference.provenance.reference_kind is not ReferenceKind.PRESENT_CLIMATE_NATURAL:
+                continue
+            trend = reference.reference.trend
+            finding = (
+                CheckFinding.FAIL
+                if trend is TrendTreatment.UNTREATED
+                else CheckFinding.UNKNOWN
+                if trend is TrendTreatment.UNASSESSED
+                else CheckFinding.PASS
+            )
+            source_climate.append(
+                Check(f"source_climate_{index}", finding, (f"actual donor climate treatment: {trend.value}",))
+            )
         support = _support(self.retained, self.profile).checks if self.profile is not None else ()
-        return CheckSummary((annual, shape, source_separation, *support))
+        return CheckSummary((annual, shape, source_separation, *source_climate, *support))
 
     @property
     def volume(self) -> Volume | None:
@@ -918,7 +983,21 @@ def pattern_product(pattern: DailyPattern, *, intended_use: str, purpose: UsePur
     source_records = tuple(sorted(repr(reference) for reference in pattern.references))
     reference_identity = sha256(repr((pattern.magnitude.reference_identity, source_records)).encode()).hexdigest()
     result_identity = sha256(
-        repr((pattern.samples, pattern.profile, pattern.method, pattern.reasons, pattern.imported_derivation)).encode()
+        repr(
+            (
+                pattern.samples,
+                pattern.profile,
+                pattern.method,
+                pattern.reasons,
+                pattern.imported_derivation,
+                pattern.selected,
+                pattern.retained,
+                pattern.exclusions,
+                pattern.membership,
+                pattern.support,
+                pattern.alignment_iterations,
+            )
+        ).encode()
     ).hexdigest()
     return HydrologicalProduct(
         scope=pattern_scope(pattern.magnitude, calendar, pattern.profile, intended_use),

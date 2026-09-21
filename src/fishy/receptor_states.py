@@ -310,7 +310,9 @@ def assess_receptor(profile: ReceptorProfile, states: tuple[ReceptorState, ...])
                             state.evidence, profile.context.evidence_scope(profile.context.candidate, interval)
                         ),
                     )
-                    restrictions = warmup_restrictions(state.evidence.provenance, interval)
+                    restrictions = warmup_restrictions(state.evidence.provenance, interval) + warmup_restrictions(
+                        target.evidence.provenance, interval
+                    )
                     if (
                         state.presence is Presence.PRESENT
                         and not restrictions
@@ -436,9 +438,14 @@ def assess_joint_duration(assessment: ReceptorAssessment, criterion: DurationCri
     permission = permitted_use(
         criterion.evidence, profile.context.evidence_scope(criterion.identifier, profile.context.period)
     )
-    if permission.finding is not CheckFinding.PASS or criterion.boundary_history is BoundaryHistory.REQUIRED_MISSING:
+    restrictions = warmup_restrictions(criterion.evidence.provenance, profile.context.period)
+    if (
+        permission.finding is not CheckFinding.PASS
+        or restrictions
+        or criterion.boundary_history is BoundaryHistory.REQUIRED_MISSING
+    ):
         finding = CheckFinding.UNKNOWN
-        reasons += permission.reasons + ("duration use or required boundary history unresolved",)
+        reasons += permission.reasons + restrictions + ("duration use or required boundary history unresolved",)
     return DurationAssessment(
         assessment, criterion, Duration(lower), Duration(upper), raw, Check(criterion.identifier, finding, reasons)
     )

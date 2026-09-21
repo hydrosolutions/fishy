@@ -18,16 +18,19 @@ from fishy.evidence import (
     Provenance,
     ScientificAdequacy,
 )
+from fishy.quality import ChemicalBehavior, ChemicalIdentity
 from fishy.quantities import Flow, Volume
 from fishy.receptor_delivery import (
     BoundInclusion,
     ControlMapping,
+    CoupledStateObjective,
     DeliveryContext,
     DeliveryStep,
     ExchangeDirection,
     Pathway,
     PathwayRelease,
     ProcessTest,
+    SalinitySupport,
     StorageBalance,
     SupportedProcessTest,
     WaterExchange,
@@ -38,6 +41,7 @@ from fishy.receptor_delivery import (
     map_arrival,
     storage_arrival,
 )
+from fishy.receptor_states import Compartment, ReceptorDomain, ReceptorVariable, StateStatistic
 from fishy.spatial import CalculationSection, Location, Reach, WaterBody
 from fishy.time import Interval
 
@@ -371,5 +375,365 @@ def test_public_delivery_example_executes_without_simulator_import(monkeypatch, 
     monkeypatch.setattr(builtins, "__import__", without_simulator)
     runpy.run_module("examples.receptor_delivery", run_name="__main__")
     assert capsys.readouterr().out == (
-        "arrival_m3= 90\ncontrol_m3= 100\nfinal_storage_m3= 200\nfinding= pass\nofficial_admissibility= pending\n"
+        "arrival_m3= 90\ncontrol_m3= 100\nfinal_storage_m3= 200\nfinding= pass\nofficial_admissibility= pending\nnonstorage_finding= pass\n"
     )
+
+
+def wet_area_step():
+    """Selected schedule with a supported area target, not a storage target."""
+    step = selected_step(balance(target=None))
+    salinity_domain = ReceptorDomain(
+        ReceptorVariable.SALINITY,
+        Compartment.RESIDENT_WATER,
+        "mixed compartment; conservative dissolved salt as supplied chloride",
+        ChemicalIdentity("chloride", "Cl-", "as chloride", "dissolved", ChemicalBehavior.CONSERVATIVE),
+    )
+    salt = replace(step.processes[0].test, variable="salinity", reference=salinity_domain.basis)
+    step = replace(step, processes=(SupportedProcessTest(salt, evidence(salt.context, salt)),))
+    area = ProcessTest(
+        "wet-area",
+        step.balance.context,
+        "wet_area",
+        "m2",
+        "surveyed wetland footprint v1",
+        Fraction(120),
+        Fraction(100),
+        None,
+        BoundInclusion.INCLUSIVE,
+        "coupled inundation study v1",
+    )
+    objective = CoupledStateObjective(
+        SupportedProcessTest(area, evidence(area.context, area)),
+        Volume(200),
+        "coupled surface-groundwater relation v1",
+        "surveyed footprint, supplied boundary head and selected releases",
+        "illustrative exact response; not a calibration",
+        StateStatistic.WHOLE_INTERVAL,
+        StateStatistic.WHOLE_INTERVAL,
+        (step.balance.context.period,),
+        "salinity",
+        salinity_domain,
+        SalinitySupport.COUPLED_MODEL,
+    )
+    step = replace(step, state_objective=objective)
+    return coupled_reviewed(step)
+
+
+def coupled_reviewed(step):
+    return reviewed(
+        replace(step, coupled_evidence=evidence(step.balance.context, step.coupled_subject, "coupled model study"))
+    )
+
+
+def test_supported_nonstorage_schedule_is_assessed_without_fake_storage_target():
+    step = wet_area_step()
+    result = assess_delivery((step,), period=step.balance.context.period)
+    assert result.checks.finding is CheckFinding.PASS
+    assert step.balance.target is None
+    assert result.steps[0].final_storage == Volume(200)
+    assert result.steps[0].residual.arrival is None
+
+
+@pytest.mark.parametrize(
+    "variable, units, value, lower, upper",
+    [
+        ("wet_area", "m2", Fraction(120), Fraction(100), Fraction(150)),
+        ("groundwater_head", "m", Fraction(-2), Fraction(-3), Fraction(-1)),
+        ("level", "m", Fraction(12), Fraction(10), Fraction(15)),
+        ("hydroperiod", "s", Fraction(43200), Fraction(36000), Fraction(86400)),
+    ],
+)
+def test_supported_coupled_quantity_domains(variable, units, value, lower, upper):
+    step = wet_area_step()
+    objective = step.state_objective
+    assert objective is not None
+    test = replace(objective.quantity.test, variable=variable, units=units, value=value, lower=lower, upper=upper)
+    objective = replace(objective, quantity=SupportedProcessTest(test, evidence(test.context, test)))
+    step = coupled_reviewed(replace(step, state_objective=objective))
+    result = assess_delivery((step,), period=step.balance.context.period)
+    assert result.checks.finding is CheckFinding.PASS
+    assert result.steps[0].target_residual_m3 is None
+    assert result.steps[0].step.state_objective == objective
+
+
+@pytest.mark.parametrize(
+    "mode",
+    [
+        "relation_missing",
+        "relation_unsupported",
+        "quantity_missing",
+        "quantity_unsupported",
+        "quality_missing",
+        "independent_missing",
+        "changed_schedule",
+        "endpoint_only",
+        "missing_interval",
+    ],
+)
+def test_nonstorage_missing_or_unsupported_remains_unresolved(mode):
+    step = wet_area_step()
+    objective = step.state_objective
+    assert objective is not None
+    if mode == "relation_missing":
+        step = replace(step, coupled_evidence=None)
+    elif mode == "relation_unsupported":
+        assert step.coupled_evidence is not None
+        step = replace(
+            step, coupled_evidence=replace(step.coupled_evidence, scientific_adequacy=ScientificAdequacy.NOT_ACCEPTED)
+        )
+    elif mode in ("quantity_missing", "quantity_unsupported"):
+        quantity = objective.quantity
+        if mode == "quantity_missing":
+            test = replace(quantity.test, value=None)
+            quantity = SupportedProcessTest(test, evidence(test.context, test))
+        else:
+            assert quantity.evidence is not None
+            quantity = replace(
+                quantity, evidence=replace(quantity.evidence, scientific_adequacy=ScientificAdequacy.NOT_ACCEPTED)
+            )
+        step = coupled_reviewed(replace(step, state_objective=replace(objective, quantity=quantity)))
+    elif mode == "quality_missing":
+        step = reviewed(replace(step, processes=()))
+    elif mode == "independent_missing":
+        step = replace(step, checking_evidence=None)
+    elif mode == "changed_schedule":
+        # Changing a physical study parameter without reacceptance cannot reuse the coupled result.
+        path = replace(step.pathways[0].pathway, capacity=Flow(2))
+        selected = PathwayRelease(path, step.pathways[0].release, evidence(path.context, path))
+        step = reviewed(replace(step, pathways=(selected,)))
+    elif mode == "endpoint_only":
+        step = coupled_reviewed(
+            replace(step, state_objective=replace(objective, temporal_support=StateStatistic.INTERVAL_END))
+        )
+    else:
+        expected = (step.balance.context.period, context(1).period)
+        step = coupled_reviewed(replace(step, state_objective=replace(objective, expected_intervals=expected)))
+    result = assess_delivery((step,), period=step.balance.context.period)
+    assert result.checks.finding is CheckFinding.UNKNOWN
+    assert result.steps[0].residual.arrival is None
+
+
+@pytest.mark.parametrize("mode", ["quantity_failure", "strict_equality", "inventory_failure", "capacity_failure"])
+def test_nonstorage_infeasible_candidate_preserves_quantity_requirement(mode):
+    step = wet_area_step()
+    objective = step.state_objective
+    assert objective is not None
+    if mode in ("quantity_failure", "strict_equality"):
+        test = replace(
+            objective.quantity.test,
+            value=Fraction(99) if mode == "quantity_failure" else Fraction(100),
+            boundary=BoundInclusion.INCLUSIVE if mode == "quantity_failure" else BoundInclusion.STRICT,
+        )
+        objective = replace(objective, quantity=SupportedProcessTest(test, evidence(test.context, test)))
+        step = coupled_reviewed(replace(step, state_objective=objective))
+    elif mode == "inventory_failure":
+        step = coupled_reviewed(replace(step, state_objective=replace(objective, final_inventory=Volume(201))))
+    else:
+        path = replace(step.pathways[0].pathway, capacity=Flow(0))
+        selected = PathwayRelease(path, Volume(100), evidence(path.context, path))
+        step = coupled_reviewed(replace(step, pathways=(selected,)))
+    result = assess_delivery((step,), period=step.balance.context.period)
+    assert result.checks.finding is CheckFinding.FAIL
+    assert step.state_objective is not None
+    assert step.state_objective.quantity.test.lower == Fraction(100)
+    assert step.balance.target is None
+
+
+def test_nonstorage_cannot_replace_missing_storage_target_implicitly():
+    step = selected_step(balance(target=None))
+    assert assess_delivery((step,)).checks.finding is CheckFinding.UNKNOWN
+    objective = wet_area_step().state_objective
+    assert objective is not None
+    with pytest.raises(ValueError, match="storage target"):
+        replace(selected_step(), state_objective=objective)
+    with pytest.raises(ValueError, match="variable/unit"):
+        replace(
+            objective,
+            quantity=replace(
+                objective.quantity, test=replace(objective.quantity.test, variable="salinity", units="kg/m3")
+            ),
+        )
+    with pytest.raises(ValueError, match="variable/unit"):
+        replace(objective, quantity=replace(objective.quantity, test=replace(objective.quantity.test, units="m")))
+    with pytest.raises(ValueError, match="adjacent"):
+        replace(objective, expected_intervals=(context().period, context(2).period))
+
+
+def test_coupled_expected_subdaily_axis_cannot_be_replaced_by_daily_endpoint():
+    step = wet_area_step()
+    objective = step.state_objective
+    assert objective is not None
+    period = step.balance.context.period
+    midpoint = period.start + timedelta(hours=12)
+    with pytest.raises(ValueError, match="expected trajectory"):
+        replace(objective, expected_intervals=(Interval(period.start, midpoint), Interval(midpoint, period.end)))
+
+
+def coupled_trajectory():
+    first = wet_area_step()
+    objective = first.state_objective
+    assert objective is not None
+    ctx = context(1)
+    b = replace(balance(ctx, target=None), initial=Volume(200))
+    path = replace(pathway(ctx), initial_storage=Volume(5), predecessor=Flow(Fraction(100, 86400)))
+    selected = PathwayRelease(path, Volume(98), evidence(ctx, path))
+    second = selected_step(b, (selected,))
+    salt = replace(first.processes[0].test, context=ctx)
+    second = replace(second, processes=(SupportedProcessTest(salt, evidence(ctx, salt)),))
+    area = replace(objective.quantity.test, context=ctx)
+    expected = (first.balance.context.period, ctx.period)
+    second_objective = replace(
+        objective,
+        quantity=SupportedProcessTest(area, evidence(ctx, area)),
+        final_inventory=Volume(300),
+        expected_intervals=expected,
+    )
+    first = coupled_reviewed(replace(first, state_objective=replace(objective, expected_intervals=expected)))
+    second = coupled_reviewed(replace(second, state_objective=second_objective))
+    return first, second
+
+
+def test_coupled_complete_trajectory_rechecks_intermediate_quantity_and_balance():
+    first, second = coupled_trajectory()
+    period = Interval(first.balance.context.period.start, second.balance.context.period.end)
+    assert assess_delivery((first, second), period=period).checks.finding is CheckFinding.PASS
+    objective = first.state_objective
+    assert objective is not None
+    bad = replace(objective.quantity.test, value=Fraction(50))
+    failed = coupled_reviewed(
+        replace(
+            first, state_objective=replace(objective, quantity=SupportedProcessTest(bad, evidence(bad.context, bad)))
+        )
+    )
+    result = assess_delivery((failed, second), period=period)
+    assert result.steps[-1].checks.finding is CheckFinding.PASS
+    assert result.checks.finding is CheckFinding.FAIL
+    # A terminal state pass does not repair the first independent physical balance.
+    failed = coupled_reviewed(replace(first, state_objective=replace(objective, final_inventory=Volume(199))))
+    result = assess_delivery((failed, second), period=period)
+    assert result.steps[-1].checks.finding is CheckFinding.PASS
+    assert result.checks.finding is CheckFinding.FAIL
+
+
+def test_changed_release_invalidates_prior_coupled_evidence():
+    step = wet_area_step()
+    old_evidence = step.coupled_evidence
+    changed = replace(step.pathways[0], release=Volume(101))
+    objective = step.state_objective
+    assert objective is not None
+    step = reviewed(replace(step, pathways=(changed,), state_objective=replace(objective, final_inventory=Volume(201))))
+    assert step.coupled_evidence == old_evidence
+    result = assess_delivery((step,))
+    assert result.checks.finding is CheckFinding.UNKNOWN
+    assert (
+        next(c for c in result.steps[0].checks.checks if c.check_id == "coupled_relation").finding
+        is CheckFinding.UNKNOWN
+    )
+
+
+def test_nonstorage_required_quantity_failure_survives_missing_salinity():
+    step = wet_area_step()
+    objective = step.state_objective
+    assert objective is not None
+    test = replace(objective.quantity.test, value=Fraction(50))
+    objective = replace(objective, quantity=SupportedProcessTest(test, evidence(test.context, test)))
+    step = coupled_reviewed(replace(step, state_objective=objective, processes=()))
+    result = assess_delivery((step,))
+    assert result.checks.finding is CheckFinding.FAIL
+    assert any(c.finding is CheckFinding.UNKNOWN for c in result.checks.checks)
+    assert objective.quantity.evidence is not None
+    unsupported = replace(objective.quantity.evidence, scientific_adequacy=ScientificAdequacy.NOT_ACCEPTED)
+    step = coupled_reviewed(
+        replace(step, state_objective=replace(objective, quantity=SupportedProcessTest(test, unsupported)))
+    )
+    assert assess_delivery((step,)).checks.finding is CheckFinding.UNKNOWN
+
+
+def test_nonstorage_arbitrary_process_does_not_replace_named_salinity():
+    step = wet_area_step()
+    test = replace(step.processes[0].test, identifier="temperature", variable="temperature", units="degC")
+    step = coupled_reviewed(
+        replace(
+            step,
+            required_processes=("temperature",),
+            processes=(SupportedProcessTest(test, evidence(test.context, test)),),
+        )
+    )
+    result = assess_delivery((step,))
+    assert result.checks.finding is CheckFinding.UNKNOWN
+    assert (
+        next(c for c in result.steps[0].checks.checks if c.check_id == "salinity_profile").finding
+        is CheckFinding.UNKNOWN
+    )
+
+
+def test_coupled_quantity_units_do_not_authenticate_salinity_variable():
+    step = wet_area_step()
+    wrong = replace(step.processes[0].test, variable="temperature")
+    step = coupled_reviewed(replace(step, processes=(SupportedProcessTest(wrong, evidence(wrong.context, wrong)),)))
+    assert assess_delivery((step,)).checks.finding is CheckFinding.UNKNOWN
+
+
+def test_unsupported_coupled_model_cannot_support_its_numeric_salinity_failure():
+    step = wet_area_step()
+    salt = replace(step.processes[0].test, value=Fraction(2))
+    step = coupled_reviewed(replace(step, processes=(SupportedProcessTest(salt, evidence(salt.context, salt)),)))
+    assert step.coupled_evidence is not None
+    step = replace(
+        step, coupled_evidence=replace(step.coupled_evidence, scientific_adequacy=ScientificAdequacy.NOT_ACCEPTED)
+    )
+    assert assess_delivery((step,)).checks.finding is CheckFinding.UNKNOWN
+
+
+def test_coupled_salinity_domain_rejects_incoming_and_wrong_chemical_basis():
+    step = wet_area_step()
+    objective = step.state_objective
+    assert objective is not None
+    with pytest.raises(ValueError, match="incoming"):
+        replace(objective, salinity_domain=replace(objective.salinity_domain, compartment=Compartment.INCOMING_WATER))
+    wrong = replace(step.processes[0].test, reference="source water only")
+    step = coupled_reviewed(replace(step, processes=(SupportedProcessTest(wrong, evidence(wrong.context, wrong)),)))
+    assert assess_delivery((step,)).checks.finding is CheckFinding.UNKNOWN
+
+
+def test_explicit_supported_root_zone_salinity_preserves_domain():
+    step = wet_area_step()
+    objective = step.state_objective
+    assert objective is not None
+    domain = replace(
+        objective.salinity_domain, compartment=Compartment.ROOT_ZONE, basis="surveyed root zone dissolved chloride"
+    )
+    salt = replace(step.processes[0].test, reference=domain.basis)
+    step = coupled_reviewed(
+        replace(
+            step,
+            state_objective=replace(objective, salinity_domain=domain),
+            processes=(SupportedProcessTest(salt, evidence(salt.context, salt)),),
+        )
+    )
+    result = assess_delivery((step,))
+    assert result.checks.finding is CheckFinding.PASS
+    assert result.steps[0].step.state_objective is not None
+    assert result.steps[0].step.state_objective.salinity_domain.compartment is Compartment.ROOT_ZONE
+
+
+def test_independent_salinity_failure_survives_unsupported_coupled_model():
+    step = wet_area_step()
+    objective = step.state_objective
+    assert objective is not None
+    salt = replace(step.processes[0].test, value=Fraction(2))
+    objective = replace(objective, salinity_support=SalinitySupport.INDEPENDENT_IMPORT)
+    step = replace(step, state_objective=objective, processes=(SupportedProcessTest(salt, None),))
+    # Independent acceptance binds chemical form, compartment, basis and numeric test.
+    salt_evidence = evidence(salt.context, step.salinity_subject, "independent receptor sampling")
+    step = coupled_reviewed(replace(step, processes=(SupportedProcessTest(salt, salt_evidence),)))
+    assert step.coupled_evidence is not None
+    step = replace(
+        step, coupled_evidence=replace(step.coupled_evidence, scientific_adequacy=ScientificAdequacy.NOT_ACCEPTED)
+    )
+    result = assess_delivery((step,))
+    assert result.checks.finding is CheckFinding.FAIL
+    assert any(c.finding is CheckFinding.UNKNOWN for c in result.checks.checks)
+    # A generic numeric-test acceptance is insufficient for an independent chemical/domain claim.
+    wrong = replace(step, processes=(SupportedProcessTest(salt, evidence(salt.context, salt)),))
+    assert assess_delivery((wrong,)).checks.finding is CheckFinding.UNKNOWN

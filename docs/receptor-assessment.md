@@ -97,6 +97,7 @@ Additional clause witnesses:
 | Count fluxes once | `test_duplicate_carrier_load_and_account_mismatch_rejected` | Duplicate carrier/load and wrong receptor rejected |
 | Supported specialist model imports | `test_supported_root_zone_import_and_target_evidence_restriction` | Correct root-zone target/import pass; restricted tolerance remains unknown |
 | Evidence and warm-up retention | `test_exact_evidence_scope_and_warmup_restrictions`, `test_inventory_physical_warmup_cannot_be_erased_by_assessment_evidence` | Foreign candidate scope and physical warm-up cannot pass; physical warm-up regression first failed before fix |
+| Supporting model and criterion warm-up | `test_supporting_inventory_model_warmup_prevents_supported_pass`, `test_duration_criterion_warmup_prevents_supported_pass`, `test_target_criterion_warmup_prevents_supported_pass`, `test_target_warmup_only_excludes_overlapping_requested_slots` | Excluded mixing/remobilisation/target/duration evidence cannot support pass or fail; numerical comparisons and independently supported storage survive; four original-head red cases preceded fixes |
 | Immutable configuration isolation | `test_receptor_profile_immutable_scenario_isolation` | New version/limit can pass; earlier profile/result still fails |
 | Executable public example | `test_public_receptor_example` | Storage pass, salt/joint fail, complete endpoint coverage |
 
@@ -118,4 +119,4 @@ Site targets, pathway/model suitability, groundwater exchange physics, biologica
 
 ### Execution record
 
-The receptor suites execute **65 tests** (42 state/inventory/duration and 23 delivery). After merging hydraulic delivery `6a92a9b8be2da154aafd60297565eb1533fea59f`, the final full repository suite executed **1454 passing tests**, including all 65 receptor tests. Ruff check, Ruff format check and ty check pass on the combined tree. The state example uses the ordinary mandatory Polars dependency but no simulator; `test_receptor_example_never_imports_simulator` blocks Taqsim/Incidence imports while executing its real public entry point. Delivery additionally executes with site-packages disabled.
+The receptor suites execute **101 tests** (49 state/inventory/duration and 52 delivery). After merging hydraulic and study delivery through `fe293c7efa5cd88034ae052057c876e017877612`, the repaired full repository suite executed **1558 passing tests**, including all 101 receptor tests. Ruff check, Ruff format check and ty check pass on the combined tree. The state example uses the ordinary mandatory Polars dependency but no simulator; `test_receptor_example_never_imports_simulator` blocks Taqsim/Incidence imports while executing its real public entry point. Both public examples execute with simulator imports blocked.

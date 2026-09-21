@@ -584,3 +584,65 @@ def test_receptor_example_never_imports_simulator(monkeypatch, capsys):
     monkeypatch.setattr(builtins, "__import__", without_simulator)
     runpy.run_path("examples/receptor_assessment.py", run_name="__main__")
     assert "joint: fail; coverage: complete" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("supporting_model", ["mixing", "remobilisation"])
+@pytest.mark.parametrize("salt_mass,numerical", [(10, PASS), (200, FAIL)])
+def test_supporting_inventory_model_warmup_prevents_supported_pass(supporting_model, salt_mass, numerical):
+    p = profile(minimum=100)
+    imported = inventory_import(p, (0, salt_mass), (100, salt_mass), (100, 0))
+    ev = evidence(p.context, p.context.candidate)
+    excluded = replace(ev, provenance=replace(ev.provenance, excluded_warmup=(p.context.period,)))
+    representation = replace(
+        imported.representation,
+        evidence=excluded if supporting_model == "mixing" else ev,
+        remobilisation=Remobilisation.SUPPORTED,
+        remobilisation_evidence=excluded if supporting_model == "remobilisation" else ev,
+    )
+    result = import_receptor_inventory(imported.balance, p.context, WATER, ev, representation)
+    assessment = assess_receptor(p, result.states)
+    assert assessment.tests[0].supported.finding is PASS
+    assert assessment.numerical.finding is numerical
+    assert assessment.summary.finding is UNKNOWN
+    assert assessment.summary.completeness is Completeness.INCOMPLETE
+    assert "warm-up" in " ".join(assessment.states[1].reasons)
+
+
+def test_duration_criterion_warmup_prevents_supported_pass():
+    result = duration_result([True] * 4, [True] * 4)
+    period = result.assessment.profile.context.period
+    ev = result.criterion.evidence
+    criterion = replace(
+        result.criterion, evidence=replace(ev, provenance=replace(ev.provenance, excluded_warmup=(period,)))
+    )
+    assessed = assess_joint_duration(result.assessment, criterion)
+    assert assessed.lower == assessed.upper == Duration(4, "day")
+    assert assessed.raw_coverage is Completeness.COMPLETE
+    assert assessed.check.finding is UNKNOWN
+    assert "warm-up" in " ".join(assessed.check.reasons)
+
+
+def test_target_criterion_warmup_prevents_supported_pass():
+    p = profile()
+    target = p.targets[1]
+    ev = target.evidence
+    target = replace(
+        target, evidence=replace(ev, provenance=replace(ev.provenance, excluded_warmup=(p.context.period,)))
+    )
+    p = replace(p, targets=(p.targets[0], target))
+    result = assess_receptor(p, (state(p, WATER, 200), state(p, SALT, 0)))
+    assert result.numerical.finding is PASS
+    assert result.summary.finding is UNKNOWN
+    assert "warm-up" in " ".join(result.tests[1].supported.reasons)
+
+
+def test_target_warmup_only_excludes_overlapping_requested_slots():
+    p = profile(2)
+    target = p.targets[1]
+    ev = target.evidence
+    target = replace(target, evidence=replace(ev, provenance=replace(ev.provenance, excluded_warmup=(p.intervals[0],))))
+    p = replace(p, targets=(p.targets[0], target))
+    samples = tuple(sample for index in range(2) for sample in (state(p, WATER, 200, index), state(p, SALT, 0, index)))
+    result = assess_receptor(p, samples)
+    assert result.interval_summary(p.intervals[0]).finding is UNKNOWN
+    assert result.interval_summary(p.intervals[1]).finding is PASS

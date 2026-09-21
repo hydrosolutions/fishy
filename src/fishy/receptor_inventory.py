@@ -162,7 +162,7 @@ def import_receptor_inventory(
         water_reason,
         sources,
     )
-    reasons = list(physical_restrictions)
+    reasons = list(physical_restrictions + warmup_restrictions(representation.evidence.provenance, account.interval))
     permission = permitted_use(representation.evidence, context.evidence_scope(context.candidate, account.interval))
     if permission.finding is not CheckFinding.PASS:
         reasons.extend(("representative mixed compartment unsupported", *permission.reasons))
@@ -172,6 +172,8 @@ def import_receptor_inventory(
         reasons.append("conservative bulk inventory cannot establish reactive process concentration")
     if account.initial.water.value == 0 and account.initial.mass.value > 0 and account.final.water.value > 0:
         evidence = representation.remobilisation_evidence
+        if evidence is not None:
+            reasons.extend(warmup_restrictions(evidence.provenance, account.interval))
         if (
             representation.remobilisation is not Remobilisation.SUPPORTED
             or evidence is None

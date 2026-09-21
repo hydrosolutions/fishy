@@ -23,6 +23,7 @@ from fishy.evidence import (
     warmup_restrictions,
 )
 from fishy.quantities import Flow, Volume
+from fishy.receptor_states import Compartment, ReceptorDomain, ReceptorVariable, StateStatistic
 from fishy.spatial import Location
 from fishy.time import Interval
 
@@ -323,6 +324,71 @@ class SupportedProcessTest:
     evidence: EvidenceFindings | None
 
 
+class SalinitySupport(StrEnum):
+    COUPLED_MODEL = "coupled_model"
+    INDEPENDENT_IMPORT = "independent_import"
+
+
+@dataclass(frozen=True)
+class CoupledStateObjective:
+    """Imported non-storage quantity response to the exact selected schedule.
+
+    The final inventory is an independently supplied accounting observation, not
+    a storage target. Relation acceptance binds it and the state test to the
+    selected pathway releases. No storage inversion is asserted.
+    """
+
+    quantity: SupportedProcessTest
+    final_inventory: Volume
+    relation: str
+    boundary_conditions: str
+    uncertainty: str
+    temporal_support: StateStatistic
+    required_temporal_support: StateStatistic
+    expected_intervals: tuple[Interval, ...]
+    required_salinity: str
+    salinity_domain: ReceptorDomain
+    salinity_support: SalinitySupport
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.quantity, SupportedProcessTest) or not isinstance(self.quantity.test, ProcessTest):
+            raise TypeError("coupled objective requires an attributable numeric quantity test")
+        if not isinstance(self.final_inventory, Volume):
+            raise TypeError("coupled final inventory requires Volume, not a target")
+        _text(self.relation, self.boundary_conditions, self.uncertainty, self.required_salinity)
+        if (
+            not isinstance(self.salinity_domain, ReceptorDomain)
+            or self.salinity_domain.variable is not ReceptorVariable.SALINITY
+        ):
+            raise TypeError("salinity requires a typed chemical and compartment domain")
+        if self.salinity_domain.compartment is Compartment.INCOMING_WATER:
+            raise ValueError("incoming water cannot substitute for receptor salinity")
+        if not isinstance(self.salinity_support, SalinitySupport):
+            raise TypeError("salinity support must identify coupled-model or independent-import dependence")
+        if self.required_salinity == self.quantity.test.identifier:
+            raise ValueError("quantity and salinity require distinct criterion identities")
+        for temporal in (self.temporal_support, self.required_temporal_support):
+            if not isinstance(temporal, StateStatistic):
+                raise TypeError("explicit state statistic required")
+        test = self.quantity.test
+        units = {"wet_area": "m2", "groundwater_head": "m", "level": "m", "hydroperiod": "s"}
+        if test.variable not in units or test.units != units[test.variable]:
+            raise ValueError("non-storage quantity requires supported variable/unit; discharge is not receptor state")
+        if test.variable in ("wet_area", "hydroperiod") and any(
+            value is not None and value < 0 for value in (test.value, test.lower, test.upper)
+        ):
+            raise ValueError("wet area and hydroperiod cannot be negative")
+        if test.variable == "hydroperiod" and any(
+            value is not None and value > test.context.period.seconds for value in (test.value, test.lower, test.upper)
+        ):
+            raise ValueError("hydroperiod cannot exceed its assessed interval")
+        _tuple(self.expected_intervals, Interval)
+        if not self.expected_intervals or test.context.period not in self.expected_intervals:
+            raise ValueError("quantity period must occur in the explicit expected trajectory")
+        if any(a.end != b.start for a, b in zip(self.expected_intervals, self.expected_intervals[1:], strict=False)):
+            raise ValueError("expected trajectory must contain adjacent ordered intervals")
+
+
 @dataclass(frozen=True)
 class DeliveryStep:
     balance: StorageBalance
@@ -332,10 +398,23 @@ class DeliveryStep:
     required_processes: tuple[str, ...]
     processes: tuple[SupportedProcessTest, ...]
     checking_evidence: EvidenceFindings | None
+    state_objective: CoupledStateObjective | None = None
+    coupled_evidence: EvidenceFindings | None = None
 
     def __post_init__(self) -> None:
         _tuple(self.pathways, PathwayRelease)
         _tuple(self.processes, SupportedProcessTest)
+        if self.state_objective is not None:
+            if not isinstance(self.state_objective, CoupledStateObjective):
+                raise TypeError("explicit CoupledStateObjective required")
+            if self.balance.target is not None:
+                raise ValueError("non-storage objective cannot also declare a storage target")
+            if self.state_objective.quantity.test.context != self.balance.context:
+                raise ValueError("incompatible coupled quantity candidate, domain, receptor or period")
+            if self.state_objective.quantity.test.identifier in self.required_processes:
+                raise ValueError("quantity objective must not be duplicated as a process test")
+        elif self.coupled_evidence is not None:
+            raise ValueError("coupled evidence requires an explicit non-storage objective")
         for ids in (self.required_pathways, self.required_processes):
             _tuple(ids, str)
             _text(*ids)
@@ -365,7 +444,23 @@ class DeliveryStep:
             self.required_pathways,
             self.required_processes,
             tuple(p.test for p in self.processes),
+            self.state_objective,
         )
+
+    @property
+    def salinity_subject(self) -> tuple:
+        """Exact chemical/compartment basis for independently supported salinity."""
+        if self.state_objective is None:
+            raise ValueError("salinity subject requires coupled-state objective")
+        test = next(
+            (p.test for p in self.processes if p.test.identifier == self.state_objective.required_salinity), None
+        )
+        return (self.state_objective.salinity_domain, test)
+
+    @property
+    def coupled_subject(self) -> tuple:
+        """Exact physical input/output pair accepted by the coupled study."""
+        return self.checking_subject
 
 
 @dataclass(frozen=True)
@@ -376,6 +471,24 @@ class DeliveryStepResult:
     final_storage: Volume | None
     target_residual_m3: Fraction | None
     checks: CheckSummary
+
+
+def _process_check(
+    identifier: str, supplied: SupportedProcessTest | None, support_subject: object | None = None
+) -> Check:
+    if supplied is None:
+        return Check(identifier, CheckFinding.UNKNOWN, ("required process or quality evidence missing",))
+    test = supplied.test
+    reasons = _support(test.context, test if support_subject is None else support_subject, supplied.evidence)
+    if reasons or test.value is None:
+        return Check(
+            identifier, CheckFinding.UNKNOWN, reasons + (("process state missing",) if test.value is None else ())
+        )
+    strict = test.boundary is BoundInclusion.STRICT
+    passed = (test.lower is None or (test.value > test.lower if strict else test.value >= test.lower)) and (
+        test.upper is None or (test.value < test.upper if strict else test.value <= test.upper)
+    )
+    return Check(identifier, CheckFinding.PASS if passed else CheckFinding.FAIL)
 
 
 def _assess_step(step: DeliveryStep) -> DeliveryStepResult:
@@ -413,13 +526,49 @@ def _assess_step(step: DeliveryStep) -> DeliveryStepResult:
             state = Volume(final)
         if b.target is not None:
             difference = final - b.target.value
-    checks.append(
-        Check(
-            "storage_target",
-            CheckFinding.UNKNOWN if difference is None else CheckFinding.PASS if difference == 0 else CheckFinding.FAIL,
-            ("selected endpoint storage target; no intervening state inferred",),
+    if step.state_objective is None:
+        checks.append(
+            Check(
+                "storage_target",
+                CheckFinding.UNKNOWN
+                if difference is None
+                else CheckFinding.PASS
+                if difference == 0
+                else CheckFinding.FAIL,
+                ("selected endpoint storage target; no intervening state inferred",),
+            )
         )
-    )
+    else:
+        objective = step.state_objective
+        coupled_reasons = _support(b.context, step.coupled_subject, step.coupled_evidence)
+        if objective.temporal_support is not objective.required_temporal_support:
+            coupled_reasons += ("coupled quantity statistic does not cover the required temporal statistic",)
+        checks.append(
+            Check("coupled_relation", CheckFinding.UNKNOWN if coupled_reasons else CheckFinding.PASS, coupled_reasons)
+        )
+        inventory_finding = CheckFinding.UNKNOWN
+        if (
+            not reasons
+            and complete
+            and all(p.arrival is not None and p.checks.finding is not CheckFinding.UNKNOWN for p in paths)
+        ):
+            inventory_finding = CheckFinding.PASS if state == objective.final_inventory else CheckFinding.FAIL
+        checks.append(
+            Check(
+                "coupled_water_balance",
+                inventory_finding,
+                ("recomputed final water inventory must equal supplied physical inventory",),
+            )
+        )
+        quantity = _process_check("quantity:" + objective.quantity.test.identifier, objective.quantity)
+        # Unsupported physical representation cannot produce a supported state finding.
+        if coupled_reasons or inventory_finding is not CheckFinding.PASS:
+            quantity = Check(
+                quantity.check_id,
+                CheckFinding.UNKNOWN,
+                coupled_reasons + ("quantity finding requires supported closed physical representation",),
+            )
+        checks.append(quantity)
     if not step.required_processes:
         checks.append(
             Check("process_profile", CheckFinding.UNKNOWN, ("required process/quality target profile missing",))
@@ -427,20 +576,39 @@ def _assess_step(step: DeliveryStep) -> DeliveryStepResult:
     process_by_id = {p.test.identifier: p for p in step.processes}
     for identifier in step.required_processes:
         supplied = process_by_id.get(identifier)
-        finding = CheckFinding.UNKNOWN
-        why = ("required process or quality evidence missing",)
-        if supplied is not None:
-            test = supplied.test
-            why = _support(b.context, test, supplied.evidence)
-            if not why and test.value is not None:
-                strict = test.boundary is BoundInclusion.STRICT
-                passed = (test.lower is None or (test.value > test.lower if strict else test.value >= test.lower)) and (
-                    test.upper is None or (test.value < test.upper if strict else test.value <= test.upper)
+        objective = step.state_objective
+        if objective is not None and identifier == objective.required_salinity:
+            role_reasons = ()
+            if supplied is None:
+                role_reasons = ("required receptor salinity criterion missing",)
+            elif (
+                supplied.test.variable != "salinity"
+                or supplied.test.units != objective.salinity_domain.unit
+                or supplied.test.reference != objective.salinity_domain.basis
+            ):
+                role_reasons = (
+                    "salinity variable, units or chemical/compartment basis do not match the declared domain",
                 )
-                finding = CheckFinding.PASS if passed else CheckFinding.FAIL
-            elif test.value is None:
-                why += ("process state missing",)
-        checks.append(Check(f"process:{identifier}", finding, why))
+            subject = None
+            if objective.salinity_support is SalinitySupport.COUPLED_MODEL:
+                role_reasons += _support(b.context, step.coupled_subject, step.coupled_evidence)
+                if objective.temporal_support is not objective.required_temporal_support:
+                    role_reasons += ("coupled salinity does not cover the required temporal statistic",)
+                if state != objective.final_inventory:
+                    role_reasons += ("coupled salinity lacks a closed physical inventory",)
+            else:
+                subject = step.salinity_subject
+            checks.append(
+                Check("process:" + identifier, CheckFinding.UNKNOWN, role_reasons)
+                if role_reasons
+                else _process_check("process:" + identifier, supplied, subject)
+            )
+        else:
+            checks.append(_process_check("process:" + identifier, supplied))
+    if step.state_objective is not None and step.state_objective.required_salinity not in step.required_processes:
+        checks.append(
+            Check("salinity_profile", CheckFinding.UNKNOWN, ("required receptor salinity criterion missing",))
+        )
     why = _support(b.context, step.checking_subject, step.checking_evidence)
     if (
         step.checking_evidence is not None
@@ -448,6 +616,14 @@ def _assess_step(step: DeliveryStep) -> DeliveryStepResult:
         and (step.checking_evidence.provenance.source == step.evidence.provenance.source)
     ):
         why += ("independent checking source missing",)
+    if step.state_objective is not None and step.checking_evidence is not None:
+        model_sources = tuple(
+            e.provenance.source
+            for e in (step.coupled_evidence, step.state_objective.quantity.evidence)
+            if e is not None
+        )
+        if step.checking_evidence.provenance.source in model_sources:
+            why += ("independent checking source duplicates coupled model/state source",)
     checks.append(Check("independent_check", CheckFinding.UNKNOWN if why else CheckFinding.PASS, why))
     return DeliveryStepResult(step, residual, paths, state, difference, CheckSummary(tuple(checks)))
 
@@ -485,6 +661,20 @@ def assess_delivery(steps: tuple[DeliveryStep, ...], *, period: Interval | None 
                 "period_coverage",
                 CheckFinding.PASS if covered else CheckFinding.UNKNOWN,
                 () if covered else ("missing assessment boundary intervals",),
+            )
+        )
+    objectives = tuple(s.state_objective for s in steps if s.state_objective is not None)
+    if objectives:
+        expected = objectives[0].expected_intervals
+        if any(o.expected_intervals != expected for o in objectives):
+            raise ValueError("coupled objectives must share one fixed expected trajectory")
+        actual = tuple(s.balance.context.period for s in steps)
+        covered = actual == expected and len(objectives) == len(steps)
+        checks.append(
+            Check(
+                "coupled_trajectory",
+                CheckFinding.PASS if covered else CheckFinding.UNKNOWN,
+                () if covered else ("complete expected coupled-state trajectory is not supplied",),
             )
         )
     for index, step in enumerate(steps):

@@ -19,9 +19,11 @@ from fishy.evidence import (
     Provenance,
     ScientificAdequacy,
 )
+from fishy.quality import ChemicalBehavior, ChemicalIdentity
 from fishy.quantities import Flow, Volume
 from fishy.receptor_delivery import (
     BoundInclusion,
+    CoupledStateObjective,
     DeliveryAssessment,
     DeliveryContext,
     DeliveryStep,
@@ -29,6 +31,7 @@ from fishy.receptor_delivery import (
     Pathway,
     PathwayRelease,
     ProcessTest,
+    SalinitySupport,
     StorageBalance,
     SupportedProcessTest,
     WaterExchange,
@@ -37,6 +40,7 @@ from fishy.receptor_delivery import (
     map_arrival,
     storage_arrival,
 )
+from fishy.receptor_states import Compartment, ReceptorDomain, ReceptorVariable, StateStatistic
 from fishy.spatial import CalculationSection, Location, Reach, WaterBody
 from fishy.time import Interval
 
@@ -143,6 +147,64 @@ def supplied_delivery() -> DeliveryAssessment:
     return assess_delivery((step,), period=period)
 
 
+def supplied_inundation() -> DeliveryAssessment:
+    """Assess a coupled-model wet-area response without inventing a storage target."""
+    storage_step = supplied_delivery().steps[0].step
+    balance = replace(storage_step.balance, target=None)
+    context = balance.context
+    source = storage_step.evidence
+    assert source is not None
+
+    def accepted(subject: object, study: str) -> EvidenceFindings:
+        return replace(
+            source, scope=delivery_scope(context, subject), provenance=replace(source.provenance, source=study)
+        )
+
+    area = ProcessTest(
+        "wet-area",
+        context,
+        "wet_area",
+        "m2",
+        "surveyed wetland footprint v1",
+        Fraction(120),
+        Fraction(100),
+        Fraction(150),
+        BoundInclusion.INCLUSIVE,
+        "synthetic coupled inundation relation v1",
+    )
+    salt_domain = ReceptorDomain(
+        ReceptorVariable.SALINITY,
+        Compartment.RESIDENT_WATER,
+        "representative mixed compartment; dissolved chloride",
+        ChemicalIdentity("chloride", "Cl-", "as chloride", "dissolved", ChemicalBehavior.CONSERVATIVE),
+    )
+    salt = replace(storage_step.processes[0].test, variable="salinity", reference=salt_domain.basis)
+    objective = CoupledStateObjective(
+        SupportedProcessTest(area, accepted(area, "synthetic inundation response")),
+        Volume(200),
+        "coupled surface-groundwater model v1",
+        "surveyed footprint and selected gate release; prescribed boundary head",
+        "exact illustrative model response, not site calibration",
+        StateStatistic.WHOLE_INTERVAL,
+        StateStatistic.WHOLE_INTERVAL,
+        (context.period,),
+        "salinity",
+        salt_domain,
+        SalinitySupport.COUPLED_MODEL,
+    )
+    step = replace(
+        storage_step,
+        balance=balance,
+        evidence=accepted(balance, "synthetic physical inventory study"),
+        state_objective=objective,
+        processes=(SupportedProcessTest(salt, accepted(salt, "synthetic coupled salt response")),),
+        checking_evidence=None,
+    )
+    step = replace(step, coupled_evidence=accepted(step.coupled_subject, "synthetic coupled relation acceptance"))
+    step = replace(step, checking_evidence=accepted(step.checking_subject, "synthetic independent inundation audit"))
+    return assess_delivery((step,), period=context.period)
+
+
 def main() -> None:
     result = supplied_delivery()
     step = result.steps[0]
@@ -153,6 +215,8 @@ def main() -> None:
     print("finding=", result.checks.finding.value)
     assert step.step.evidence is not None
     print("official_admissibility=", step.step.evidence.official_admissibility.value)
+    inundation = supplied_inundation()
+    print("nonstorage_finding=", inundation.checks.finding.value)
 
 
 if __name__ == "__main__":

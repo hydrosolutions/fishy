@@ -4,12 +4,12 @@ from dataclasses import replace
 from fractions import Fraction
 
 import pytest
-from fishy.scientific_acceptance import UsePurpose
 
 from examples.daily_patterns import _reference, build_example, main
 from fishy.daily_patterns import AnalogueReference, PatternMethod, construct_pattern
 from fishy.evidence import CheckFinding
 from fishy.quantities import Flow, Volume
+from fishy.scientific_acceptance import UsePurpose
 
 
 def test_daily_example_preserves_scale_support_and_import() -> None:

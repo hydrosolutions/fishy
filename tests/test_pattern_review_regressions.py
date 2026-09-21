@@ -3,13 +3,13 @@ from datetime import timedelta
 from fractions import Fraction
 
 import pytest
-from fishy.scientific_acceptance import UsePurpose
 from test_daily_patterns import TARGET, magnitude, pool, profile, synthetic_acceptance, year
 
 from fishy.daily_patterns import annual_magnitude_product, construct_pattern, import_pattern, pattern_product
 from fishy.evidence import CheckFinding
 from fishy.pattern_calendar import AccountingYear
 from fishy.quantities import Flow
+from fishy.scientific_acceptance import UsePurpose
 from fishy.time import Interval
 
 

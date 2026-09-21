@@ -2,11 +2,11 @@ from dataclasses import replace
 from fractions import Fraction
 
 import pytest
-from fishy.scientific_acceptance import UsePurpose
 from test_daily_patterns import TARGET, magnitude, pool, profile, synthetic_acceptance, year
 
 from fishy.daily_patterns import annual_magnitude_product, construct_pattern, pattern_product
 from fishy.evidence import CheckFinding
+from fishy.scientific_acceptance import UsePurpose
 
 
 def test_duplicate_retained_sources_cannot_manufacture_support():

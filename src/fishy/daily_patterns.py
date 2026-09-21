@@ -521,18 +521,20 @@ class DailyPattern:
         )
         if self.shape_assessment is not None and self.shape_assessment.evidence.validation is not None:
             validation = self.shape_assessment.evidence.validation
-            clusters = {year.climate_cluster for reference in self.references for year in reference.years}
+            clusters = {
+                year.climate_cluster
+                for reference in _used_references(self.references, self.retained)
+                for year in reference.years
+            }
             overlap = clusters.intersection(validation.validation_clusters)
             source_separation = Check(
                 "source_validation_separation",
                 CheckFinding.FAIL if overlap else CheckFinding.PASS,
                 tuple(f"actual source climate cluster also withheld: {cluster}" for cluster in sorted(overlap)),
             )
-        retained_locations = {c.source.location for c in self.retained}
+        used_references = _used_references(self.references, self.retained)
         source_climate = []
-        for index, reference in enumerate(self.references):
-            if reference.reference.location not in retained_locations:
-                continue
+        for index, reference in enumerate(used_references):
             if reference.reference.provenance.reference_kind is not ReferenceKind.PRESENT_CLIMATE_NATURAL:
                 continue
             trend = reference.reference.trend
@@ -548,8 +550,7 @@ class DailyPattern:
             )
         prohibitions = tuple(
             restriction.reason
-            for reference in self.references
-            if reference.reference.location in retained_locations
+            for reference in used_references
             for restriction in reference.restrictions
             if self.requested_use in restriction.prohibited_uses or self.purpose.value in restriction.prohibited_uses
         )
@@ -566,6 +567,18 @@ class DailyPattern:
         return Volume(
             sum((s.value.value * s.interval.seconds for s in self.samples if s.value is not None), Fraction())
         )
+
+
+def _used_references(
+    references: tuple[AnalogueReference, ...], contributions: tuple[SourceContribution, ...]
+) -> tuple[AnalogueReference, ...]:
+    """Keep full frequency/context evidence only for the actual contributing source years."""
+    keys = {(c.source.location, c.source.calendar.interval) for c in contributions}
+    return tuple(
+        reference
+        for reference in references
+        if any((year.location, year.calendar.interval) in keys for year in reference.years)
+    )
 
 
 def _receiving_calendar(magnitude: AnnualEstimate, calendar: AccountingYear) -> None:
@@ -955,11 +968,9 @@ def construct_pattern(
     values = tuple(magnitude.value.value * value for value in shape)
     if sum(shape, Fraction()) != calendar.days or any(value < 0 for value in values):
         raise ArithmeticError("daily shape closure violated")
-    retained_locations = {contribution.source.location for contribution in retained}
     illustrative = provenance.production_method is ProductionMethod.ILLUSTRATIVE or any(
         sample.provenance.production_method is ProductionMethod.ILLUSTRATIVE
-        for reference in references
-        if reference.reference.location in retained_locations
+        for reference in _used_references(references, retained)
         for sample in (
             *reference.reference.observations,
             *(sample for year in reference.years for sample in year.samples),

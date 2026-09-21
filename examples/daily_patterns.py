@@ -16,8 +16,6 @@ from fishy.annual_statistics import (
     TrendTreatment,
     import_annual_estimate,
 )
-from fishy.scientific_acceptance import UsePurpose
-
 from fishy.daily_patterns import (
     AlignmentChoice,
     AlignmentSettings,
@@ -42,6 +40,7 @@ from fishy.evidence import (
 from fishy.flows import FlowSample, Presence
 from fishy.pattern_calendar import AccountingYear
 from fishy.quantities import Flow
+from fishy.scientific_acceptance import UsePurpose
 from fishy.spatial import CalculationSection, Location, Reach, WaterBody
 from fishy.time import Interval
 

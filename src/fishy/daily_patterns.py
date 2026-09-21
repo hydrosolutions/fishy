@@ -276,6 +276,14 @@ class SourceExclusion:
 
 
 @dataclass(frozen=True)
+class AlignmentIteration:
+    iteration: int
+    median_seconds: Fraction
+    shifts: tuple[tuple[Location, Interval, Fraction], ...]
+    exclusions: tuple[SourceExclusion, ...]
+
+
+@dataclass(frozen=True)
 class MembershipSummary:
     source_count: int
     climate_cluster_count: int
@@ -308,6 +316,7 @@ class DailyPattern:
     reasons: tuple[str, ...]
     references: tuple[AnalogueReference, ...] = ()
     imported_derivation: ImportedDerivation | None = None
+    alignment_iterations: tuple[AlignmentIteration, ...] = ()
 
     def __post_init__(self) -> None:
         if self.method is PatternMethod.IMPORTED and not isinstance(self.imported_derivation, ImportedDerivation):
@@ -629,6 +638,7 @@ def construct_pattern(
     retained = original
     method = PatternMethod.CALENDAR
     reasons_out: list[str] = []
+    iterations: list[AlignmentIteration] = []
     settings = profile.alignment
     if settings.choice is AlignmentChoice.MELT:
         if settings.season_start_day >= settings.season_end_day:
@@ -697,6 +707,18 @@ def construct_pattern(
                             )
                     if failure is not None:
                         removed.append(SourceExclusion(year.location, year.calendar.interval, iteration, (failure,)))
+                iterations.append(
+                    AlignmentIteration(
+                        iteration,
+                        centre,
+                        tuple(
+                            (c.source.location, c.source.calendar.interval, centre - c.marker_seconds)
+                            for c in retained
+                            if c.marker_seconds is not None
+                        ),
+                        tuple(removed),
+                    )
+                )
                 exclusions.extend(removed)
                 retained = tuple(candidates)
                 if not removed:
@@ -747,6 +769,7 @@ def construct_pattern(
         CheckSummary((magnitude_check, shape_check, *support.checks)),
         tuple(reasons_out),
         references,
+        alignment_iterations=tuple(iterations),
     )
 
     shape_check = _permission(

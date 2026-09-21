@@ -92,6 +92,22 @@ references, or check an imported schedule. Keep annual magnitude, daily shape,
 source support and scientific permission separate. See [daily patterns](docs/daily_patterns.md)
 and [calendar mapping](docs/pattern_calendar.md) for inputs and examples.
 
+## Proposed Uzbek requirements and floors
+
+```sh
+uv run python examples/requirement_chain.py
+```
+
+Run a complete supported synthetic chain: reference statistics and patterns,
+uncapped member requirements, active quality, a mapped wetland diversion,
+external selection, final safeguards, floor and versioned issuance. Inspect
+missing or failed routes without lowering the requirement. Direct floor routes
+remain floor-only. Existing sanitary and foreign duties stay independent.
+See [requirement assembly](docs/requirement-assembly.md) and its
+[acceptance crosswalk](docs/requirement-assembly-acceptance.md).
+This example assumes scientific and physical support; it does not adopt policy
+or validate a basin application.
+
 ## Use Taqsim results
 
 ```sh

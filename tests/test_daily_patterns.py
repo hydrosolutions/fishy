@@ -898,6 +898,8 @@ def test_d8_adjacent_context_uses_original_source_total_through_public_boundary(
     # therefore contribute shares1/2, not independently normalized padding1/1.
     assert tuple(c.introduced_share for c in result.retained) == (Fraction(1), Fraction(2))
     assert tuple(c.displaced_share for c in result.retained) == (Fraction(0), Fraction(0))
+    assert tuple(c.introduced_volume for c in result.retained) == (Volume(172800), Volume(345600))
+    assert tuple(c.displaced_volume for c in result.retained) == (Volume(0), Volume(0))
     expected = [Fraction(0)] * 365
     expected[1] = Fraction(1, 4)
     expected[101] = expected[102] = Fraction(5, 24)

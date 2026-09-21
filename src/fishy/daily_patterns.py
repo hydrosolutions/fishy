@@ -271,6 +271,15 @@ class SourceContribution:
     introduced_share: Fraction
     displaced_share: Fraction
 
+    @property
+    def introduced_volume(self) -> Volume:
+        """Mapped adjacent volume on the original source's absolute m3 scale."""
+        return Volume(self.introduced_share * sum(self.source.volumes, Fraction()))
+
+    @property
+    def displaced_volume(self) -> Volume:
+        return Volume(self.displaced_share * sum(self.source.volumes, Fraction()))
+
 
 @dataclass(frozen=True)
 class SourceExclusion:

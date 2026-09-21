@@ -737,3 +737,118 @@ def test_independent_salinity_failure_survives_unsupported_coupled_model():
     # A generic numeric-test acceptance is insufficient for an independent chemical/domain claim.
     wrong = replace(step, processes=(SupportedProcessTest(salt, evidence(salt.context, salt)),))
     assert assess_delivery((wrong,)).checks.finding is CheckFinding.UNKNOWN
+
+
+@pytest.mark.parametrize("field", ["value", "lower", "upper"])
+def test_salinity_nonnegative_domain_rejects_negative_values_and_bounds(field):
+    step = wet_area_step()
+    salt = step.processes[0].test
+    # Avoid an unrelated reversed-range rejection when probing a negative upper.
+    if field == "upper":
+        salt = replace(salt, lower=None)
+    with pytest.raises(ValueError, match="concentration cannot be negative"):
+        replace(salt, **{field: Fraction(-1)})
+
+
+def test_unsupported_imported_inventory_cannot_supply_physical_failure():
+    step = wet_area_step()
+    objective = step.state_objective
+    assert objective is not None
+    step = replace(
+        step,
+        state_objective=replace(objective, final_inventory=Volume(201)),
+        coupled_evidence=None,
+        checking_evidence=None,
+    )
+    result = assess_delivery((step,))
+    assert result.steps[0].final_storage == Volume(200)
+    assert result.checks.finding is CheckFinding.UNKNOWN
+    assert (
+        next(c for c in result.steps[0].checks.checks if c.check_id == "coupled_water_balance").finding
+        is CheckFinding.UNKNOWN
+    )
+
+
+def test_independent_inventory_failure_survives_missing_model_and_checker():
+    step = wet_area_step()
+    assert step.state_objective is not None
+    step = replace(
+        step,
+        state_objective=replace(step.state_objective, final_inventory=Volume(201)),
+        coupled_evidence=None,
+        checking_evidence=None,
+    )
+    step = replace(
+        step, inventory_evidence=evidence(step.balance.context, step.inventory_subject, "independent water survey")
+    )
+    result = assess_delivery((step,))
+    assert result.steps[0].inventory_residual_m3 == Fraction(-1)
+    assert result.checks.finding is CheckFinding.FAIL
+    assert any(c.finding is CheckFinding.UNKNOWN for c in result.checks.checks)
+    assert (
+        next(c for c in result.steps[0].checks.checks if c.check_id == "coupled_water_balance").finding
+        is CheckFinding.FAIL
+    )
+
+
+def test_supported_coupled_inventory_failure_does_not_need_final_checker():
+    step = wet_area_step()
+    assert step.state_objective is not None
+    step = coupled_reviewed(replace(step, state_objective=replace(step.state_objective, final_inventory=Volume(201))))
+    result = assess_delivery((replace(step, checking_evidence=None),))
+    assert result.steps[0].inventory_residual_m3 == Fraction(-1)
+    assert result.checks.finding is CheckFinding.FAIL
+    assert any(c.finding is CheckFinding.UNKNOWN for c in result.checks.checks)
+
+
+@pytest.mark.parametrize("mode", ["missing", "generic_balance", "changed_final", "excluded", "unsupported"])
+def test_inventory_acceptance_binds_actual_final_inventory_and_use(mode):
+    step = wet_area_step()
+    assert step.state_objective is not None
+    step = replace(
+        step,
+        state_objective=replace(step.state_objective, final_inventory=Volume(201)),
+        coupled_evidence=None,
+        checking_evidence=None,
+    )
+    ev = evidence(step.balance.context, step.inventory_subject, "independent water survey")
+    if mode == "missing":
+        ev = None
+    elif mode == "generic_balance":
+        ev = evidence(step.balance.context, step.balance)
+    elif mode == "changed_final":
+        step = replace(step, state_objective=replace(step.state_objective, final_inventory=Volume(202)))
+    elif mode == "excluded":
+        ev = replace(ev, provenance=replace(ev.provenance, excluded_warmup=(step.balance.context.period,)))
+    else:
+        ev = replace(ev, scientific_adequacy=ScientificAdequacy.NOT_ACCEPTED)
+    result = assess_delivery((replace(step, inventory_evidence=ev),))
+    assert result.steps[0].inventory_residual_m3 in (Fraction(-1), Fraction(-2))
+    assert result.checks.finding is CheckFinding.UNKNOWN
+
+
+def test_inventory_evidence_cannot_change_scenario():
+    step = wet_area_step()
+    ev = evidence(step.balance.context, step.inventory_subject, "independent water survey")
+    ev = replace(ev, provenance=replace(ev.provenance, scenario="other"))
+    with pytest.raises(ValueError, match="scenario"):
+        assess_delivery((replace(step, coupled_evidence=None, inventory_evidence=ev),))
+
+
+@pytest.mark.parametrize("variable,unit", [("wet_area", "m2"), ("hydroperiod", "s")])
+@pytest.mark.parametrize("field", ["value", "lower", "upper"])
+def test_nonstorage_nonnegative_quantity_bounds(variable, unit, field):
+    step = wet_area_step()
+    objective = step.state_objective
+    assert objective is not None
+    test = replace(objective.quantity.test, variable=variable, units=unit, lower=None, upper=Fraction(100))
+    test = replace(test, **{field: Fraction(-1)})
+    with pytest.raises(ValueError, match="cannot be negative"):
+        replace(objective, quantity=SupportedProcessTest(test, evidence(test.context, test)))
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), -float("inf")])
+def test_nonstorage_process_requires_finite_exact_values(value):
+    salt = wet_area_step().processes[0].test
+    with pytest.raises(ValueError, match="finite exact"):
+        replace(salt, value=value)

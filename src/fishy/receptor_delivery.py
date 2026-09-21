@@ -307,6 +307,8 @@ class ProcessTest:
         for v in (self.value, self.lower, self.upper):
             if v is not None and not isinstance(v, Fraction):
                 raise ValueError("process quantities require finite exact fractions in declared units")
+        if self.units == "kg/m3" and any(v is not None and v < 0 for v in (self.value, self.lower, self.upper)):
+            raise ValueError("concentration cannot be negative")
         if self.lower is None and self.upper is None:
             raise ValueError("process criterion requires a bound")
         if self.lower is not None and self.upper is not None and self.lower > self.upper:
@@ -400,6 +402,7 @@ class DeliveryStep:
     checking_evidence: EvidenceFindings | None
     state_objective: CoupledStateObjective | None = None
     coupled_evidence: EvidenceFindings | None = None
+    inventory_evidence: EvidenceFindings | None = None
 
     def __post_init__(self) -> None:
         _tuple(self.pathways, PathwayRelease)
@@ -413,8 +416,8 @@ class DeliveryStep:
                 raise ValueError("incompatible coupled quantity candidate, domain, receptor or period")
             if self.state_objective.quantity.test.identifier in self.required_processes:
                 raise ValueError("quantity objective must not be duplicated as a process test")
-        elif self.coupled_evidence is not None:
-            raise ValueError("coupled evidence requires an explicit non-storage objective")
+        elif self.coupled_evidence is not None or self.inventory_evidence is not None:
+            raise ValueError("coupled/inventory evidence requires an explicit non-storage objective")
         for ids in (self.required_pathways, self.required_processes):
             _tuple(ids, str)
             _text(*ids)
@@ -448,6 +451,15 @@ class DeliveryStep:
         )
 
     @property
+    def inventory_subject(self) -> tuple:
+        """Exact selected water account and imported final inventory, independent of state suitability."""
+        return (
+            self.balance,
+            tuple((p.pathway, p.release) for p in self.pathways),
+            None if self.state_objective is None else self.state_objective.final_inventory,
+        )
+
+    @property
     def salinity_subject(self) -> tuple:
         """Exact chemical/compartment basis for independently supported salinity."""
         if self.state_objective is None:
@@ -471,6 +483,7 @@ class DeliveryStepResult:
     final_storage: Volume | None
     target_residual_m3: Fraction | None
     checks: CheckSummary
+    inventory_residual_m3: Fraction | None = None
 
 
 def _process_check(
@@ -513,6 +526,7 @@ def _assess_step(step: DeliveryStep) -> DeliveryStepResult:
     reasons = _support(b.context, b, step.evidence)
     state = None
     difference = None
+    inventory_residual = None
     if (
         complete
         and not reasons
@@ -540,15 +554,25 @@ def _assess_step(step: DeliveryStep) -> DeliveryStepResult:
         )
     else:
         objective = step.state_objective
-        coupled_reasons = _support(b.context, step.coupled_subject, step.coupled_evidence)
+        coupled_acceptance = _support(b.context, step.coupled_subject, step.coupled_evidence)
+        coupled_reasons = coupled_acceptance
         if objective.temporal_support is not objective.required_temporal_support:
             coupled_reasons += ("coupled quantity statistic does not cover the required temporal statistic",)
         checks.append(
             Check("coupled_relation", CheckFinding.UNKNOWN if coupled_reasons else CheckFinding.PASS, coupled_reasons)
         )
         inventory_finding = CheckFinding.UNKNOWN
+        inventory_reasons = _support(b.context, step.inventory_subject, step.inventory_evidence)
+        # Accepted coupled response already binds the final inventory. Alternatively,
+        # an independent exact water-account acceptance supports that inventory alone.
+        # The final schedule checker is a separate completeness obligation.
+        if not coupled_acceptance:
+            inventory_reasons = ()
+        if state is not None:
+            inventory_residual = state.value - objective.final_inventory.value
         if (
             not reasons
+            and not inventory_reasons
             and complete
             and all(p.arrival is not None and p.checks.finding is not CheckFinding.UNKNOWN for p in paths)
         ):
@@ -557,7 +581,7 @@ def _assess_step(step: DeliveryStep) -> DeliveryStepResult:
             Check(
                 "coupled_water_balance",
                 inventory_finding,
-                ("recomputed final water inventory must equal supplied physical inventory",),
+                inventory_reasons + ("recomputed final water inventory must equal supplied physical inventory",),
             )
         )
         quantity = _process_check("quantity:" + objective.quantity.test.identifier, objective.quantity)
@@ -625,7 +649,7 @@ def _assess_step(step: DeliveryStep) -> DeliveryStepResult:
         if step.checking_evidence.provenance.source in model_sources:
             why += ("independent checking source duplicates coupled model/state source",)
     checks.append(Check("independent_check", CheckFinding.UNKNOWN if why else CheckFinding.PASS, why))
-    return DeliveryStepResult(step, residual, paths, state, difference, CheckSummary(tuple(checks)))
+    return DeliveryStepResult(step, residual, paths, state, difference, CheckSummary(tuple(checks)), inventory_residual)
 
 
 @dataclass(frozen=True)

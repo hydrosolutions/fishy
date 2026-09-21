@@ -94,6 +94,14 @@ The objective contains:
 - The independently supplied final water inventory, **not a target**. The actual
   pathway arrivals and receptor exchanges must reproduce it. Each trajectory
   step needs its own inventory and state response.
+- Inventory acceptance can come from the accepted coupled response, which already
+  binds the imported final inventory. Alternatively, supply `inventory_evidence`
+  for `delivery_scope(context, step.inventory_subject)`. This independent scope
+  binds the exact water account, selected releases and imported final inventory,
+  not the unrelated state model or final schedule checker. Without either form of
+  inventory support, a numerical mismatch stays exploratory/unknown. A supported
+  physical mismatch remains failure even when the model or checker is missing.
+  `inventory_residual_m3` retains recomputed minus imported final storage.
 - Relation identity/version, boundary conditions and uncertainty. Supply
   `coupled_evidence` for `delivery_scope(context, step.coupled_subject)`. This binds
   the physical relation, numeric quantity, process criteria and exact selected
@@ -189,7 +197,7 @@ admissibility. A cold standalone Python process also executed the example with
 Taqsim and Incidence imports explicitly blocked. Fishy's ordinary Polars
 dependency is used by the shared receptor vocabulary; no simulator is required.
 
-Executed locally: `uv run pytest tests/test_receptor_delivery.py -q`: **52 passed**.
+Executed locally: `uv run pytest tests/test_receptor_delivery.py -q`: **73 passed**.
 `uv run ruff check` and `uv run ty check` on the owned module pass.
 Implementation base: Fishy `e02d43c9ed35eefd377b61f7ec201a6005843b06` plus this
 change. Lockfile sources remain Taqsim
@@ -223,3 +231,8 @@ missing path without converting a generally missing storage target into pass.
 | Chemical/compartment identity | `test_coupled_salinity_domain_rejects_incoming_and_wrong_chemical_basis` | incoming compartment rejected; mismatched basis unknown |
 | Explicit root-zone relation | `test_explicit_supported_root_zone_salinity_preserves_domain` | supported root-zone target passes without relabelling bulk resident water |
 | Independent salinity evidence | `test_independent_salinity_failure_survives_unsupported_coupled_model` | independently accepted salt failure survives unknown quantity model; generic numeric acceptance does not |
+| Concentration invariant | `test_salinity_nonnegative_domain_rejects_negative_values_and_bounds` | Negative salinity value/lower/upper rejected; three original-head failures preceded fix |
+| Imported inventory support | `test_unsupported_imported_inventory_cannot_supply_physical_failure` | Recomputed 200 versus unsupported 201 retains residual −1 and unknown, not supported failure; original-head regression failed before fix |
+| Independent balance support | `test_independent_inventory_failure_survives_missing_model_and_checker`, `test_supported_coupled_inventory_failure_does_not_need_final_checker` | Accepted residual −1 remains failure plus incomplete; missing final checker does not erase it |
+| Exact inventory evidence | `test_inventory_acceptance_binds_actual_final_inventory_and_use`, `test_inventory_evidence_cannot_change_scenario` | Missing/generic/stale/excluded/unsupported final-inventory evidence stays unknown; scenario mismatch rejected |
+| Nonstorage domain bounds | `test_nonstorage_nonnegative_quantity_bounds`, `test_nonstorage_process_requires_finite_exact_values` | Negative area/hydroperiod values and bounds rejected; nonfinite concentration rejected; signed head/level remain covered by successful domain tests |

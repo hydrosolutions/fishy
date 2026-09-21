@@ -48,6 +48,17 @@ shortfall, without changing the nominal 220 l/s prescription.
 See the [Swiss workflow](docs/swiss-workflow.md) for public inputs, scope,
 source clauses, exceptions and evidence limits.
 
+## Hydrological condition
+
+```sh
+uv run python examples/hydrological_condition.py
+```
+
+Compute HYDMOD-F intervention screens, all nine indicators, catchment propagation
+and the source overall hydrology class. Inspect raw metrics and partial results
+without changing prescribed releases. See [hydrological condition](docs/hydrological-condition.md)
+and its [acceptance crosswalk](docs/hydrological-condition-acceptance.md).
+
 ## Sanitary duties and seasonal profiles
 
 ```sh

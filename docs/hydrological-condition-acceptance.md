@@ -14,7 +14,7 @@ and Tables 2–10, were inspected during transcription. Original PDFs, report
 snapshots and source images are not distributed here.
 
 The executed implementation revision is
-`ccdce60646b38535d94b0ea5dcd97d43e34fb421`. This acceptance record is a
+`86f48b9e84e5d102a51b75f74e09d38fe9b20822`. This acceptance record is a
 subsequent documentation-only commit; the implementation, tests and example are
 unchanged from that revision. The starting Fishy revision is
 `f61b91b9b94f7055d640c608068d098babda8bea`. `uv.lock` pins runtime and test
@@ -47,8 +47,9 @@ numerics do not change supplied evidence restrictions or official admissibility.
   CV `(n−1)`. The manual specifies the statistics, not this interpolation choice.
 - Circular timing uses the printed angle `2π JD/365`, including leap years.
   Annual tied extrema require an explicit earliest/latest/unresolved choice.
-  Circular/ellipse geometry is binary64; explicit geometry tests use `1e-12`
-  absolute tolerance. CV tests use `pytest.approx` relative tolerance `1e-6`.
+  Circular/ellipse geometry is binary64; scalar Figure 21 boundary comparisons
+  use absolute tolerance `1e-12` and zero relative tolerance, retaining the raw
+  distance. Explicit geometry tests also use `1e-12` absolute tolerance. CV tests use `pytest.approx` relative tolerance `1e-6`.
 - Figure 25 is linear-linear. Native raster x pixels 71…762 map to 0…3.25;
   y pixels 423…9 map to 1…7. Figure 27 is log-log: x pixels 59…755 map to
   log10(stress) −1…2; y pixels 413…11 map to log10(frequency) −1…2.
@@ -239,6 +240,30 @@ cases such as frequency 0.05/year.
 | Complete F9 chain | `examples.hydrological_condition.scenario()` | Point classes2,1,1,3,1,2,2,2,2 →17points/class3; downstream class2/complete; missing stage→overall unknown/incomplete, independent R36 unchanged | `test_hydrological_example.py::test_complete_and_partial_hydrological_example` |
 | Independent Swiss prescription | Computed pulse class2 versus5 linked as scoped `ConditionFinding` | Same nominal 220l/s prescription and same delivery assessment; only condition finding changes | `test_computed_conditions_do_not_change_swiss_prescription_or_delivery` |
 
+## Independent-review regression coverage
+
+| Finding | Repaired observable behavior | Maintained test |
+|---|---|---|
+| Class-based reach termination lost partial coverage | Each downstream screened indicator retains its upstream coverage; source lake >3h×MQ termination remains an independent criterion | `test_class_based_end_preserves_each_upstream_indicator_coverage` (all/one partial), `test_lake_end_uses_independent_volume_criterion_not_upstream_class_coverage` |
+| Calculations overwrote local impoundment inapplicability | A local impoundment has no river condition class, even with all nine real computations or situational additions; raw computations remain available; an upstream reservoir does not exclude the receiving river | `test_local_impoundment_cannot_acquire_river_class_from_calculations`, `test_upstream_impoundment_does_not_exclude_receiving_river_computation`, `test_actual_nine_calculations_cannot_classify_an_impounded_reach` |
+| Close abstraction/return reused another member | Source, receiving context and relationship must retain scenario/member/configuration/reference-kind and actual interval; incomplete source coverage survives reuse | `test_reuse_cannot_relabel_foreign_identity`, `test_return_relationship_cannot_use_foreign_identity`, `test_reuse_preserves_incomplete_coverage_and_original_histories`, `test_reuse_preserves_source_and_target_support_restrictions` |
+| Binary64 translated seasonal equality | Source inclusive0.3 gives class1 for affected0.2/reference−0.1 in both seasonal indicators; all direct/ellipse scalar edges follow the declared1e-12 absolute precision | `test_decimal_translation_point_two_minus_negative_point_one`, `test_translated_direct_seasonality_inclusive_boundary`, `test_ellipse_seasonality_tolerance_preserves_above_boundary` |
+| Imported/operating pulse unavailable context | Missing correction and relevant warmup cannot produce an assessed class; raw metrics and original inputs remain inspectable | `test_imported_and_operating_pulse_source_support_retains_raw_metrics`, `test_observed_pulses_ignore_warmup_outside_actual_selection`, `test_observed_pulses_missing_source_retains_computable_metrics` |
+| Partial annual flushing catalogue called complete | A supported selected-year frequency may classify, while original multi-year coverage remains incomplete | `test_partial_flushing_catalogue_retains_class_and_original_coverage`, `test_flushing_catalogue_support_uses_selected_years_not_whole_context`, `test_complete_annual_flushing_catalogue_preserves_complete_coverage` |
+
+The adjacent regime support sweep covers all four scalar assessment families:
+`test_imported_regime_assessment_cannot_certify_unavailable_context` checks
+missing correction plus whole/partial warmup. Imported scalars represent the
+full context period. Observation wrappers instead check the actually retained
+complete months/years or continuous duration record:
+`test_observation_warmup_checks_only_actual_retained_support` and
+`test_observation_context_exclusion_over_used_support_is_unavailable`.
+Arbitrary source-history attachments cannot bypass these checks.
+
+The original independently authored review tests are retained outside the source
+checkout by the reviewer. Equivalent maintained tests above reproduce the actual
+public paths. Repair receipts include pre-fix failures and post-fix successes.
+
 ## Applicable common behavior
 
 | Acceptance | Observable behavior and evidence |
@@ -252,24 +277,25 @@ cases such as frequency 0.05/year.
 
 ## Executed integrated gates
 
-Executed on implementation `ccdce60646b38535d94b0ea5dcd97d43e34fb421` with
+Executed on implementation `86f48b9e84e5d102a51b75f74e09d38fe9b20822` with
 Python 3.13.8, Fishy 0.1.2, Polars 1.44.2, pytest 9.0.2, Ruff 0.15.0 and ty 0.0.66.
 The optional transport revisions are the exact Git pins listed above.
 
 | Command / check | Actual result |
 |---|---|
-| Focused nine test modules, without optional simulator packages | **413 passed** |
+| Focused nine test modules, without optional simulator packages | **501 passed** |
 | `uv sync --locked`, then standalone import check and example | Taqsim and Incidence both absent; downstream class2 and partial unknown computed successfully |
 | `uv run python examples/hydrological_condition.py` | Point classes `[2,1,1,3,1,2,2,2,2]`, 17points/class3; downstream class2/complete; missing stage unknown/incomplete |
 | `uv sync --locked --all-extras` | Locked optional revisions installed successfully |
-| `uv run --all-extras pytest -q` | **2,274 passed**, no skips |
+| `uv run --all-extras pytest -q` | **2,362 passed**, no skips |
 | `uv run --all-extras ruff format --check` | 163 files already formatted |
 | `uv run --all-extras ruff check` | All checks passed |
 | `uv run --all-extras ty check` | All checks passed |
 | `git diff --cached --check` before implementation commit | No whitespace errors |
+| Original independent root/boundary/method regressions plus 27 aggregation helpers | **35 passed** (all eight external review regressions pass) |
 
-The nine focused suites contain 93 inventory/reference, 114 regime, 73 event,
-71 pulse, 11 catchment, 13 transfer, 27 aggregation, 9 composition and 2 example/
+The nine focused suites contain 108 inventory/reference, 157 regime, 79 event,
+88 pulse, 14 catchment, 13 transfer, 27 aggregation, 12 composition and 3 example/
 Swiss-integration tests. These are executed software tests, not site validation.
 During implementation review, defects were first reproduced on the actual path
 before correction: reference permission binding, warmup use, identity relabelling,

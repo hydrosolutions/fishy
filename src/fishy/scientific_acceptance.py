@@ -30,6 +30,15 @@ from fishy.quantities import Flow
 from fishy.spatial import Location
 from fishy.time import Interval
 
+DESIGN_PATTERN_DEVELOPMENT_LIMITATION = (
+    "All 21 dry held-out cases in the two-US-record, 50-year-training comparison "
+    "overestimated the seven-day minimum. Mean shape error improved against the "
+    "calendar benchmark in four station-period groups; longer training improved "
+    "three, not all four. Correlated development cases are not naturalised Uzbek "
+    "evidence or untouched independent rare-tail validation; no correction factor "
+    "or universal tolerance follows."
+)
+
 
 def _text(value: str) -> None:
     if not isinstance(value, str) or not value.strip():
@@ -461,6 +470,7 @@ class ScientificEvidence:
     rating: RatingSupport
     climate: ClimateTreatment
     daily_derivation: DailyDerivation
+    frozen_record: AcceptanceRecord
     restrictions: tuple[UseRestriction, ...] = ()
 
     def __post_init__(self) -> None:
@@ -476,6 +486,7 @@ class ScientificEvidence:
         ):
             _enum(value, kind)
         _text(self.profile_version)
+        _enum(self.frozen_record, AcceptanceRecord)
         _tuple(self.items, EvidenceItem)
         _tuple(self.observations, DiagnosticObservation)
         _tuple(self.restrictions, UseRestriction)
@@ -529,7 +540,10 @@ def minimum_evidence(product: HydrologicalProduct, derivation: DailyDerivation) 
         product.target_probability is not None and product.target_probability >= 0.99
     ):
         required += (EvidenceRequirement.RARE_TAIL,)
-    if derivation is DailyDerivation.DISAGGREGATED and product.resolution is TemporalResolution.DAILY:
+    if derivation is DailyDerivation.DISAGGREGATED and (
+        product.resolution is TemporalResolution.DAILY
+        or product.kind in (HydrologicalProductKind.DURATION_MINIMUM, HydrologicalProductKind.RARE_TAIL)
+    ):
         required += (
             EvidenceRequirement.COLOCATED_DAILY,
             EvidenceRequirement.DAILY_LOW_TAIL,
@@ -598,7 +612,23 @@ def compare_criterion(
             actual = min(complete)
         else:
             actual = fmean(complete)
-    return (CriterionComparison(criterion, None, observations, actual, _compare(actual, criterion)),)
+    finding = _compare(actual, criterion)
+    if (
+        actual is None
+        and (
+            (
+                criterion.aggregation is Aggregation.MAXIMUM
+                and criterion.comparison in (Comparison.AT_MOST, Comparison.LESS_THAN)
+            )
+            or (
+                criterion.aggregation is Aggregation.MINIMUM
+                and criterion.comparison in (Comparison.AT_LEAST, Comparison.GREATER_THAN)
+            )
+        )
+        and any(_compare(value, criterion) is CheckFinding.FAIL for value in values if value is not None)
+    ):
+        finding = CheckFinding.FAIL
+    return (CriterionComparison(criterion, None, observations, actual, finding),)
 
 
 def _validation_checks(record: AcceptanceRecord, evidence: ScientificEvidence) -> tuple[Check, ...]:
@@ -679,7 +709,15 @@ def assess_scientific_use(record: AcceptanceRecord, evidence: ScientificEvidence
     criteria = {c.criterion_id: c for c in record.criteria}
     if any(o.criterion_id not in criteria for o in evidence.observations):
         raise ValueError("undeclared diagnostic criterion")
-    checks = []
+    checks = [
+        Check(
+            "frozen_record_identity",
+            CheckFinding.PASS if evidence.frozen_record == record else CheckFinding.FAIL,
+            ()
+            if evidence.frozen_record == record
+            else ("evidence was evaluated under a different frozen acceptance record",),
+        )
+    ]
     for name, value, passing, failing in (
         ("computability", evidence.computability, Computability.COMPUTABLE, Computability.NOT_COMPUTABLE),
         ("numerical_validity", evidence.numerical_validity, NumericalValidity.VALID, NumericalValidity.INVALID),
@@ -743,7 +781,17 @@ def assess_scientific_use(record: AcceptanceRecord, evidence: ScientificEvidence
         )
     )
     for i, comparison in enumerate(comparisons):
-        if comparison.criterion.role is CriterionRole.MANDATORY:
+        if comparison.criterion.role is CriterionRole.MANDATORY or comparison.criterion.requirement in minimum_evidence(
+            record.product, evidence.daily_derivation
+        ):
+            if comparison.criterion.aggregation is not Aggregation.EACH_CASE and comparison.actual is None:
+                checks.append(
+                    Check(
+                        f"criterion_coverage:{comparison.criterion.criterion_id}",
+                        CheckFinding.UNKNOWN,
+                        ("aggregate diagnostic coverage incomplete or undefined",),
+                    )
+                )
             checks.append(
                 Check(
                     f"criterion:{comparison.criterion.criterion_id}:{i}",

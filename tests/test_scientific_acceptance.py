@@ -173,6 +173,7 @@ def supplied(subject=None):
         RatingSupport.WITHIN_RANGE,
         ClimateTreatment.COMMON_BASIS,
         DailyDerivation.NATIVE,
+        frozen_record=record,
     )
     return record, evidence
 
@@ -241,10 +242,8 @@ def test_missing_acceptance_basis_preserves_exploratory_number():
 
 def test_short_record_indicative_no_length_gate_and_rating_restriction_survives():
     record, evidence = supplied()
-    result = assess_scientific_use(
-        replace(record, indicative_basis="short record supports declared annual screen with uncertainty"),
-        replace(evidence, rating=RatingSupport.OUTSIDE_RANGE),
-    )
+    record = replace(record, indicative_basis="short record supports declared annual screen with uncertainty")
+    result = assess_scientific_use(record, replace(evidence, rating=RatingSupport.OUTSIDE_RANGE, frozen_record=record))
     assert result.findings.scientific_adequacy is ScientificAdequacy.ACCEPTED_AS_INDICATIVE
     assert result.acceptance_for(record.product).finding is CheckFinding.PASS
     assert any(UsePurpose.SIZING.value in r.prohibited_uses for r in result.findings.restrictions)
@@ -326,6 +325,7 @@ def test_revisions_need_new_version_old_result_and_reserved_validation():
         revision,
         replace(
             evidence,
+            frozen_record=revision,
             validation=replace(
                 evidence.validation, previously_exposed_clusters=("climate-2009",), method=ValidationMethod.NESTED
             ),
@@ -479,7 +479,8 @@ def supported_daily():
         for c in criteria
         for case in c.cases
     )
-    return replace(record, criteria=criteria), replace(evidence, observations=observations)
+    record = replace(record, criteria=criteria)
+    return record, replace(evidence, observations=observations, frozen_record=record)
 
 
 def test_daily_success_requires_distinct_quantitative_diagnostic_limits():
@@ -537,3 +538,115 @@ def test_forged_assessment_cannot_promote_failed_evidence():
     failed = assess_scientific_use(record, replace(evidence, observations=(observation(candidate=4.0),)))
     forged = replace(failed, findings=replace(failed.findings, scientific_adequacy=ScientificAdequacy.ACCEPTED))
     assert forged.acceptance_for(record.product).finding is CheckFinding.FAIL
+
+
+def test_runnable_annual_screening_example():
+    from examples.scientific_use import annual_screening_study
+
+    record, evidence = annual_screening_study()
+    result = assess_scientific_use(record, evidence)
+    assert result.findings.scientific_adequacy is ScientificAdequacy.ACCEPTED_AS_INDICATIVE
+    assert result.comparisons[0].actual == 3.0
+    assert result.findings.official_admissibility is OfficialAdmissibility.PENDING
+
+
+def test_full_physical_climate_population_and_value_identity():
+    record, evidence = supplied()
+    result = assess_scientific_use(record, evidence)
+    subjects = (
+        replace(record.product, location=replace(record.product.location, mapping_version="v2")),
+        replace(record.product, climate_basis="future scenario"),
+        replace(record.product, population="seasonal minima"),
+        replace(record.product, reference_identity="other complete reference"),
+        replace(record.product, result_identity="other result"),
+        replace(record.product, result_value=Flow(0)),
+    )
+    assert all(result.acceptance_for(subject).finding is CheckFinding.UNKNOWN for subject in subjects)
+
+
+def test_declared_scalar_result_cannot_be_missing_and_accepted():
+    subject = replace(product(), result_value=None)
+    record, evidence = supplied(subject)
+    result = assess_scientific_use(record, evidence)
+    assert check(result, "scalar_result").finding is CheckFinding.UNKNOWN
+    assert result.findings.scientific_adequacy is ScientificAdequacy.NOT_ACCEPTED
+
+
+def test_development_limitation_retains_exact_noncertifying_meaning():
+    from fishy.scientific_acceptance import DESIGN_PATTERN_DEVELOPMENT_LIMITATION
+
+    assert "All 21 dry held-out cases" in DESIGN_PATTERN_DEVELOPMENT_LIMITATION
+    assert "seven-day minimum" in DESIGN_PATTERN_DEVELOPMENT_LIMITATION
+    assert "three, not all four" in DESIGN_PATTERN_DEVELOPMENT_LIMITATION
+    assert "not naturalised Uzbek" in DESIGN_PATTERN_DEVELOPMENT_LIMITATION
+
+
+def test_frozen_criteria_cannot_change_without_new_validation_profile():
+    record, evidence = supplied()
+    evidence = replace(evidence, observations=(observation(candidate=4), observation("heldout-b", candidate=4)))
+    assert assess_scientific_use(record, evidence).findings.scientific_adequacy is ScientificAdequacy.NOT_ACCEPTED
+    relaxed = replace(record, criteria=(replace(record.criteria[0], limit=4.0),))
+    assert assess_scientific_use(relaxed, evidence).findings.scientific_adequacy is ScientificAdequacy.NOT_ACCEPTED
+
+
+def test_disaggregated_duration_minimum_cannot_avoid_daily_evidence_by_annual_resolution():
+    subject = replace(product(), kind=HydrologicalProductKind.DURATION_MINIMUM, duration_days=7)
+    record, evidence = supplied(subject)
+    result = assess_scientific_use(record, replace(evidence, daily_derivation=DailyDerivation.DISAGGREGATED))
+    assert result.findings.scientific_adequacy is ScientificAdequacy.NOT_ACCEPTED
+
+
+def test_advisory_required_applicability_failure_cannot_be_waived():
+    record, evidence = supported_daily()
+    transfer = replace(
+        record.criteria[0],
+        criterion_id="target-transfer",
+        requirement=EvidenceRequirement.TARGET_TRANSFER,
+        role=CriterionRole.ADVISORY,
+        limit=-1.0,
+    )
+    observations = tuple(
+        replace(o, criterion_id=transfer.criterion_id)
+        for o in evidence.observations
+        if o.criterion_id == record.criteria[0].criterion_id
+    )
+    record = replace(record, criteria=record.criteria + (transfer,))
+    result = assess_scientific_use(
+        record, replace(evidence, observations=evidence.observations + observations, frozen_record=record)
+    )
+    assert check(result, "frozen_record_identity").finding is CheckFinding.PASS
+    assert any(c.finding is CheckFinding.FAIL for c in result.checks.checks if "target-transfer" in c.check_id)
+    assert result.findings.scientific_adequacy is ScientificAdequacy.NOT_ACCEPTED
+
+
+def test_known_maximum_error_failure_survives_missing_case():
+    record, evidence = supplied()
+    record = replace(record, criteria=(replace(record.criteria[0], aggregation=Aggregation.MAXIMUM),))
+    evidence = replace(evidence, observations=(observation(candidate=4),), frozen_record=record)
+    result = assess_scientific_use(record, evidence)
+    assert check(result, "frozen_record_identity").finding is CheckFinding.PASS
+    assert result.checks.completeness is Completeness.INCOMPLETE
+    assert result.checks.finding is CheckFinding.FAIL
+
+
+@pytest.mark.parametrize(
+    "aggregation, comparison, candidate, expected",
+    [
+        (Aggregation.MAXIMUM, Comparison.AT_MOST, 4.0, CheckFinding.FAIL),
+        (Aggregation.MAXIMUM, Comparison.LESS_THAN, 3.0, CheckFinding.FAIL),
+        (Aggregation.MINIMUM, Comparison.AT_LEAST, 2.0, CheckFinding.FAIL),
+        (Aggregation.MINIMUM, Comparison.GREATER_THAN, 3.0, CheckFinding.FAIL),
+        (Aggregation.MAXIMUM, Comparison.AT_LEAST, 2.0, CheckFinding.UNKNOWN),
+        (Aggregation.MINIMUM, Comparison.AT_MOST, 4.0, CheckFinding.UNKNOWN),
+        (Aggregation.MEAN, Comparison.AT_MOST, 4.0, CheckFinding.UNKNOWN),
+    ],
+)
+def test_partial_aggregate_only_claims_mathematically_proven_failure(aggregation, comparison, candidate, expected):
+    record, evidence = supplied()
+    record = replace(record, criteria=(criterion(aggregation=aggregation, comparison=comparison),))
+    evidence = replace(evidence, frozen_record=record, observations=(observation(candidate=candidate),))
+    result = assess_scientific_use(record, evidence)
+    assert result.comparisons[0].finding is expected
+    assert result.comparisons[0].actual is None
+    assert result.checks.finding is expected
+    assert result.checks.completeness is Completeness.INCOMPLETE

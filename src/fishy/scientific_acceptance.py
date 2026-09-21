@@ -68,6 +68,8 @@ class HydrologicalProductKind(StrEnum):
     DURATION_MINIMUM = "duration_minimum"
     RARE_TAIL = "rare_tail"
     COARSE_STATISTIC = "coarse_statistic"
+    LOW_FLOW_STATISTIC = "daily_low_flow_statistic"
+    RECORDED_MINIMUM = "recorded_daily_minimum"
 
 
 class TemporalResolution(StrEnum):
@@ -176,6 +178,21 @@ class HydrologicalProduct:
                 raise ValueError("coarse statistic must retain its dekadal name")
         if self.kind is HydrologicalProductKind.DAILY_PATTERN and self.resolution is not TemporalResolution.DAILY:
             raise ValueError("daily pattern needs daily resolution")
+        if self.kind is HydrologicalProductKind.RECORDED_MINIMUM:
+            if (
+                self.resolution is not TemporalResolution.DAILY
+                or self.duration_days != 1
+                or self.target_probability is not None
+                or self.low_flow_return_period is not None
+            ):
+                raise ValueError("recorded minimum is one scalar daily minimum, not a probability or recurrence")
+            if self.result_value is None or not self.intervals:
+                raise ValueError("recorded minimum requires exact result and source intervals")
+        if self.kind is HydrologicalProductKind.LOW_FLOW_STATISTIC:
+            if self.resolution is not TemporalResolution.DAILY or self.target_probability is None:
+                raise ValueError("daily low-flow statistic needs daily resolution and exact exceedance")
+            if self.result_value is None:
+                raise ValueError("daily low-flow statistic needs its exact scalar result")
 
 
 class EvidenceRequirement(StrEnum):
@@ -547,6 +564,7 @@ def minimum_evidence(product: HydrologicalProduct, derivation: DailyDerivation) 
         HydrologicalProductKind.ANNUAL_MAGNITUDE,
         HydrologicalProductKind.DURATION_MINIMUM,
         HydrologicalProductKind.RARE_TAIL,
+        HydrologicalProductKind.LOW_FLOW_STATISTIC,
     ):
         required += _ANNUAL
     if product.kind is HydrologicalProductKind.DAILY_PATTERN:

@@ -8,12 +8,12 @@ ___ test_missing_magnitude_can_retain_delivery_without_inventing_comparison ____
 >       result = assess_duty(prescribed, delivered, component_checks=(Check("velocity", CheckFinding.FAIL),))
                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-tests/test_duties.py:307: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_duties.py:307:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 src/fishy/duties.py:170: in assess_duty
     return _assess(duty, deliveries, component_checks, kind)
            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 duty = SuppliedDuty(identifier='issued-schedule', version='v1', provision='supplied independent provision', applicability=<Du..., schedule=(), search_record='documented instrument search', reasons=(), required_components=('discharge', 'velocity'))
 delivered = (Delivery(sample=FlowSample(location=Location(reach=Reach(identifier='reach', version='geometry-v1', water_body=WaterB...sor_sources=()), uncertainty=None, coverage=<Coverage.COMPLETE: 'complete'>, reasons=(), components=()), version='v1'))

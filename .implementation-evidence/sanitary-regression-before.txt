@@ -19,8 +19,8 @@ _ test_missing_schedule_preserves_unknown_discharge_and_supported_other_componen
 >       prescribed = replace(duty(), schedule=(), required_components=("discharge", "velocity"))
                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-tests/test_duties.py:271: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_duties.py:271:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 ../../../../../../.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/dataclasses.py:1596: in replace
     return _replace(obj, **changes)
            ^^^^^^^^^^^^^^^^^^^^^^^^
@@ -29,7 +29,7 @@ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
            ^^^^^^^^^^^^^^^^^^^^^^^^^
 <string>:11: in __init__
     ???
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 self = SuppliedDuty(identifier='issued-schedule', version='v1', provision='supplied independent provision', applicability=<Du..., schedule=(), search_record='documented instrument search', reasons=(), required_components=('discharge', 'velocity'))
 
@@ -59,8 +59,8 @@ _ test_non_flow_instrument_can_be_retained_and_assessed_without_inventing_discha
 >       prescribed = replace(duty(), schedule=(), required_components=("velocity",))
                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-tests/test_duties.py:281: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_duties.py:281:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 ../../../../../../.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/dataclasses.py:1596: in replace
     return _replace(obj, **changes)
            ^^^^^^^^^^^^^^^^^^^^^^^^
@@ -69,7 +69,7 @@ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
            ^^^^^^^^^^^^^^^^^^^^^^^^^
 <string>:11: in __init__
     ???
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 self = SuppliedDuty(identifier='issued-schedule', version='v1', provision='supplied independent provision', applicability=<Du...applicable'>, schedule=(), search_record='documented instrument search', reasons=(), required_components=('velocity',))
 

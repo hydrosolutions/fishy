@@ -15,15 +15,6 @@ from datetime import UTC, datetime, timedelta
 from fractions import Fraction
 
 import pytest
-from fishy.annual_statistics import (
-    AnnualEstimator,
-    AnnualReference,
-    ExceedanceProbability,
-    ImportedDerivation,
-    TrendTreatment,
-    YearProbability,
-    import_annual_estimate,
-)
 from fishy.scientific_acceptance import (
     AcceptanceRecord,
     Aggregation,
@@ -46,6 +37,15 @@ from fishy.scientific_acceptance import (
     minimum_evidence,
 )
 
+from fishy.annual_statistics import (
+    AnnualEstimator,
+    AnnualReference,
+    ExceedanceProbability,
+    ImportedDerivation,
+    TrendTreatment,
+    YearProbability,
+    import_annual_estimate,
+)
 from fishy.daily_patterns import (
     AlignmentChoice,
     AlignmentSettings,
@@ -102,8 +102,8 @@ def location(name="receiver"):
     return Location(Reach(name, "v1", WaterBody("water", "v1")), CalculationSection(name, "v1"), "v1")
 
 
-def year(number=2019, values=None, *, donor="a", cluster=None, provenance=PROVENANCE):
-    calendar = AccountingYear(number, 1, 0)
+def year(number=2019, values=None, *, donor="a", cluster=None, provenance=PROVENANCE, calendar=None):
+    calendar = AccountingYear(number, 1, 0) if calendar is None else calendar
     if values is None:
         values = (Fraction(1),) * calendar.days
     samples = tuple(
@@ -128,8 +128,8 @@ def pool(years, probabilities=None, *, daily_years=None):
         observations,
         Interval(min(p.start for p in periods), max(p.end for p in periods)),
         "synthetic-common-climate",
-        1,
-        0,
+        years[0].calendar.start_month,
+        years[0].calendar.utc_offset_minutes,
         (),
         TrendTreatment.COMMON_CLIMATE,
         "synthetic supported basis",
@@ -152,8 +152,8 @@ def pool(years, probabilities=None, *, daily_years=None):
     return AnalogueReference(reference, tuple(years if daily_years is None else daily_years), membership)
 
 
-def magnitude(target=Fraction(99, 100), value=8):
-    reference = pool((year(donor="receiver"),)).reference
+def magnitude(target=Fraction(99, 100), value=8, *, reference_calendar=None):
+    reference = pool((year(donor="receiver", calendar=reference_calendar),)).reference
     return import_annual_estimate(
         reference,
         ExceedanceProbability(target),
@@ -729,6 +729,7 @@ def test_d10_accepted_zero_bypasses_profile_and_positive_source_support(calendar
     assert result.volume == Volume(0)
     assert result.use_checks.finding is CheckFinding.PASS
     assert result.magnitude_evidence == assessment.findings
+    assert result.magnitude_evidence is not None
     assert result.magnitude_evidence.official_admissibility is OfficialAdmissibility.PENDING
 
 
@@ -790,6 +791,7 @@ def test_supported_positive_pattern_accepts_its_exact_public_product():
     assert accepted.samples == exploratory.samples
     assert accepted.shape == exploratory.shape
     assert accepted.use_checks.finding is CheckFinding.PASS
+    assert accepted.shape_evidence is not None
     assert accepted.shape_evidence.scientific_adequacy is ScientificAdequacy.ACCEPTED
     # Mean/volume closure alone did not grant this separate daily permission.
     assert accepted.volume == exploratory.volume == Volume(252288000)
@@ -862,3 +864,107 @@ def test_scientific_shape_record_must_match_frozen_acceptance_profile():
     assert result.samples == exploratory.samples
     assert result.use_checks.finding is CheckFinding.UNKNOWN
     assert next(c for c in result.use_checks.checks if c.check_id == "daily_shape").finding is CheckFinding.UNKNOWN
+
+
+def test_d8_adjacent_context_uses_original_source_total_through_public_boundary():
+    pools = []
+    for donor, marker in (("a", 100), ("b", 104)):
+        left = [Fraction(0)] * 365
+        right = [Fraction(0)] * 366
+        if donor == "a":
+            left[-1] = Fraction(2)
+        else:
+            right[0] = Fraction(4)
+        pools.append(
+            pool(
+                (
+                    year(2018, tuple(left), donor=donor),
+                    pulse_year(2019, marker, donor),
+                    year(2020, tuple(right), donor=donor),
+                ),
+                (Fraction(1, 10), Fraction(99, 100), Fraction(1, 10)),
+            )
+        )
+    settings = profile(
+        tuple(pools),
+        band=Fraction(0),
+        sources=2,
+        alignment=AlignmentSettings(AlignmentChoice.MELT, 50, 160, Fraction(10 * 86400)),
+    )
+    result = construct(tuple(pools), settings)
+    assert result.method is PatternMethod.ALIGNED
+    assert tuple(c.shift_seconds / 86400 for c in result.retained) == (2, -2)
+    # Selected source totals are both2. The actual imported edge volumes2/4
+    # therefore contribute shares1/2, not independently normalized padding1/1.
+    assert tuple(c.introduced_share for c in result.retained) == (Fraction(1), Fraction(2))
+    assert tuple(c.displaced_share for c in result.retained) == (Fraction(0), Fraction(0))
+    expected = [Fraction(0)] * 365
+    expected[1] = Fraction(1, 4)
+    expected[101] = expected[102] = Fraction(5, 24)
+    expected[363] = Fraction(1, 3)
+    assert result.shape == tuple(365 * x for x in expected)
+    assert result.volume == Volume(252288000)
+
+
+def test_d12_non_january_fixed_offset_complete_pattern():
+    calendar = AccountingYear(2023, 10, 330)
+    reference = pool((year(calendar=calendar),), (Fraction(99, 100),))
+    annual = magnitude(reference_calendar=calendar)
+    result = construct_pattern(
+        annual, calendar, (reference,), profile((reference,)), intended_use="screen", purpose=UsePurpose.SCREENING
+    )
+    assert result.calendar == calendar
+    assert result.samples[0].interval.start == datetime(2023, 9, 30, 18, 30, tzinfo=UTC)
+    assert result.samples[-1].interval.end == datetime(2024, 9, 30, 18, 30, tzinfo=UTC)
+    assert result.shape == (Fraction(1),) * 366
+    assert tuple(s.value for s in result.samples) == (Flow(8),) * 366
+    assert result.volume == Volume(252979200)
+
+
+def test_import_refuses_observed_daily_values_for_natural_magnitude():
+    original = construct((pool((year(),), (Fraction(99, 100),)),))
+    observed = tuple(
+        replace(s, provenance=replace(s.provenance, reference_kind=ReferenceKind.OBSERVED)) for s in original.samples
+    )
+    with pytest.raises(ValueError, match="incompatible|natural"):
+        import_pattern(
+            original.magnitude,
+            original.calendar,
+            observed,
+            original.magnitude.derivation,
+            intended_use="screen",
+            purpose=UsePurpose.SCREENING,
+        )
+
+
+def test_import_cannot_relabel_consistent_observed_only_reference_as_natural_pattern():
+    original = construct((pool((year(),), (Fraction(99, 100),)),))
+    observed_provenance = replace(PROVENANCE, reference_kind=ReferenceKind.OBSERVED)
+    annual_reference = replace(
+        original.magnitude.reference,
+        observations=tuple(
+            replace(s, provenance=observed_provenance) for s in original.magnitude.reference.observations
+        ),
+    )
+    annual = import_annual_estimate(
+        annual_reference,
+        original.magnitude.target,
+        Flow(8),
+        estimator=AnnualEstimator.IMPORTED_STATIONARY,
+        profile_version="observed-annual-v1",
+        provenance=observed_provenance,
+        derivation=original.magnitude.derivation,
+    )
+    samples = tuple(replace(s, provenance=observed_provenance) for s in original.samples)
+    with pytest.raises(ValueError, match="natural"):
+        import_pattern(
+            annual, original.calendar, samples, annual.derivation, intended_use="screen", purpose=UsePurpose.SCREENING
+        )
+
+
+def test_illustrative_inputs_remain_explicitly_illustrative_after_construction():
+    reference = pool((year(),), (Fraction(99, 100),))
+    result = construct((reference,))
+    assert result.magnitude.provenance.production_method is ProductionMethod.ILLUSTRATIVE
+    assert all(c.source.provenance.production_method is ProductionMethod.ILLUSTRATIVE for c in result.retained)
+    assert tuple(s.provenance.production_method for s in result.samples) == (ProductionMethod.ILLUSTRATIVE,) * 365

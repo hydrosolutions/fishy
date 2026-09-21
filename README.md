@@ -70,6 +70,17 @@ specialist result. Inspect ranking support, fitted diagnostics, uncertainty and
 scoped use restrictions separately. See [annual estimates](docs/annual-statistics.md).
 No daily record or simulator is required for independently supported annual inputs.
 
+## Daily design patterns
+
+```sh
+uv run python examples/daily_patterns.py
+```
+
+Construct an equal-year conditional-analogue pattern from complete daily natural
+references, or check an imported schedule. Keep annual magnitude, daily shape,
+source support and scientific permission separate. See [daily patterns](docs/daily_patterns.md)
+and [calendar mapping](docs/pattern_calendar.md) for inputs and examples.
+
 ## Use Taqsim results
 
 ```sh

@@ -20,10 +20,26 @@ def accepted():
     annual_assessment = synthetic_acceptance(
         annual_magnitude_product(annual, intended_use="screen", purpose=UsePurpose.SCREENING)
     )
-    args = {"intended_use": "screen", "purpose": UsePurpose.SCREENING, "magnitude_assessment": annual_assessment}
-    first = construct_pattern(annual, TARGET, (ref,), settings, **args)
+    first = construct_pattern(
+        annual,
+        TARGET,
+        (ref,),
+        settings,
+        intended_use="screen",
+        purpose=UsePurpose.SCREENING,
+        magnitude_assessment=annual_assessment,
+    )
     daily_assessment = synthetic_acceptance(pattern_product(first, intended_use="screen", purpose=UsePurpose.SCREENING))
-    result = construct_pattern(annual, TARGET, (ref,), settings, shape_assessment=daily_assessment, **args)
+    result = construct_pattern(
+        annual,
+        TARGET,
+        (ref,),
+        settings,
+        shape_assessment=daily_assessment,
+        intended_use="screen",
+        purpose=UsePurpose.SCREENING,
+        magnitude_assessment=annual_assessment,
+    )
     assert result.use_checks.finding is CheckFinding.PASS
     return result
 
@@ -41,17 +57,6 @@ def test_replacement_cannot_retain_acceptance_for_changed_hydrograph():
 
 def test_import_cannot_change_receiving_accounting_month():
     original = accepted()
-    calendar = AccountingYear(2023, 7, 0)
-    samples = tuple(
-        replace(
-            s,
-            interval=Interval(
-                calendar.interval.start + timedelta(days=i), calendar.interval.start + timedelta(days=i + 1)
-            ),
-        )
-        for i, s in enumerate(original.samples)
-    )
-    # July 2023 includes leap February: choose July 2022 for a complete 365-day input.
     calendar = AccountingYear(2022, 7, 0)
     samples = tuple(
         replace(
@@ -80,9 +85,25 @@ def test_actual_source_cluster_cannot_be_withheld_validation_cluster():
     annual_assessment = synthetic_acceptance(
         annual_magnitude_product(annual, intended_use="screen", purpose=UsePurpose.SCREENING)
     )
-    args = {"intended_use": "screen", "purpose": UsePurpose.SCREENING, "magnitude_assessment": annual_assessment}
-    first = construct_pattern(annual, TARGET, (ref,), settings, **args)
+    first = construct_pattern(
+        annual,
+        TARGET,
+        (ref,),
+        settings,
+        intended_use="screen",
+        purpose=UsePurpose.SCREENING,
+        magnitude_assessment=annual_assessment,
+    )
     daily_assessment = synthetic_acceptance(pattern_product(first, intended_use="screen", purpose=UsePurpose.SCREENING))
     assert "heldout-climate-2010" in daily_assessment.evidence.validation.validation_clusters
-    result = construct_pattern(annual, TARGET, (ref,), settings, shape_assessment=daily_assessment, **args)
+    result = construct_pattern(
+        annual,
+        TARGET,
+        (ref,),
+        settings,
+        shape_assessment=daily_assessment,
+        intended_use="screen",
+        purpose=UsePurpose.SCREENING,
+        magnitude_assessment=annual_assessment,
+    )
     assert result.use_checks.finding is not CheckFinding.PASS

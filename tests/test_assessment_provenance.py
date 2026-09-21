@@ -78,6 +78,7 @@ def test_imported_issuance_retains_hypothetical_operand_meaning(method, role, de
     )
     result = assess_issued_delivery(issued.obligation, actual, evidence=admitted(issued.obligation, actual))
     assert result.numerical is NumericalFinding.BELOW
+    assert result.raw_shortfall is not None
     assert result.raw_shortfall.value == 1
     assert result.official.finding is CheckFinding.UNKNOWN
     assert result.responsibility.finding is CheckFinding.UNKNOWN

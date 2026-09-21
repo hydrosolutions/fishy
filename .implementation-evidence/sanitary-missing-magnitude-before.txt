@@ -1,0 +1,41 @@
+.....................F                                                   [100%]
+=================================== FAILURES ===================================
+___ test_missing_magnitude_can_retain_delivery_without_inventing_comparison ____
+
+    def test_missing_magnitude_can_retain_delivery_without_inventing_comparison():
+        prescribed = replace(duty(), schedule=(), required_components=("discharge", "velocity"))
+        delivered = tuple(Delivery(s, "v1") for s in samples((1, 2)))
+>       result = assess_duty(prescribed, delivered, component_checks=(Check("velocity", CheckFinding.FAIL),))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_duties.py:307: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/fishy/duties.py:170: in assess_duty
+    return _assess(duty, deliveries, component_checks, kind)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+duty = SuppliedDuty(identifier='issued-schedule', version='v1', provision='supplied independent provision', applicability=<Du..., schedule=(), search_record='documented instrument search', reasons=(), required_components=('discharge', 'velocity'))
+delivered = (Delivery(sample=FlowSample(location=Location(reach=Reach(identifier='reach', version='geometry-v1', water_body=WaterB...sor_sources=()), uncertainty=None, coverage=<Coverage.COMPLETE: 'complete'>, reasons=(), components=()), version='v1'))
+component_checks = (Check(check_id='velocity', finding=<CheckFinding.FAIL: 'fail'>, reasons=()),)
+kind = <ComparisonKind.OBSERVATION: 'observed_comparison_not_legal_compliance'>
+
+    def _assess(
+        duty: SuppliedDuty,
+        delivered: tuple[Delivery, ...] | tuple[Deliverability, ...],
+        component_checks: tuple[Check, ...],
+        kind: ComparisonKind,
+    ) -> DutyAssessment:
+        samples = tuple(item.sample for item in delivered)
+        if samples:
+            check_flow_intervals(samples)
+        schedule = {item.sample.interval: item for item in duty.schedule}
+        by_interval = {item.sample.interval: item for item in delivered}
+        if set(by_interval) - set(schedule):
+>           raise ValueError("delivery interval does not match the exact duty interval; no implicit resampling")
+E           ValueError: delivery interval does not match the exact duty interval; no implicit resampling
+
+src/fishy/duties.py:192: ValueError
+=========================== short test summary info ============================
+FAILED tests/test_duties.py::test_missing_magnitude_can_retain_delivery_without_inventing_comparison
+1 failed, 21 passed in 0.10s

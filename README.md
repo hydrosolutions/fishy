@@ -48,6 +48,17 @@ shortfall, without changing the nominal 220 l/s prescription.
 See the [Swiss workflow](docs/swiss-workflow.md) for public inputs, scope,
 source clauses, exceptions and evidence limits.
 
+## Sanitary duties and seasonal profiles
+
+```sh
+uv run python examples/sanitary_assessment.py
+```
+
+Assess an identified sanitary duty independently of ecological sizing, or calculate
+an explicitly hypothetical seasonal profile. Preserve hydraulic findings and
+source authority separately. See the [sanitary workflow](docs/sanitary-workflow.md)
+and [acceptance crosswalk](docs/sanitary-acceptance.md).
+
 ## Use Taqsim results
 
 ```sh

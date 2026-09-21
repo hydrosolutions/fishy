@@ -1,0 +1,17 @@
+....................F                                                    [100%]
+=================================== FAILURES ===================================
+_ test_unresolved_instrument_retains_supported_findings_without_whole_duty_pass _
+
+    def test_unresolved_instrument_retains_supported_findings_without_whole_duty_pass():
+        prescribed = replace(duty((2,)), applicability=DutyApplicability.UNRESOLVED,
+                             reasons=("currency pending",), required_components=("discharge", "velocity"))
+        result = assess_duty(prescribed, (Delivery(samples((1,))[0], "v1"),),
+                             component_checks=(Check("velocity", CheckFinding.PASS),))
+>       assert result.intervals[0].shortfall == Flow(1)
+               ^^^^^^^^^^^^^^^^^^^
+E       IndexError: tuple index out of range
+
+tests/test_duties.py:297: IndexError
+=========================== short test summary info ============================
+FAILED tests/test_duties.py::test_unresolved_instrument_retains_supported_findings_without_whole_duty_pass
+1 failed, 20 passed in 0.09s

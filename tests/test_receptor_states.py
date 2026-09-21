@@ -568,3 +568,19 @@ def test_public_receptor_example():
     assert result.summary.finding is FAIL
     assert result.summary.completeness is Completeness.COMPLETE
     assert [test.supported.finding for test in result.tests] == [PASS, FAIL]
+
+
+def test_receptor_example_never_imports_simulator(monkeypatch, capsys):
+    import builtins
+    import runpy
+
+    original = builtins.__import__
+
+    def without_simulator(name, *args, **kwargs):
+        if name.split(".")[0] in ("taqsim", "incidence"):
+            raise AssertionError("receptor assessment must not import a simulator")
+        return original(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", without_simulator)
+    runpy.run_path("examples/receptor_assessment.py", run_name="__main__")
+    assert "joint: fail; coverage: complete" in capsys.readouterr().out

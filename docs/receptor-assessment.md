@@ -115,3 +115,7 @@ All arithmetic uses exact `Fraction` values. Tests use exact equality with zero 
 Base Fishy: `e02d43c9ed35eefd377b61f7ec201a6005843b06`. Existing optional compatibility pins retained: Taqsim `396ad093c2b6f240e702a3b05aee1fb96a69b3f7`, Incidence `665da4e0d81ab28921b8d5d2edbb9be27f4ec612`. These receptor operations require no simulator import. Reproduce the maintained suite with `uv run pytest tests/test_receptor_states.py tests/test_receptor_delivery.py`.
 
 Site targets, pathway/model suitability, groundwater exchange physics, biological tolerances, quality activation and official application remain supplied evidence. This capability does not claim full Uzbek assembly, an issued duty or ecological/legal status.
+
+### Execution record
+
+The receptor suites execute **65 tests** (42 state/inventory/duration and 23 delivery). After merging hydraulic delivery `6a92a9b8be2da154aafd60297565eb1533fea59f`, the full repository suite executed **1453 passing tests** before the final simulator-import isolation test was added. That added isolation test and all 65 receptor tests pass. Ruff check, Ruff format check and ty check pass on the combined tree. The state example uses the ordinary mandatory Polars dependency but no simulator; `test_receptor_example_never_imports_simulator` blocks Taqsim/Incidence imports while executing its real public entry point. Delivery additionally executes with site-packages disabled.

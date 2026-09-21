@@ -200,6 +200,7 @@ def profile(
         clusters,
         alignment or AlignmentSettings(AlignmentChoice.CALENDAR, 0, 365, Fraction(0)),
         "synthetic-tests-not-acceptance",
+        Interval(datetime(2010, 1, 1, tzinfo=UTC), datetime(2030, 1, 1, tzinfo=UTC)),
     )
 
 
@@ -355,7 +356,7 @@ def test_d13_duplicate_and_incompatible_members_refused():
     other = pool((year(provenance=replace(PROVENANCE, reference_member="other")),), (Fraction(99, 100),))
     with pytest.raises(ValueError, match="incompatible"):
         construct((other,))
-    with pytest.raises(ValueError, match="second probability shift"):
+    with pytest.raises(ValueError, match="receiving target/scenario/member"):
         construct((reference,), replace(profile((reference,)), target=ExceedanceProbability(Fraction(1, 2))))
 
 
@@ -375,7 +376,7 @@ def test_d13_missing_import_or_partial_full_reference_is_not_guessed():
 
 def test_d13_missing_daily_values_are_not_zero():
     source = year()
-    missing = replace(source.samples[0], value=None, presence=Presence.MISSING)
+    missing = replace(source.samples[0], value=None, presence=Presence.MISSING, reasons=("synthetic missing day",))
     with pytest.raises(ValueError, match="missing daily coverage"):
         replace(source, samples=(missing, *source.samples[1:]))
     with pytest.raises(ValueError, match="complete accounting year"):
@@ -424,6 +425,8 @@ def test_d8_simultaneous_exclusion_recompute_and_order_invariance():
         "104": Fraction(0),
         "110": Fraction(-6),
     }
+    assert tuple(item.median_seconds / 86400 for item in result.alignment_iterations) == (102, 104)
+    assert result.alignment_iterations == reordered.alignment_iterations
     aligned_exclusions = {(e.location.reach.identifier, e.iteration) for e in result.exclusions if e.iteration}
     assert aligned_exclusions == {("60", 1), ("80", 1), ("140", 1)}
     assert {
@@ -512,6 +515,15 @@ def test_d8_missing_context_recomputed_until_stable_without_reinstatement():
     assert result.method is PatternMethod.ALIGNED
     assert tuple(c.source.location.reach.identifier for c in result.retained) == ("108",)
     assert result.retained[0].shift_seconds == 0
+    assert tuple(item.median_seconds / 86400 for item in result.alignment_iterations) == (104, 106, 108)
+    assert tuple(item.iteration for item in result.alignment_iterations) == (1, 2, 3)
+    assert tuple(
+        {loc.reach.identifier: shift / 86400 for loc, _, shift in item.shifts} for item in result.alignment_iterations
+    ) == ({"100": 4, "104": 0, "108": -4}, {"104": 2, "108": -2}, {"108": 0})
+    assert tuple(
+        tuple(e.location.reach.identifier for e in item.exclusions) for item in result.alignment_iterations
+    ) == (("100",), ("104",), ())
+    assert result.alignment_iterations == reordered.alignment_iterations
     assert {(e.location.reach.identifier, e.iteration) for e in result.exclusions if e.iteration} == {
         ("100", 1),
         ("104", 2),
@@ -576,10 +588,13 @@ def test_import_refuses_wrong_mean_identity_and_coverage(failure):
         samples = samples[:-1]
         expected = "complete daily accounting year"
     elif failure == "partial-day":
-        samples = (replace(samples[0], coverage=Coverage.PARTIAL), *samples[1:])
+        samples = (replace(samples[0], coverage=Coverage.PARTIAL, reasons=("synthetic partial day",)), *samples[1:])
         expected = "unsupported daily coverage"
     elif failure == "missing-day":
-        samples = (replace(samples[0], value=None, presence=Presence.MISSING), *samples[1:])
+        samples = (
+            replace(samples[0], value=None, presence=Presence.MISSING, reasons=("synthetic missing day",)),
+            *samples[1:],
+        )
         expected = "unsupported daily coverage"
     with pytest.raises(ValueError, match=expected):
         import_pattern(
@@ -690,6 +705,7 @@ def synthetic_acceptance(subject):
         RatingSupport.WITHIN_RANGE,
         ClimateTreatment.COMMON_BASIS,
         DailyDerivation.NATIVE,
+        frozen_record=record,
     )
     assessment = assess_scientific_use(record, evidence)
     assert assessment.findings.scientific_adequacy is ScientificAdequacy.ACCEPTED
@@ -745,7 +761,7 @@ def test_d10_accepted_zero_permission_never_transfers_identity(changed):
 def test_supported_positive_pattern_accepts_its_exact_public_product():
     reference = pool((year(),), (Fraction(99, 100),))
     annual = magnitude()
-    settings = profile((reference,))
+    settings = replace(profile((reference,)), acceptance_profile="synthetic-acceptance-v1")
     annual_assessment = synthetic_acceptance(
         annual_magnitude_product(annual, intended_use="screen", purpose=UsePurpose.SCREENING)
     )
@@ -777,3 +793,72 @@ def test_supported_positive_pattern_accepts_its_exact_public_product():
     assert accepted.shape_evidence.scientific_adequacy is ScientificAdequacy.ACCEPTED
     # Mean/volume closure alone did not grant this separate daily permission.
     assert accepted.volume == exploratory.volume == Volume(252288000)
+
+
+def test_d1_fitted_membership_uses_full_zero_mixture_reference_before_subset():
+    # Symmetric positive logs of [1/2,1,2] give mu=0; with pi0=1/4,
+    # the positive median has exceedance (1-pi0)/2 = 3/8 exactly.
+    # Fitting only this available daily year would be degenerate, not 3/8.
+    years = tuple(
+        year(n, (value,) * AccountingYear(n, 1, 0).days)
+        for n, value in zip(range(2017, 2021), (Fraction(0), Fraction(1, 2), Fraction(1), Fraction(2)), strict=True)
+    )
+    reference = pool(years, daily_years=(years[2],))
+    settings = profile((reference,), target=Fraction(3, 8), band=Fraction(0), estimator=MembershipEstimator.FITTED)
+    result = construct((reference,), settings, target=Fraction(3, 8))
+    assert tuple(c.probability.value for c in result.selected) == (Fraction(3, 8),)
+    assert result.selected[0].source == years[2]
+    assert result.membership.shape_extrapolation is Extrapolation.WITHIN_SUPPORT
+    assert result.volume == Volume(252288000)
+
+
+def test_d13_degenerate_full_reference_cannot_claim_fitted_membership():
+    reference = pool((year(2018), year(2019)))
+    settings = profile((reference,), estimator=MembershipEstimator.FITTED)
+    with pytest.raises(ValueError, match="fitted membership unavailable"):
+        construct((reference,), settings)
+
+
+def test_d13_full_source_reference_must_fit_frozen_profile_period():
+    years = (year(2018), year(2019))
+    reference = pool(years, (Fraction(97, 100), Fraction(99, 100)), daily_years=(years[1],))
+    settings = replace(profile((reference,)), reference_period=years[1].calendar.interval)
+    # The available daily year lies inside the profile, but its FULL frequency
+    # reference also contains 2018. That omitted year cannot be silently ignored.
+    with pytest.raises(ValueError, match="reference period"):
+        construct((reference,), settings)
+
+
+def test_scientific_shape_record_must_match_frozen_acceptance_profile():
+    reference = pool((year(),), (Fraction(99, 100),))
+    annual = magnitude()
+    settings = profile((reference,))
+    annual_assessment = synthetic_acceptance(
+        annual_magnitude_product(annual, intended_use="screen", purpose=UsePurpose.SCREENING)
+    )
+    exploratory = construct_pattern(
+        annual,
+        TARGET,
+        (reference,),
+        settings,
+        intended_use="screen",
+        purpose=UsePurpose.SCREENING,
+        magnitude_assessment=annual_assessment,
+    )
+    daily_assessment = synthetic_acceptance(
+        pattern_product(exploratory, intended_use="screen", purpose=UsePurpose.SCREENING)
+    )
+    assert daily_assessment.record.profile_version != settings.acceptance_profile
+    result = construct_pattern(
+        annual,
+        TARGET,
+        (reference,),
+        settings,
+        intended_use="screen",
+        purpose=UsePurpose.SCREENING,
+        magnitude_assessment=annual_assessment,
+        shape_assessment=daily_assessment,
+    )
+    assert result.samples == exploratory.samples
+    assert result.use_checks.finding is CheckFinding.UNKNOWN
+    assert next(c for c in result.use_checks.checks if c.check_id == "daily_shape").finding is CheckFinding.UNKNOWN

@@ -44,6 +44,7 @@ from fishy.pattern_calendar import (
 )
 from fishy.quantities import Flow, Volume, finite_number
 from fishy.scientific_acceptance import (
+    DESIGN_PATTERN_DEVELOPMENT_LIMITATION,
     HydrologicalProduct,
     HydrologicalProductKind,
     ScientificAssessment,
@@ -235,11 +236,14 @@ class PatternProfile:
     minimum_climate_clusters: int
     alignment: AlignmentSettings
     acceptance_profile: str
+    reference_period: Interval
 
     def __post_init__(self) -> None:
         for name in ("version", "reference_member", "scenario", "climate_basis", "acceptance_profile"):
             if not isinstance(getattr(self, name), str) or not getattr(self, name).strip():
                 raise ValueError("complete versioned profile required before construction")
+        if not isinstance(self.reference_period, Interval):
+            raise TypeError("declared source-reference period required")
         if not isinstance(self.target, ExceedanceProbability) or not isinstance(self.estimator, MembershipEstimator):
             raise TypeError("target and probability estimator required")
         if not isinstance(self.alignment, AlignmentSettings):
@@ -312,13 +316,27 @@ class DailyPattern:
     support: CheckSummary
     magnitude_evidence: EvidenceFindings | None
     shape_evidence: EvidenceFindings | None
-    use_checks: CheckSummary
+    requested_use: str
+    purpose: UsePurpose
+    magnitude_assessment: ScientificAssessment | None
+    shape_assessment: ScientificAssessment | None
     reasons: tuple[str, ...]
     references: tuple[AnalogueReference, ...] = ()
     imported_derivation: ImportedDerivation | None = None
     alignment_iterations: tuple[AlignmentIteration, ...] = ()
 
     def __post_init__(self) -> None:
+        _receiving_calendar(self.magnitude, self.calendar)
+        if not isinstance(self.purpose, UsePurpose) or not self.requested_use.strip():
+            raise ValueError("pattern requires explicit scoped intended use")
+        if self.magnitude_evidence != (
+            None if self.magnitude_assessment is None else self.magnitude_assessment.findings
+        ):
+            raise ValueError("annual findings must retain their evaluated acceptance record")
+        if self.shape_evidence != (None if self.shape_assessment is None else self.shape_assessment.findings):
+            raise ValueError("shape findings must retain their evaluated acceptance record")
+        if self.method in (PatternMethod.CALENDAR, PatternMethod.ALIGNED, PatternMethod.FALLBACK) and not self.retained:
+            raise ValueError("native positive pattern cannot discard its fixed contributors")
         if self.method is PatternMethod.IMPORTED and not isinstance(self.imported_derivation, ImportedDerivation):
             raise TypeError("imported pattern must retain its complete reproducible derivation")
         if not self.samples:
@@ -367,6 +385,60 @@ class DailyPattern:
             )
             if self.shape != expected:
                 raise ValueError("daily shape must use one fixed equal-year contributor set")
+        if self.shape_assessment is not None and self.magnitude.value.value > 0:
+            expected_product = pattern_product(self, intended_use=self.requested_use, purpose=self.purpose)
+            if self.shape_assessment.record.product != expected_product:
+                raise ValueError("shape acceptance record does not bind this exact daily candidate")
+
+    @property
+    def use_checks(self) -> CheckSummary:
+        """Re-evaluate permission against current content; replacement cannot carry a pass."""
+        annual = _permission(
+            self.magnitude_assessment,
+            annual_magnitude_product(self.magnitude, intended_use=self.requested_use, purpose=self.purpose),
+            "annual_magnitude",
+        )
+        if self.magnitude_evidence is not None:
+            checks = annual_use_checks(self.magnitude, self.magnitude_evidence, self.requested_use)
+            combined = CheckSummary((annual, *checks.checks))
+            annual = Check("annual_magnitude", combined.finding, tuple(r for c in combined.checks for r in c.reasons))
+        if not self.samples:
+            return CheckSummary((annual, Check("daily_pattern", CheckFinding.FAIL, self.reasons)))
+        if self.magnitude.value is not None and self.magnitude.value.value == 0:
+            zero = Check(
+                "accepted_zero",
+                CheckFinding.PASS
+                if self.magnitude_evidence is not None
+                and self.magnitude_evidence.scientific_adequacy is ScientificAdequacy.ACCEPTED
+                else CheckFinding.FAIL,
+                ("zero target requires accepted annual and intermittency evidence",),
+            )
+            return CheckSummary((annual, zero))
+        shape = _permission(
+            self.shape_assessment,
+            pattern_product(self, intended_use=self.requested_use, purpose=self.purpose),
+            "daily_shape",
+        )
+        if (
+            self.shape_assessment is not None
+            and self.profile is not None
+            and self.shape_assessment.record.profile_version != self.profile.acceptance_profile
+        ):
+            shape = Check("daily_shape", CheckFinding.UNKNOWN, ("configured acceptance profile differs",))
+        source_separation = Check(
+            "source_validation_separation", CheckFinding.UNKNOWN, ("source/validation independence not supplied",)
+        )
+        if self.shape_assessment is not None and self.shape_assessment.evidence.validation is not None:
+            validation = self.shape_assessment.evidence.validation
+            clusters = {year.climate_cluster for reference in self.references for year in reference.years}
+            overlap = clusters.intersection(validation.validation_clusters)
+            source_separation = Check(
+                "source_validation_separation",
+                CheckFinding.FAIL if overlap else CheckFinding.PASS,
+                tuple(f"actual source climate cluster also withheld: {cluster}" for cluster in sorted(overlap)),
+            )
+        support = _support(self.retained, self.profile).checks if self.profile is not None else ()
+        return CheckSummary((annual, shape, source_separation, *support))
 
     @property
     def volume(self) -> Volume | None:
@@ -374,6 +446,16 @@ class DailyPattern:
             return None
         return Volume(
             sum((s.value.value * s.interval.seconds for s in self.samples if s.value is not None), Fraction())
+        )
+
+
+def _receiving_calendar(magnitude: AnnualEstimate, calendar: AccountingYear) -> None:
+    if (
+        magnitude.reference.accounting_start_month != calendar.start_month
+        or magnitude.reference.utc_offset_minutes != calendar.utc_offset_minutes
+    ):
+        raise ValueError(
+            "receiving annual magnitude and daily accounting calendar differ; explicit conversion required"
         )
 
 
@@ -488,6 +570,7 @@ def construct_pattern(
     """
     if not isinstance(magnitude, AnnualEstimate) or not isinstance(calendar, AccountingYear):
         raise TypeError("annual estimate and valid accounting calendar required")
+    _receiving_calendar(magnitude, calendar)
     if not isinstance(purpose, UsePurpose):
         raise TypeError("explicit intended-use purpose required")
     location, provenance = magnitude.reference.location, magnitude.provenance
@@ -504,7 +587,6 @@ def construct_pattern(
         magnitude_check = Check(
             "annual_magnitude", combined.finding, tuple(r for check in combined.checks for r in check.reasons)
         )
-    shape_check = Check("daily_shape", CheckFinding.UNKNOWN, ("daily product unavailable or not yet assessed",))
     empty = _summary((), magnitude.target.value)
 
     def unavailable(reason: str) -> DailyPattern:
@@ -523,7 +605,10 @@ def construct_pattern(
             CheckSummary(()),
             magnitude_evidence,
             shape_evidence,
-            CheckSummary((magnitude_check, shape_check)),
+            intended_use,
+            purpose,
+            magnitude_assessment,
+            shape_assessment,
             (reason,),
             references,
         )
@@ -567,7 +652,10 @@ def construct_pattern(
             CheckSummary(()),
             magnitude_evidence,
             shape_evidence,
-            CheckSummary((magnitude_check,)),
+            intended_use,
+            purpose,
+            magnitude_assessment,
+            shape_assessment,
             ("accepted zero magnitude; mean-one shape undefined and unnecessary",),
         )
     if profile is None:
@@ -588,6 +676,11 @@ def construct_pattern(
     )
     for pool in references:
         source = pool.reference.observations[0]
+        if (
+            pool.reference.reference_period.start < profile.reference_period.start
+            or pool.reference.reference_period.end > profile.reference_period.end
+        ):
+            raise ValueError("source reference outside frozen profile reference period")
         _same_identity(provenance, source.provenance)
         if pool.reference.climate_basis != profile.climate_basis:
             raise ValueError("donor climate basis mismatch")
@@ -747,7 +840,7 @@ def construct_pattern(
             *provenance.limitations,
             "calendar mapping/alignment is not newly observed daily detail",
             "annual closure does not establish daily or rare-tail adequacy",
-            "development evidence: all 21 dry held-out cases overestimated seven-day minimum",
+            DESIGN_PATTERN_DEVELOPMENT_LIMITATION,
         ),
     )
     samples = _schedule(location, calendar, values, output_provenance)
@@ -766,18 +859,16 @@ def construct_pattern(
         support,
         magnitude_evidence,
         shape_evidence,
-        CheckSummary((magnitude_check, shape_check, *support.checks)),
+        intended_use,
+        purpose,
+        magnitude_assessment,
+        shape_assessment,
         tuple(reasons_out),
         references,
         alignment_iterations=tuple(iterations),
     )
 
-    shape_check = _permission(
-        shape_assessment, pattern_product(result, intended_use=intended_use, purpose=purpose), "daily_shape"
-    )
-    if shape_assessment is not None and shape_assessment.record.profile_version != profile.acceptance_profile:
-        shape_check = Check("daily_shape", CheckFinding.UNKNOWN, ("configured acceptance profile differs",))
-    return replace(result, use_checks=CheckSummary((magnitude_check, shape_check, *support.checks)))
+    return result
 
 
 def crossed_bounds(lower: DailyPattern, upper: DailyPattern) -> tuple[Interval, ...]:
@@ -813,8 +904,8 @@ def annual_magnitude_product(
         location=reference.location,
         climate_basis=reference.climate_basis,
         population="annual mean discharge",
-        reference_identity=sha256(repr(reference).encode()).hexdigest(),
-        result_identity=sha256(repr(magnitude).encode()).hexdigest(),
+        reference_identity=magnitude.reference_identity,
+        result_identity=magnitude.identity,
         result_value=magnitude.value,
     )
 
@@ -825,7 +916,7 @@ def pattern_product(pattern: DailyPattern, *, intended_use: str, purpose: UsePur
         raise ValueError("unavailable pattern has no numerical daily product")
     calendar = pattern.calendar
     source_records = tuple(sorted(repr(reference) for reference in pattern.references))
-    reference_identity = sha256(repr((pattern.magnitude.reference, source_records)).encode()).hexdigest()
+    reference_identity = sha256(repr((pattern.magnitude.reference_identity, source_records)).encode()).hexdigest()
     result_identity = sha256(
         repr((pattern.samples, pattern.profile, pattern.method, pattern.reasons, pattern.imported_derivation)).encode()
     ).hexdigest()
@@ -869,6 +960,7 @@ def import_pattern(
     Derivation and all original per-day provenance remain visible. An import
     is not relabelled as the native conditional-analogue construction.
     """
+    _receiving_calendar(magnitude, calendar)
     if not isinstance(derivation, ImportedDerivation):
         raise TypeError("pattern import requires reproducible specialist derivation")
     if magnitude.value is None:
@@ -913,7 +1005,6 @@ def import_pattern(
         or magnitude_evidence.scientific_adequacy is not ScientificAdequacy.ACCEPTED
     ):
         raise ValueError("imported zero target requires accepted annual/intermittency evidence")
-    shape_check = Check("daily_shape", CheckFinding.UNKNOWN, ("imported pattern not assessed",))
     shape = (
         None
         if magnitude.value.value == 0
@@ -934,7 +1025,10 @@ def import_pattern(
         CheckSummary(()),
         magnitude_evidence,
         shape_evidence,
-        CheckSummary((annual_check, shape_check)),
+        intended_use,
+        purpose,
+        magnitude_assessment,
+        shape_assessment,
         (
             f"import equation: {derivation.equation}",
             f"import calibration: {derivation.calibration_data}",
@@ -946,7 +1040,4 @@ def import_pattern(
         imported_derivation=derivation,
     )
 
-    shape_check = _permission(
-        shape_assessment, pattern_product(result, intended_use=intended_use, purpose=purpose), "daily_shape"
-    )
-    return replace(result, use_checks=CheckSummary((annual_check, shape_check)))
+    return result

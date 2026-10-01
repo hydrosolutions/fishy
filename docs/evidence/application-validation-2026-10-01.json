@@ -1,0 +1,371 @@
+{
+  "schema_version": 1,
+  "as_of": "2026-10-01",
+  "kind": "selected historical application evidence excerpt",
+  "scope": "Selected exact fields from independently reviewed application artifacts; not the full raw data or reproduction harness.",
+  "original_source_repository": "hydrosolutions/zarafshan-taqsim",
+  "source_path_convention": "Repository-relative original source identifiers, not promised public URLs or files shipped in this Fishy repository.",
+  "revisions": {
+    "fishy": "881660e8901987d63d89caf61ef0d30991000301",
+    "taqsim": "54c00a8784704dd12ef74de38cd5bb881df30f6d",
+    "incidence": "665da4e0d81ab28921b8d5d2edbb9be27f4ec612"
+  },
+  "current_main_claim": false,
+  "counting_note": "Counts overlap across applications and saved-output reuse; do not sum as independent tests.",
+  "admission_note": "Preserved execution artifacts may say pending independent review. Their subsequent review artifacts provide admission; no original status is silently rewritten.",
+  "evidence_archives": [
+    {
+      "file": "decision_applications_2026-10-01.zip",
+      "bytes": 37129358,
+      "sha256": "12c1fd86ca78aa7fdfffea3ec3138716b6cb41fd6e71cb18986c14cfec25749e"
+    },
+    {
+      "file": "thermal_season_retry_timeout_2026-10-01.zip",
+      "bytes": 3030611,
+      "sha256": "2726bb7c7519d1a47248fa84b592342426dae31bb68649b55418e765afe347cd"
+    }
+  ],
+  "archive_access": "Held by campaign authors; not bundled here. No public archive download is asserted. The decision archive includes prior application evidence; the timeout archive holds the full-basin failure evidence.",
+  "sources": {
+    "F09": [
+      {
+        "path": "docs/eflow_report/report/internal_audits/decision_applications_2026-10-01/pulses/RESULTS.json",
+        "sha256": "c425b782e4b767772e5146db56f9b1c0d0627a187248da9c7bf20672ab7e0856",
+        "bytes": 486,
+        "kind": "json_evidence",
+        "selected_fields": {
+          "historical_prior_rows_closed": 224,
+          "total_pulse_comparisons": 256,
+          "scenarios": 8,
+          "refusal_controls": 3
+        }
+      },
+      {
+        "path": "docs/eflow_report/report/internal_audits/decision_applications_2026-10-01/pulses/COORDINATOR_REVIEW.json",
+        "sha256": "a4b9576da69837811668cff47eb563535751a12e0d63c759789ee2f3029cdf39",
+        "bytes": 401,
+        "kind": "json_evidence",
+        "selected_fields": {
+          "status": "passed",
+          "independent_algorithm": "Separate state-machine scan of saved daily sequence; no production or application oracle imported",
+          "checked_pulse_rows": 256,
+          "raw_inputs_dense": true,
+          "null_and_reason_states_checked": true,
+          "bound_source_hashes_unchanged": true
+        }
+      }
+    ],
+    "F12": [
+      {
+        "path": "docs/eflow_report/report/internal_audits/application_stress_2026-10-01/TRANSPORT_FISHY_INDEPENDENT_RESULT.json",
+        "sha256": "2a6d41bf81ca1cd5d5f68859320fdab02d4845775b33774bd263c7132faf6a63",
+        "bytes": 2130,
+        "kind": "json_evidence",
+        "selected_fields": {
+          "status": "pass",
+          "native_runs_started": 0,
+          "independent_concentration_checks": 1088,
+          "cases": [
+            {
+              "case": "akdarya-reservoir-evaporation-30-canonical",
+              "comparisons": 60,
+              "joint_findings": {
+                "fail": 21,
+                "pass": 9
+              }
+            },
+            {
+              "case": "kattakurgan-reservoir-evaporation-30-canonical",
+              "comparisons": 60,
+              "joint_findings": {
+                "fail": 30
+              }
+            },
+            {
+              "case": "canal-baseline-30",
+              "comparisons": 60,
+              "joint_findings": {
+                "pass": 30
+              }
+            },
+            {
+              "case": "canal-lined-30",
+              "comparisons": 60,
+              "joint_findings": {
+                "pass": 30
+              }
+            },
+            {
+              "case": "canal-low-30",
+              "comparisons": 60,
+              "joint_findings": {
+                "unknown": 30
+              }
+            },
+            {
+              "case": "returns-baseline-30",
+              "comparisons": 60,
+              "joint_findings": {
+                "unknown": 3,
+                "fail": 27
+              }
+            },
+            {
+              "case": "returns-efficient-30",
+              "comparisons": 60,
+              "joint_findings": {
+                "unknown": 3,
+                "fail": 27
+              }
+            },
+            {
+              "case": "returns-dry-complete-30",
+              "comparisons": 60,
+              "joint_findings": {
+                "unknown": 4,
+                "pass": 26
+              }
+            },
+            {
+              "case": "returns-dry-unresolved-30",
+              "comparisons": 60,
+              "joint_findings": {
+                "unknown": 30
+              }
+            },
+            {
+              "case": "chemistry-known-30-support",
+              "comparisons": 60,
+              "joint_findings": {
+                "fail": 30
+              }
+            },
+            {
+              "case": "chemistry-missing-wet-30-support",
+              "comparisons": 60,
+              "joint_findings": {
+                "fail": 30
+              }
+            },
+            {
+              "case": "chemistry-missing-dry-30-support",
+              "comparisons": 60,
+              "joint_findings": {
+                "fail": 30
+              }
+            },
+            {
+              "case": "integrated-complete-92",
+              "comparisons": 184,
+              "joint_findings": {
+                "unknown": 19,
+                "fail": 73
+              }
+            },
+            {
+              "case": "integrated-unresolved-92",
+              "comparisons": 184,
+              "joint_findings": {
+                "unknown": 90,
+                "fail": 2
+              }
+            }
+          ]
+        }
+      },
+      {
+        "path": "docs/eflow_report/report/internal_audits/application_stress_2026-10-01/TRANSPORT_FISHY_INDEPENDENT_REVIEW.md",
+        "sha256": "20a5987a5cc3d200765d7cba5d8293fd6737d4551057e204cc492ea5876b5b41",
+        "bytes": 2190,
+        "kind": "review"
+      }
+    ],
+    "F13": [
+      {
+        "path": "docs/eflow_report/report/internal_audits/extended_applications_2026-10-01/thermal/results/result.json",
+        "sha256": "d65fad74bda093c4f3572b696bcc61a559e6435f8a2fe5ac31fcc99b924781c7",
+        "bytes": 2813,
+        "kind": "json_evidence",
+        "selected_fields": {
+          "status": "passed",
+          "days": 92,
+          "native_water_rerun": false,
+          "fishy_counts": {
+            "unknown": 369,
+            "pass": 1,
+            "fail": 2
+          },
+          "fishy_cases": 372,
+          "limitations": [
+            "Synthetic external sensible heat, not native thermal physics or calibrated temperatures.",
+            "No weather, latent heat, stratification or water feedback.",
+            "Daily means do not establish extrema; synthetic envelope controls are separate.",
+            "Cold pulse is a boundary input, not selective reservoir withdrawal.",
+            "Saved reduced five-node corridor, not full basin seasonal completion."
+          ]
+        }
+      },
+      {
+        "path": "docs/eflow_report/report/internal_audits/extended_applications_2026-10-01/issuance/thermal_review_evidence.json",
+        "sha256": "9512df54aa38ceb6d0ed32f2f693dcc26cd492b473aacbd0ac279ab2e063b71d",
+        "bytes": 2354,
+        "kind": "json_evidence",
+        "selected_fields": {
+          "status": "passed",
+          "checks": {
+            "native_transfers_matched": 4416,
+            "mixing_outputs": 3236,
+            "due_parcel_outputs": 368,
+            "stock_heat_closure": 1840,
+            "stock_continuity": 1840,
+            "boundary_heat": 736,
+            "dry_transfer_temperatures": 1040
+          },
+          "fishy_rows": 372
+        }
+      },
+      {
+        "path": "docs/eflow_report/report/internal_audits/extended_applications_2026-10-01/issuance/REVIEW_THERMAL.md",
+        "sha256": "19355f6e08e06ba1096f7c06c21f3eb156f3e18a1f38c9d222362aefb7f0b412",
+        "bytes": 3274,
+        "kind": "review"
+      }
+    ],
+    "F15": [
+      {
+        "path": "docs/eflow_report/report/internal_audits/application_completion_2026-10-01/full_workflow/results.json",
+        "sha256": "7c59eac3eb339cbd164058d2465c011649f1971ea6ca5aa774a7e7cf4a1f6548",
+        "bytes": 22218,
+        "kind": "json_evidence",
+        "selected_fields": {
+          "status": "passed",
+          "cases": 8,
+          "days_tested": 4628,
+          "fishy_unique_comparisons": 9256,
+          "fishy_loaded_repeats": 9256
+        }
+      },
+      {
+        "path": "docs/eflow_report/report/internal_audits/application_completion_2026-10-01/INDEPENDENT_REVIEW.md",
+        "sha256": "46eb633a406f4e2b0ff618e9ef44bf74332fc284e50af3ea80418a37d7f73587",
+        "bytes": 4538,
+        "kind": "review"
+      }
+    ],
+    "F18": [
+      {
+        "path": "docs/eflow_report/report/internal_audits/decision_applications_2026-10-01/snow_trout/RESULTS.json",
+        "sha256": "9c052aed1514db3055f8005315e865bda071f962c9a6363b5358769a50b11950",
+        "bytes": 921,
+        "kind": "json_evidence",
+        "selected_fields": {
+          "synthetic_observer_label": "SYNTHETIC_OBSERVER_FIXTURE \u2014 NOT FIELD OBSERVATIONS",
+          "habitat": {
+            "reported_point_checks": 4,
+            "unsupported_habitat_controls": 10,
+            "calendar_days": 366,
+            "shortfall_days": 64,
+            "shortfall_m3": "920160",
+            "paper_species": "Schizothorax eurycephalus (paper); supplement originally S. eurystomus",
+            "mean_values_not_subadult_individual_curve": true
+          },
+          "daily_stage": {
+            "label": "SYNTHETIC_OBSERVER_FIXTURE \u2014 NOT FIELD OBSERVATIONS",
+            "positive_calendars": 6,
+            "daily_coefficient_and_volume_checks": 270,
+            "negative_calendar_variants": 54,
+            "coefficients_source": "Pinned Fishy Appendix4row2 original basin/species metadata retained; not Hayes and not snow trout calibration",
+            "field_validation": false
+          },
+          "published_PDFs_bundled": false
+        }
+      },
+      {
+        "path": "docs/eflow_report/report/internal_audits/decision_applications_2026-10-01/snow_trout/INDEPENDENT_REVIEW.json",
+        "sha256": "7896fff36e322470b27b06634267fb5280815827802f16386ec9b053f46392ee",
+        "bytes": 2805,
+        "kind": "json_evidence",
+        "selected_fields": {
+          "status": "passed_independent_review",
+          "method": "Independent standard-library reconstruction from saved Fishy output JSON; no imports/execution of application or Fishy",
+          "habitat_point_checks": 4,
+          "habitat_negative_controls": 10,
+          "seasonal_delivery_days": 366,
+          "shortfall_days": 64,
+          "shortfall_m3": "920160",
+          "positive_daily_stage_calendars": 6,
+          "positive_daily_coefficient_and_volume_checks": 270,
+          "negative_calendars": 54,
+          "negative_calendar_daily_checks": 2430,
+          "expected_unsupported_days": 822,
+          "source_hashes_verified": true,
+          "scope_limits": [
+            "Synthetic observer-role test doubles are not field observations or observed biological-stage validation",
+            "Mean reported habitat points imported exactly, no specific size-class curve or invented autumn WUA",
+            "Original Fishy Kazakhstan catalogue row retained, not a snow-trout coefficient",
+            "No CASiMiR hydraulic reproduction or legal/field calibration",
+            "Research evidence review not independently re-audited from full PDFs in this software-output review"
+          ]
+        }
+      },
+      {
+        "path": "docs/eflow_report/report/internal_audits/decision_applications_2026-10-01/snow_trout/EVIDENCE_REVIEW.md",
+        "sha256": "c8463da1644ec2e55ea35a1ca163dd61b201285bd82f0c53b6f02566a547a685",
+        "bytes": 12203,
+        "kind": "review"
+      },
+      {
+        "path": "docs/eflow_report/report/internal_audits/decision_applications_2026-10-01/snow_trout/application/results/source_hashes.json",
+        "sha256": "34426bc95ea283341b7ebcb74318e0c61dddbf404cd1c89a734f65f5b280ac56",
+        "bytes": 2385,
+        "kind": "json_evidence"
+      },
+      {
+        "path": "docs/eflow_report/report/internal_audits/decision_applications_2026-10-01/snow_trout/application/results/habitat_raw.json",
+        "sha256": "df5f0ee68c2287b101634b1e90550d795a142cb36c415aaacb9648ee5be8c0d8",
+        "bytes": 199812,
+        "kind": "json_evidence"
+      },
+      {
+        "path": "docs/eflow_report/report/internal_audits/decision_applications_2026-10-01/snow_trout/application/results/daily_stage_raw.json",
+        "sha256": "c93f65944352a7162becfa8f9681bac28d9223d3347eceba29038bdd343a0c78",
+        "bytes": 3378709,
+        "kind": "json_evidence"
+      },
+      {
+        "path": "docs/eflow_report/report/internal_audits/decision_applications_2026-10-01/snow_trout/application/results/daily_stage_controls.json",
+        "sha256": "39b60a3e3f17164275ce6758bae29c43a691664fe2457fef7a50d670640dc356",
+        "bytes": 21546789,
+        "kind": "json_evidence"
+      }
+    ],
+    "F20": [
+      {
+        "path": "docs/eflow_report/report/internal_audits/thermal_season_retry_2026-10-01/RESULTS.json",
+        "sha256": "34ab59f6ee14918671921947bcfd1278fd15cc2db116da6f2c8143482da7d3e0",
+        "bytes": 921,
+        "kind": "json_evidence",
+        "selected_fields": {
+          "status": "blocked",
+          "reason": "wall_time_budget_exceeded",
+          "elapsed_seconds": 7200.266926790995,
+          "water_gate_passed": false,
+          "last_completed_stage": "build",
+          "termination_stage": "native compiled model execution",
+          "simulated_day_reached": null,
+          "water_result_saved": false,
+          "water_conservation_validation_reached": false,
+          "seasonal_temperature_run": false,
+          "seasonal_fishy_run": false,
+          "issue_url": "https://github.com/hydrosolutions/incidence/issues/28"
+        }
+      },
+      {
+        "path": "docs/eflow_report/report/internal_audits/thermal_season_retry_2026-10-01/failure_review.json",
+        "sha256": "e0b9599950563d23e6cdfb669c1d819102a65f919a066eca57814e4dd33e4566",
+        "bytes": 2694,
+        "kind": "json_evidence"
+      }
+    ]
+  }
+}

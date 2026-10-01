@@ -158,6 +158,10 @@ issuance rules remain separate.
 
 See [assessment contracts and executed crosswalk](docs/assessment.md).
 
+The [Zarafshan application validation record](docs/application-validation-2026-10-01.md)
+reports independently checked long-record diagnostics, saved Taqsim assessments
+and biological evidence boundaries at pinned revisions.
+
 ## Development
 
 ```sh
